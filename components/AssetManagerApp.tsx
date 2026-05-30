@@ -609,7 +609,7 @@ function Modal({
       }}
     >
       <div
-        className="max-h-[90vh] w-full max-w-5xl overflow-auto rounded-[2rem] border border-[#e3dccc] bg-[#fffdf8] shadow-2xl"
+        className="max-h-[90vh] w-full max-w-5xl overflow-auto rounded-[2rem] border border-[#e3dccc] bg-[#FFFFFF] shadow-2xl"
         onMouseDown={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between border-b border-[#e3dccc] p-5">
@@ -3102,13 +3102,480 @@ export default function AssetManagerApp() {
     );
   return (
     <div className="app-shell grid min-h-screen grid-cols-[280px_1fr] max-lg:grid-cols-1">
-      <aside className="desktop-sidebar sticky top-0 h-screen overflow-auto border-r border-[#e3dccc] bg-[#fffdf8]/90 p-4 backdrop-blur-xl">
+      <style>{`
+        :root {
+          --am-bg: #F8F3EA;
+          --am-bg-2: #FFF8EC;
+          --am-surface: #FFFFFF;
+          --am-surface-2: #FFF1C9;
+          --am-ink: #170A10;
+          --am-ink-2: #30101E;
+          --am-muted: #755B66;
+          --am-muted-2: #9A7D89;
+          --am-line: rgba(122, 18, 72, 0.14);
+          --am-line-strong: rgba(122, 18, 72, 0.24);
+          --am-plum: #4B082A;
+          --am-plum-2: #7A1248;
+          --am-plum-3: #A3195B;
+          --am-gold: #C89A36;
+          --am-gold-2: #EBC985;
+          --am-gold-3: #FFF1C9;
+          --am-cream: #FFF8EC;
+          --am-green: #15803D;
+          --am-red: #DC2626;
+          --am-shadow: 0 26px 70px rgba(122, 18, 72, 0.14);
+          --am-soft-shadow: 0 14px 38px rgba(122, 18, 72, 0.10);
+          --am-glow: 0 0 0 1px rgba(255,255,255,.75) inset, 0 18px 45px rgba(151,103,25,.14);
+        }
+
+        * { -webkit-tap-highlight-color: transparent; }
+
+        body {
+          background:
+            radial-gradient(circle at 8% -6%, rgba(255, 225, 145, 0.42), transparent 25rem),
+            radial-gradient(circle at 100% 0%, rgba(122, 18, 72, 0.12), transparent 25rem),
+            linear-gradient(180deg, #FFFFFF 0%, #F8F3EA 46%, #F3E5CD 100%) !important;
+          color: var(--am-ink);
+          text-rendering: geometricPrecision;
+          -webkit-font-smoothing: antialiased;
+        }
+
+        .app-shell {
+          background:
+            radial-gradient(circle at 14% 4%, rgba(255, 226, 148, .35), transparent 28rem),
+            radial-gradient(circle at 94% 0%, rgba(122, 18, 72, .13), transparent 26rem),
+            linear-gradient(180deg, #FFFFFF 0%, var(--am-bg) 100%) !important;
+        }
+
+        .desktop-sidebar {
+          background:
+            linear-gradient(180deg, rgba(255,255,255,.86), rgba(255,248,236,.93)),
+            radial-gradient(circle at 30% 0%, rgba(226,191,102,.28), transparent 20rem) !important;
+          border-right: 1px solid rgba(126, 82, 36, .16) !important;
+          box-shadow: 18px 0 55px rgba(45, 24, 49, 0.08);
+        }
+        .desktop-sidebar h1 {
+          color: var(--am-plum) !important;
+          letter-spacing: -0.045em;
+          font-weight: 950 !important;
+        }
+        .desktop-sidebar p { color: #8b7d87 !important; }
+        .desktop-sidebar .bg-sage,
+        .bg-sage {
+          background:
+            radial-gradient(circle at 28% 18%, rgba(255,255,255,.24), transparent 1.2rem),
+            linear-gradient(135deg, var(--am-plum-3) 0%, var(--am-plum-2) 44%, var(--am-plum) 100%) !important;
+          color: #fff !important;
+          box-shadow: 0 12px 28px rgba(67,17,47,.24), inset 0 1px 0 rgba(255,255,255,.22) !important;
+        }
+        .desktop-sidebar nav button {
+          border-radius: 18px !important;
+          color: #514653 !important;
+          font-weight: 850 !important;
+        }
+        .desktop-sidebar nav button:hover {
+          background: rgba(255,255,255,.70) !important;
+          color: var(--am-plum) !important;
+          box-shadow: inset 0 0 0 1px rgba(200,148,37,.18) !important;
+        }
+        .desktop-sidebar nav button.bg-sage {
+          background:
+            linear-gradient(135deg, rgba(255,240,181,.92), rgba(226,191,102,.92)) !important;
+          color: #2f1828 !important;
+          box-shadow: 0 10px 22px rgba(200,148,37,.20), inset 0 1px 0 rgba(255,255,255,.78) !important;
+        }
+
+        h1, h2, h3, .phone-hero-value, .phone-row-value, .phone-stat-value {
+          text-shadow: 0 1px 0 rgba(255,255,255,.55);
+        }
+
+        .card,
+        .rounded-2xl,
+        .rounded-3xl,
+        .field-input,
+        input,
+        select,
+        textarea {
+          border-color: var(--am-line) !important;
+        }
+        .card {
+          position: relative;
+          background:
+            linear-gradient(180deg, rgba(255,255,255,.94), rgba(255,250,241,.90)) !important;
+          box-shadow: var(--am-soft-shadow), inset 0 1px 0 rgba(255,255,255,.78) !important;
+          overflow: hidden;
+        }
+        .card::before {
+          content: "";
+          position: absolute;
+          left: 0;
+          right: 0;
+          top: 0;
+          height: 1px;
+          background: linear-gradient(90deg, transparent, rgba(226,191,102,.75), transparent);
+          pointer-events: none;
+        }
+        .field-input,
+        input,
+        select,
+        textarea {
+          background: rgba(255,255,255,.82) !important;
+          color: var(--am-ink) !important;
+          box-shadow: inset 0 1px 0 rgba(255,255,255,.88) !important;
+        }
+        .field-label { color: #6f5f6a !important; font-weight: 900 !important; letter-spacing: .08em !important; }
+
+        .btn-primary,
+        .phone-add-btn {
+          background:
+            radial-gradient(circle at 24% 15%, rgba(255,255,255,.24), transparent 1.5rem),
+            linear-gradient(135deg, var(--am-plum-3) 0%, var(--am-plum-2) 44%, var(--am-plum) 100%) !important;
+          color: #fff !important;
+          border: 0 !important;
+          box-shadow: 0 14px 30px rgba(67,17,47,0.25), inset 0 1px 0 rgba(255,255,255,.22) !important;
+          font-weight: 950 !important;
+        }
+        .btn-primary:hover,
+        .phone-add-btn:hover { filter: brightness(1.06) saturate(1.05); transform: translateY(-1px); }
+        .btn {
+          background: rgba(255,255,255,.72) !important;
+          border-color: rgba(83,43,72,.14) !important;
+          color: #332233 !important;
+          box-shadow: inset 0 1px 0 rgba(255,255,255,.82) !important;
+          font-weight: 850 !important;
+        }
+
+        .mobile-appbar {
+          position: sticky;
+          top: 0;
+          z-index: 60;
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          min-height: 92px;
+          padding: calc(env(safe-area-inset-top, 0px) + 16px) 14px 16px !important;
+          color: var(--am-ink) !important;
+          background:
+            linear-gradient(115deg, rgba(255,255,255,.92) 0%, rgba(255,248,232,.90) 48%, rgba(255,239,196,.82) 100%),
+            radial-gradient(circle at 88% 0%, rgba(154,31,94,.14), transparent 16rem) !important;
+          border-bottom: 1px solid rgba(126,82,36,.16) !important;
+          box-shadow: 0 16px 34px rgba(48, 26, 50, 0.11), inset 0 -1px 0 rgba(255,255,255,.72);
+          backdrop-filter: blur(18px);
+        }
+        .mobile-appbar::after {
+          content: "";
+          position: absolute;
+          left: 14px;
+          right: 14px;
+          bottom: 0;
+          height: 2px;
+          border-radius: 999px;
+          background: linear-gradient(90deg, transparent, rgba(200,148,37,.80), rgba(154,31,94,.40), transparent);
+        }
+        .mobile-appbar .text-\[11px\] {
+          color: var(--am-plum-2) !important;
+          letter-spacing: .22em !important;
+          font-weight: 950 !important;
+          text-transform: uppercase;
+        }
+        .mobile-appbar h2 {
+          color: var(--am-ink) !important;
+          font-size: 23px !important;
+          line-height: 1.04 !important;
+          letter-spacing: -0.052em !important;
+          font-weight: 950 !important;
+        }
+        .mobile-icon-btn {
+          width: 44px !important;
+          height: 44px !important;
+          border-radius: 999px !important;
+          color: var(--am-plum) !important;
+          border: 1px solid rgba(83,43,72,.14) !important;
+          background:
+            linear-gradient(180deg, rgba(255,255,255,.92), rgba(255,247,232,.80)) !important;
+          box-shadow: 0 10px 22px rgba(48,26,50,.09), inset 0 1px 0 rgba(255,255,255,.92) !important;
+        }
+        .mobile-icon-btn svg { stroke-width: 2.4 !important; }
+        .phone-add-btn {
+          height: 46px !important;
+          border-radius: 999px !important;
+          padding: 0 17px !important;
+          background:
+            radial-gradient(circle at 24% 18%, rgba(255,255,255,.30), transparent 1.2rem),
+            linear-gradient(135deg, #A3195B 0%, #7A1248 52%, #4B082A 100%) !important;
+          box-shadow: 0 13px 26px rgba(112,25,71,0.26), inset 0 1px 0 rgba(255,255,255,.24) !important;
+          letter-spacing: -.01em !important;
+        }
+
+        .phone-content {
+          min-height: calc(100vh - 92px);
+          background:
+            radial-gradient(circle at -8% 0%, rgba(255,226,148,.45), transparent 17rem),
+            radial-gradient(circle at 108% 4%, rgba(154,31,94,.11), transparent 18rem),
+            linear-gradient(180deg, #FFFFFF 0%, #F8F3EA 54%, #F3E5CD 100%) !important;
+          color: var(--am-ink) !important;
+        }
+        .phone-screen {
+          padding: 12px 12px 174px !important;
+          max-width: 100vw !important;
+          overflow: hidden !important;
+        }
+
+        .phone-market-strip {
+          display: flex !important;
+          gap: 8px !important;
+          margin: -2px -12px 14px !important;
+          padding: 10px 12px 12px !important;
+          overflow-x: auto !important;
+          scrollbar-width: none;
+          background: rgba(255,250,241,.74) !important;
+          border-bottom: 1px solid rgba(126,82,36,.12) !important;
+          box-shadow: inset 0 -1px 0 rgba(255,255,255,.86);
+        }
+        .phone-market-strip::-webkit-scrollbar { display: none; }
+        .phone-chip {
+          flex: 0 0 auto;
+          padding: 7px 11px !important;
+          border-radius: 999px !important;
+          border: 1px solid rgba(83,43,72,.12) !important;
+          background:
+            linear-gradient(180deg, rgba(255,255,255,.96), rgba(255,247,232,.88)) !important;
+          color: #3b2c3c !important;
+          box-shadow: 0 7px 16px rgba(48,26,50,.06), inset 0 1px 0 rgba(255,255,255,.9) !important;
+          font-size: 10.2px !important;
+          font-weight: 950 !important;
+          letter-spacing: .045em !important;
+        }
+        .phone-market-value { color: var(--am-plum-3) !important; font-weight: 950 !important; }
+
+        .phone-hero,
+        .phone-module-strip,
+        .phone-module-main,
+        .phone-stat {
+          border: 1px solid rgba(83,43,72,.12) !important;
+          background:
+            linear-gradient(150deg, rgba(255,255,255,.98) 0%, rgba(255,251,242,.96) 54%, rgba(255,243,214,.90) 100%) !important;
+          box-shadow: var(--am-glow) !important;
+          position: relative;
+          overflow: hidden;
+        }
+        .phone-hero::before,
+        .phone-module-main::before,
+        .phone-stat::before {
+          content: "";
+          position: absolute;
+          left: 0;
+          top: 0;
+          right: 0;
+          height: 1px;
+          background: linear-gradient(90deg, transparent, rgba(226,191,102,.95), transparent);
+        }
+        .phone-hero::after,
+        .phone-module-main::after {
+          content: "";
+          position: absolute;
+          right: -38px;
+          top: -42px;
+          width: 120px;
+          height: 120px;
+          border-radius: 999px;
+          background: radial-gradient(circle, rgba(226,191,102,.22), transparent 68%);
+          pointer-events: none;
+        }
+        .phone-hero,
+        .phone-module-main {
+          border-radius: 26px !important;
+          padding: 17px !important;
+        }
+        .phone-module-strip {
+          border-radius: 27px !important;
+          padding: 10px !important;
+          gap: 8px !important;
+        }
+        .phone-stat {
+          border-radius: 20px !important;
+          padding: 14px !important;
+        }
+        .phone-stats {
+          gap: 8px !important;
+        }
+        .phone-eyebrow,
+        .phone-stat-label,
+        .phone-mini-label,
+        .phone-section-title {
+          color: #7b536d !important;
+          letter-spacing: .19em !important;
+          font-weight: 950 !important;
+          text-transform: uppercase;
+        }
+        .phone-hero-value,
+        .phone-stat-value,
+        .phone-row-value {
+          color: #1a1019 !important;
+          letter-spacing: -0.055em !important;
+          font-weight: 950 !important;
+        }
+        .phone-hero-value { font-size: 31px !important; line-height: .98 !important; }
+        .phone-stat-value { font-size: 18px !important; line-height: 1.05 !important; }
+        .phone-hero-sub,
+        .phone-row-meta { color: #746675 !important; font-weight: 820 !important; }
+        .phone-section-title {
+          margin: 19px 2px 10px !important;
+          font-size: 11px !important;
+        }
+        .phone-section-title::after {
+          content: "";
+          display: inline-block;
+          width: 46px;
+          height: 2px;
+          margin-left: 10px;
+          vertical-align: middle;
+          border-radius: 999px;
+          background: linear-gradient(90deg, var(--am-gold), rgba(154,31,94,.32), transparent);
+          box-shadow: 0 1px 4px rgba(200,148,37,.24);
+        }
+
+        .phone-list {
+          display: grid !important;
+          gap: 11px !important;
+        }
+        .phone-row {
+          position: relative;
+          border: 1px solid rgba(83,43,72,.12) !important;
+          border-radius: 22px !important;
+          background:
+            linear-gradient(145deg, rgba(255,255,255,.99), rgba(255,249,237,.96) 62%, rgba(255,243,214,.88)) !important;
+          box-shadow: 0 13px 34px rgba(48,26,50,.10), inset 0 1px 0 rgba(255,255,255,.92) !important;
+          transform: translateZ(0);
+        }
+        .phone-row::before {
+          content: "";
+          position: absolute;
+          left: 0;
+          top: 13px;
+          bottom: 13px;
+          width: 4px;
+          border-radius: 999px;
+          background: linear-gradient(180deg, var(--am-gold-3), var(--am-gold), var(--am-plum-3));
+          box-shadow: 0 0 12px rgba(200,148,37,.35);
+        }
+        .phone-row::after {
+          content: "";
+          position: absolute;
+          left: 10px;
+          right: 10px;
+          top: 0;
+          height: 1px;
+          background: linear-gradient(90deg, transparent, rgba(226,191,102,.72), transparent);
+          pointer-events: none;
+        }
+        .phone-row-main {
+          grid-template-columns: minmax(0, 1fr) auto !important;
+          gap: 9px 12px !important;
+          position: relative;
+          z-index: 1;
+        }
+        .phone-row-title {
+          color: #1d111c !important;
+          font-size: 14.5px !important;
+          line-height: 1.12 !important;
+          font-weight: 950 !important;
+          letter-spacing: -0.035em !important;
+        }
+        .phone-row-meta {
+          font-size: 11.5px !important;
+          line-height: 1.18 !important;
+        }
+        .phone-row-value {
+          max-width: 40vw !important;
+          overflow: hidden !important;
+          text-overflow: ellipsis !important;
+          white-space: nowrap !important;
+          font-size: 15.5px !important;
+          line-height: 1.10 !important;
+          text-align: right !important;
+          color: #160d16 !important;
+        }
+        .phone-row-metric {
+          min-width: 0 !important;
+          border-radius: 15px !important;
+          padding: 8px 8px !important;
+          background:
+            linear-gradient(180deg, rgba(255,255,255,.72), rgba(255,246,225,.78)) !important;
+          border: 1px solid rgba(200,148,37,.18) !important;
+          box-shadow: inset 0 1px 0 rgba(255,255,255,.78) !important;
+        }
+        .phone-mini-label { font-size: 8.5px !important; color: #8b7182 !important; }
+        .phone-mini-value {
+          color: #211521 !important;
+          font-size: 11.8px !important;
+          line-height: 1.12 !important;
+          font-weight: 950 !important;
+          letter-spacing: -.02em !important;
+        }
+        .phone-green { color: var(--am-green) !important; text-shadow: 0 1px 0 rgba(255,255,255,.55); }
+        .phone-red { color: var(--am-red) !important; text-shadow: 0 1px 0 rgba(255,255,255,.55); }
+
+        .phone-tabs,
+        .mobile-tabbar,
+        .mobile-tab-account-menu {
+          border: 1px solid rgba(83,43,72,.14) !important;
+          background:
+            linear-gradient(180deg, rgba(255,255,255,.88), rgba(255,247,232,.82)) !important;
+          box-shadow: 0 16px 38px rgba(48,26,50,.13), inset 0 1px 0 rgba(255,255,255,.88) !important;
+          backdrop-filter: blur(18px) saturate(1.22);
+        }
+        .phone-tabs { padding: 5px !important; }
+        .phone-tab,
+        .mobile-tabbar button,
+        .mobile-tab-account-menu button {
+          color: #544653 !important;
+          border-radius: 999px !important;
+          font-weight: 950 !important;
+          letter-spacing: -.02em !important;
+        }
+        .phone-tab.active,
+        .mobile-tabbar button.active,
+        .mobile-tab-account-menu button.active {
+          color: #211521 !important;
+          background:
+            radial-gradient(circle at 28% 18%, rgba(255,255,255,.45), transparent 1.2rem),
+            linear-gradient(135deg, #FFF1C9 0%, #e4bd5b 45%, #C89A36 100%) !important;
+          box-shadow: 0 9px 20px rgba(200,148,37,.28), inset 0 1px 0 rgba(255,255,255,.72) !important;
+        }
+        .mobile-tab-account-menu { padding: 6px !important; }
+        .mobile-menu-panel {
+          border-color: rgba(83,43,72,.13) !important;
+          background: rgba(255,253,248,.98) !important;
+          box-shadow: 0 22px 55px rgba(48,26,50,.16), inset 0 1px 0 rgba(255,255,255,.88) !important;
+        }
+        .mobile-menu-panel button {
+          font-weight: 850 !important;
+        }
+
+        .text-green-700, .text-green-600, .text-emerald-600 { color: var(--am-green) !important; }
+        .text-red-700, .text-red-600, .text-rose-600 { color: var(--am-red) !important; }
+        .text-gray-500, .text-gray-600 { color: var(--am-muted) !important; }
+
+        @media (max-width: 1023px) {
+          main { background: var(--am-bg) !important; }
+        }
+        @media (max-width: 430px) {
+          .phone-hero-value { font-size: 29px !important; }
+          .phone-row-value { max-width: 36vw !important; font-size: 14.5px !important; }
+          .phone-row-metric { padding: 7px 7px !important; }
+          .phone-mini-value { font-size: 11px !important; }
+          .phone-tab { font-size: 10px !important; }
+          .mobile-appbar h2 { font-size: 22px !important; }
+        }
+      `}</style>
+      <aside className="desktop-sidebar sticky top-0 h-screen overflow-auto border-r border-[#e3dccc] bg-[#FFFFFF]/90 p-4 backdrop-blur-xl">
         <div className="mb-6 flex items-center gap-3">
           <div className="flex h-12 w-12 items-center justify-center rounded-3xl bg-sage text-lg font-semibold text-white shadow-soft">
             PF
           </div>
           <div>
-            <h1 className="font-semibold leading-none">Portfolio</h1>
+            <h1 className="font-semibold leading-none">Asset Manager Cloud</h1>
             <p className="mt-1 text-xs font-semibold text-gray-500">
               {isAdmin ? "Admin access" : "Normal access"}
             </p>
@@ -3131,7 +3598,7 @@ export default function AssetManagerApp() {
         <div className="mobile-appbar">
           <div>
             <div className="text-[11px] font-semibold uppercase tracking-widest text-[#4f675b]">
-              Portfolio
+              Asset Manager Cloud
             </div>
             <h2>{allViews.find((v) => v[0] === view)?.[2]}</h2>
           </div>
@@ -4007,7 +4474,7 @@ export default function AssetManagerApp() {
       refreshText = autoRefresh ? "Auto refresh 60 sec" : "Auto refresh Off";
     return (
       <section className="card overflow-hidden p-0">
-        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#e3dccc] bg-[#fffdf8] px-5 py-3">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#e3dccc] bg-[#FFFFFF] px-5 py-3">
           <div className="flex flex-wrap items-baseline gap-2">
             <h3 className="text-lg font-semibold uppercase text-[#004080]">
               Market
@@ -4300,7 +4767,7 @@ export default function AssetManagerApp() {
   function holdingBrokerTabs(k: string) {
     const selected = detailTabs[k] || "holdings";
     return (
-      <div className="mb-4 flex gap-2 overflow-auto rounded-2xl border border-[#e3dccc] bg-[#fffdf8] p-1">
+      <div className="mb-4 flex gap-2 overflow-auto rounded-2xl border border-[#e3dccc] bg-[#FFFFFF] p-1">
         <button
           onClick={() => setDetailTabs((p) => ({ ...p, [k]: "holdings" }))}
           className={`shrink-0 rounded-xl px-3 py-2 text-sm font-semibold ${selected === "holdings" ? "bg-sage text-white" : "hover:bg-[#eef5ee]"}`}
@@ -4471,7 +4938,7 @@ export default function AssetManagerApp() {
         rows.find((r) => r.k === "fixedIncome")?.interestIncurredFy || 0;
     return (
       <section className="card overflow-hidden p-0">
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#e3dccc] bg-[#fffdf8] px-5 py-4">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#e3dccc] bg-[#FFFFFF] px-5 py-4">
           <div>
             <h3 className="text-xl font-semibold tracking-tight">Overall Dashboard</h3>
             <p className="mt-1 text-xs font-semibold text-gray-600">
@@ -7514,7 +7981,7 @@ export default function AssetManagerApp() {
               <div className="flex flex-wrap items-center gap-2">
                 <button
                   type="button"
-                  className="inline-flex items-center rounded-full border border-[#e1d8c8] bg-[#fffdf8] px-3 py-1.5 text-xs font-medium text-[#37534a] shadow-none"
+                  className="inline-flex items-center rounded-full border border-[#e1d8c8] bg-[#FFFFFF] px-3 py-1.5 text-xs font-medium text-[#37534a] shadow-none"
                   onClick={() => setAutoRefresh((v) => !v)}
                 >
                   Auto refresh: {autoRefresh ? "On" : "Off"}
@@ -7552,7 +8019,7 @@ export default function AssetManagerApp() {
               <div className="flex flex-wrap items-center gap-2">
                 <button
                   type="button"
-                  className="inline-flex items-center rounded-full border border-[#e1d8c8] bg-[#fffdf8] px-3 py-1.5 text-xs font-medium text-[#37534a] shadow-none"
+                  className="inline-flex items-center rounded-full border border-[#e1d8c8] bg-[#FFFFFF] px-3 py-1.5 text-xs font-medium text-[#37534a] shadow-none"
                   onClick={() => setAutoRefresh((v) => !v)}
                 >
                   Auto refresh: {autoRefresh ? "On" : "Off"}
@@ -7578,7 +8045,7 @@ export default function AssetManagerApp() {
             </div>
             {holdingBrokerTabs(k)}
             {hasAccountTabs && tabs.length > 1 && (
-              <div className="mb-4 flex gap-2 overflow-auto rounded-2xl border border-[#e3dccc] bg-[#fffdf8] p-1">
+              <div className="mb-4 flex gap-2 overflow-auto rounded-2xl border border-[#e3dccc] bg-[#FFFFFF] p-1">
                 {tabs.map((t) => {
                   const count =
                     t === "All"
@@ -7649,7 +8116,7 @@ export default function AssetManagerApp() {
             {(k === "stocks" || k === "bullion") && (
               <button
                 type="button"
-                className="inline-flex items-center rounded-full border border-[#e1d8c8] bg-[#fffdf8] px-3 py-1.5 text-xs font-medium text-[#37534a] shadow-none"
+                className="inline-flex items-center rounded-full border border-[#e1d8c8] bg-[#FFFFFF] px-3 py-1.5 text-xs font-medium text-[#37534a] shadow-none"
                 onClick={() => setAutoRefresh((v) => !v)}
               >
                 Auto refresh: {autoRefresh ? "On" : "Off"}
@@ -7675,7 +8142,7 @@ export default function AssetManagerApp() {
         </div>
         {k === "stocks" && holdingBrokerTabs(k)}
         {hasAccountTabs && tabs.length > 1 && (
-          <div className="mb-4 flex gap-2 overflow-auto rounded-2xl border border-[#e3dccc] bg-[#fffdf8] p-1">
+          <div className="mb-4 flex gap-2 overflow-auto rounded-2xl border border-[#e3dccc] bg-[#FFFFFF] p-1">
             {tabs.map((t) => {
               const count =
                 t === "All"
@@ -8457,7 +8924,7 @@ export default function AssetManagerApp() {
               Close
             </button>
           </div>
-          <div className="fixed bottom-5 right-5 z-[70] flex gap-2 rounded-full border border-[#e3dccc] bg-[#fffdf8]/95 p-2 shadow-2xl backdrop-blur">
+          <div className="fixed bottom-5 right-5 z-[70] flex gap-2 rounded-full border border-[#e3dccc] bg-[#FFFFFF]/95 p-2 shadow-2xl backdrop-blur">
             <button
               className="btn-primary"
               onClick={() => {
@@ -8744,7 +9211,7 @@ export default function AssetManagerApp() {
               </option>
             ))}
           </datalist>
-          <div className="sticky bottom-0 col-span-2 flex justify-end gap-2 border-t border-[#e3dccc] bg-[#fffdf8]/95 py-3 backdrop-blur max-md:col-span-1">
+          <div className="sticky bottom-0 col-span-2 flex justify-end gap-2 border-t border-[#e3dccc] bg-[#FFFFFF]/95 py-3 backdrop-blur max-md:col-span-1">
             <button
               type="button"
               className="btn"
