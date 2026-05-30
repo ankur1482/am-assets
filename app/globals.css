@@ -2,6 +2,24 @@
 @tailwind components;
 @tailwind utilities;
 
+body {
+  font-weight: 400;
+}
+
+button,
+input,
+select,
+textarea {
+  font-weight: 500;
+}
+
+td {
+  font-weight: 400;
+}
+
+th {
+  font-weight: 600;
+}
 * {
   box-sizing: border-box;
 }
@@ -1194,5 +1212,252 @@ form,
 
   main > header > div:last-child {
     grid-template-columns: minmax(0, 1fr) !important;
+  }
+}
+/* =========================================================
+   CLEAN PORTFOLIO DASHBOARD POLISH - SAFE VERSION
+   Paste at bottom of app/globals.css
+========================================================= */
+
+:root {
+  --app-bg: #f6f8f3;
+  --app-bg-soft: #eef7ef;
+  --app-surface: #ffffff;
+  --app-surface-soft: #fbfaf4;
+  --app-border: #ded8c8;
+
+  --app-green-dark: #064e3b;
+  --app-green: #0f6b4f;
+  --app-green-soft: #e4f7ed;
+
+  --app-red: #dc2626;
+  --app-red-soft: #fff1f1;
+
+  --app-text: #10231d;
+  --app-muted: #63756f;
+
+  --app-radius: 18px;
+  --app-shadow: 0 14px 34px rgba(15, 23, 42, 0.07);
+  --app-shadow-soft: 0 6px 18px rgba(15, 23, 42, 0.05);
+}
+
+/* Base background */
+html,
+body {
+  background:
+    radial-gradient(circle at top left, rgba(209, 250, 229, 0.55), transparent 30%),
+    linear-gradient(135deg, #fbfaf4 0%, #f3f8f0 52%, #eef7ef 100%) !important;
+  color: var(--app-text);
+}
+
+/* Normal font weight again */
+body {
+  font-weight: 500;
+}
+
+p,
+span,
+td,
+th,
+button,
+input,
+select,
+textarea,
+a {
+  font-weight: inherit;
+}
+
+/* Headings - professional, not too thick */
+h1 {
+  color: var(--app-green-dark) !important;
+  font-weight: 750 !important;
+  letter-spacing: -0.035em;
+}
+
+h2 {
+  color: var(--app-green-dark) !important;
+  font-weight: 720 !important;
+  letter-spacing: -0.025em;
+}
+
+h3,
+h4 {
+  color: var(--app-green-dark) !important;
+  font-weight: 700 !important;
+}
+
+/* Sidebar clean */
+aside {
+  background: rgba(255, 255, 255, 0.78) !important;
+  border-right: 1px solid rgba(6, 95, 70, 0.11) !important;
+  box-shadow: 8px 0 28px rgba(15, 23, 42, 0.035);
+}
+
+aside a,
+aside button {
+  border-radius: 12px !important;
+  font-weight: 650 !important;
+}
+
+aside a:hover,
+aside button:hover {
+  background: rgba(6, 95, 70, 0.08) !important;
+}
+
+/* Main page card containers only.
+   IMPORTANT: no section/article/global card selector here. */
+main > div,
+main > div > div {
+  border-color: rgba(15, 95, 70, 0.12);
+}
+
+/* Buttons */
+button,
+[role="button"] {
+  border-radius: 999px !important;
+  font-weight: 650 !important;
+  box-shadow: none !important;
+}
+
+button:hover,
+[role="button"]:hover {
+  transform: translateY(-1px);
+}
+
+/* Inputs */
+input,
+select,
+textarea {
+  border-radius: 999px !important;
+  border-color: rgba(15, 95, 70, 0.18) !important;
+  background: #ffffff !important;
+  box-shadow: none !important;
+}
+
+input:focus,
+select:focus,
+textarea:focus {
+  outline: none !important;
+  border-color: rgba(15, 95, 70, 0.45) !important;
+  box-shadow: 0 0 0 3px rgba(15, 95, 70, 0.08) !important;
+}
+
+/* Table clean-up */
+table {
+  border-collapse: separate !important;
+  border-spacing: 0 !important;
+  background: transparent !important;
+}
+
+thead,
+thead tr,
+th {
+  background: #f1ecdf !important;
+  color: #263d36 !important;
+  font-size: 12px !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.045em;
+  text-transform: uppercase;
+}
+
+td,
+th {
+  border-bottom: 1px solid rgba(15, 23, 42, 0.08) !important;
+  padding: 15px 18px !important;
+}
+
+tbody tr {
+  background: transparent !important;
+}
+
+tbody tr:hover {
+  background: rgba(228, 247, 237, 0.45) !important;
+}
+
+/* Keep numbers readable */
+td:not(:first-child),
+th:not(:first-child) {
+  text-align: right;
+}
+
+/* Remove unwanted inner cell look caused by previous CSS */
+td div,
+td span,
+th div,
+th span {
+  box-shadow: none !important;
+}
+
+/* Gain / loss colors, not too thick */
+.text-green-600,
+.text-green-700,
+.text-emerald-600,
+.text-emerald-700,
+.gain,
+.positive,
+[class*="gain"],
+[class*="Gain"],
+[class*="positive"],
+[class*="Positive"] {
+  color: #047857 !important;
+  font-weight: 700 !important;
+}
+
+.text-red-600,
+.text-red-700,
+.loss,
+.negative,
+[class*="loss"],
+[class*="Loss"],
+[class*="negative"],
+[class*="Negative"] {
+  color: #dc2626 !important;
+  font-weight: 700 !important;
+}
+
+/* Links */
+a {
+  font-weight: 650;
+}
+
+/* Badges / pills */
+.badge,
+.chip,
+.tag,
+[class*="badge"],
+[class*="Badge"],
+[class*="chip"],
+[class*="Chip"],
+[class*="tag"],
+[class*="Tag"] {
+  border-radius: 999px !important;
+  font-weight: 650 !important;
+  box-shadow: none !important;
+}
+
+/* Make page cards softer only when they already have border/background */
+.rounded,
+.rounded-lg,
+.rounded-xl,
+.rounded-2xl,
+.rounded-3xl {
+  box-shadow: none;
+}
+
+/* Apply light shadow only to large containers */
+main .rounded-2xl,
+main .rounded-3xl {
+  box-shadow: var(--app-shadow-soft);
+}
+
+/* Mobile table */
+@media (max-width: 900px) {
+  table {
+    min-width: 900px;
+  }
+
+  td,
+  th {
+    padding: 13px 12px !important;
   }
 }

@@ -521,8 +521,8 @@ const fixedIncomeCategoryLabel = (value: any) => {
 const isCompanyPfType = (value: any) =>
   /^(companypf|pf)$/.test(key(String(value || "")));
 const NET_WORTH_SNAPSHOT_MODULE = "netWorthSnapshot";
-const LIVE_DISPLAY_REFRESH_MS = 400;
-const SAVED_RATE_REFRESH_MS = 15000;
+const LIVE_DISPLAY_REFRESH_MS = 60000;
+const SAVED_RATE_REFRESH_MS = 60000;
 function csvEscape(v: any) {
   const s = v == null ? "" : String(v);
   return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
@@ -613,7 +613,7 @@ function Modal({
         onMouseDown={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between border-b border-[#e3dccc] p-5">
-          <h3 className="text-2xl font-black">{title}</h3>
+          <h3 className="text-2xl font-semibold">{title}</h3>
           <button className="btn" onClick={onClose}>
             Close
           </button>
@@ -655,7 +655,7 @@ export default function AssetManagerApp() {
   const [adminUsers, setAdminUsers] = useState<AdminUser[]>([]),
     [adminBusy, setAdminBusy] = useState(false),
     [resetLink, setResetLink] = useState(""),
-    [autoRefresh, setAutoRefresh] = useState(true),
+    [autoRefresh, setAutoRefresh] = useState(false),
     [docUploadRecordId, setDocUploadRecordId] = useState(""),
     [docUploadModule, setDocUploadModule] = useState("documents"),
     [docUploadNotes, setDocUploadNotes] = useState(""),
@@ -867,15 +867,13 @@ export default function AssetManagerApp() {
     accModal,
   ]);
   useEffect(() => {
-    if (!user?.id || !phoneMode) return;
-    refreshMarketToday();
-    refreshBullionMarket();
+    if (!user?.id || !phoneMode || !autoRefresh || editing || detail || accModal) return;
     const t = setInterval(() => {
       refreshMarketToday();
       refreshBullionMarket();
     }, 60000);
     return () => clearInterval(t);
-  }, [user?.id, phoneMode]);
+  }, [user?.id, phoneMode, autoRefresh, editing, detail, accModal]);
   useEffect(() => {
     if (
       !user?.id ||
@@ -949,8 +947,6 @@ export default function AssetManagerApp() {
   useEffect(() => {
     if (view !== "stocks") return;
     refreshMarketToday();
-    const t = setInterval(refreshMarketToday, 60000);
-    return () => clearInterval(t);
   }, [view]);
   async function emailAuth() {
     setAuthMsg("");
@@ -2631,30 +2627,60 @@ export default function AssetManagerApp() {
     items: any[],
     onClick?: () => void,
   ) {
+    const visibleItems = items.filter(Boolean);
     return (
       <button
         key={`${title}|${meta}`}
         type="button"
-        className="phone-row"
+        className="phone-row !block !w-full !max-w-full !overflow-hidden !rounded-none !border-x-0 !px-3 !py-2.5 text-left"
+        style={{
+          display: "block",
+          width: "100%",
+          maxWidth: "100%",
+          overflow: "hidden",
+          boxSizing: "border-box",
+        }}
         onClick={onClick}
       >
         <div
-          className="phone-row-main"
+          className="phone-row-main !grid !w-full !max-w-full !grid-cols-[minmax(0,1fr)_auto] !items-start !gap-x-3 !gap-y-2"
           style={{
-            gridTemplateColumns: `minmax(6.4rem, 1fr) max-content repeat(${items.length}, max-content)`,
+            display: "grid",
+            gridTemplateColumns: "minmax(0, 1fr) auto",
+            width: "100%",
+            maxWidth: "100%",
+            overflow: "hidden",
+            alignItems: "start",
+            columnGap: "0.75rem",
+            rowGap: "0.5rem",
           }}
         >
-          <div>
-            <div className="phone-row-title">{title}</div>
-            <div className="phone-row-meta">{meta}</div>
-          </div>
-          <div className="phone-row-value">{value}</div>
-          {items.map(([k, v, cls]: any) => (
-            <div className="phone-row-metric" key={k}>
-              <div className="phone-mini-label">{k}</div>
-              <div className={`phone-mini-value ${cls || ""}`}>{v}</div>
+          <div className="min-w-0 overflow-hidden">
+            <div className="phone-row-title block max-w-full truncate whitespace-nowrap">
+              {title}
             </div>
-          ))}
+            <div className="phone-row-meta block max-w-full truncate whitespace-nowrap">
+              {meta}
+            </div>
+          </div>
+          <div className="phone-row-value shrink-0 whitespace-nowrap text-right tabular-nums">
+            {value}
+          </div>
+          {visibleItems.length > 0 && (
+            <div
+              className="col-span-2 grid min-w-0 grid-cols-3 gap-2 overflow-hidden pt-1"
+              style={{ gridTemplateColumns: `repeat(${Math.min(visibleItems.length, 3)}, minmax(0, 1fr))` }}
+            >
+              {visibleItems.map(([k, v, cls]: any) => (
+                <div className="phone-row-metric min-w-0 text-left" key={k}>
+                  <div className="phone-mini-label truncate">{k}</div>
+                  <div className={`phone-mini-value truncate tabular-nums ${cls || ""}`}>
+                    {v}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </button>
     );
@@ -2838,13 +2864,22 @@ export default function AssetManagerApp() {
       return (
         <div className="phone-screen">
           {strip}
-          <section className="phone-module-strip">
-            <div className="phone-module-main">
+          <section
+            className="phone-module-strip !grid !w-full !max-w-full !grid-cols-2 !gap-2 !overflow-hidden"
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+              width: "100%",
+              maxWidth: "100%",
+              overflow: "hidden",
+            }}
+          >
+            <div className="phone-module-main col-span-2 min-w-0 overflow-hidden">
               <div className="phone-eyebrow">{moduleDef.title}</div>
               <div className="phone-hero-value">
                 {fmt(moduleRows.reduce((s, x) => s + x.latest, 0))}
               </div>
-              <div className="phone-hero-sub">
+              <div className="phone-hero-sub flex flex-wrap gap-x-2 gap-y-1">
                 <span>{moduleRows.length} names</span>
                 <span>{rawModuleRows.length} lots</span>
                 <span>
@@ -2915,7 +2950,7 @@ export default function AssetManagerApp() {
         <section className="phone-hero">
           <div className="phone-eyebrow">Portfolio</div>
           <div className="phone-hero-value">{fmt(scopedTotals.net)}</div>
-          <div className="phone-hero-sub">
+          <div className="phone-hero-sub flex flex-wrap gap-x-2 gap-y-1">
             <span>Assets {fmt(scopedTotals.assets)}</span>
             <span>Liabilities {fmt(scopedTotals.liabilities)}</span>
           </div>
@@ -2999,10 +3034,10 @@ export default function AssetManagerApp() {
       <main className="flex min-h-screen items-center justify-center p-4">
         <div className="card w-full max-w-md p-6">
           <div className="mb-6">
-            <div className="mb-3 flex h-14 w-14 items-center justify-center rounded-3xl bg-sage text-xl font-black text-white">
+            <div className="mb-3 flex h-14 w-14 items-center justify-center rounded-3xl bg-sage text-xl font-semibold text-white">
               PF
             </div>
-            <h1 className="text-3xl font-black tracking-tight">
+            <h1 className="text-3xl font-semibold tracking-tight">
               Portfolio Cloud
             </h1>
             <p className="mt-2 text-sm text-gray-600">
@@ -3069,11 +3104,11 @@ export default function AssetManagerApp() {
     <div className="app-shell grid min-h-screen grid-cols-[280px_1fr] max-lg:grid-cols-1">
       <aside className="desktop-sidebar sticky top-0 h-screen overflow-auto border-r border-[#e3dccc] bg-[#fffdf8]/90 p-4 backdrop-blur-xl">
         <div className="mb-6 flex items-center gap-3">
-          <div className="flex h-12 w-12 items-center justify-center rounded-3xl bg-sage text-lg font-black text-white shadow-soft">
+          <div className="flex h-12 w-12 items-center justify-center rounded-3xl bg-sage text-lg font-semibold text-white shadow-soft">
             PF
           </div>
           <div>
-            <h1 className="font-black leading-none">Portfolio</h1>
+            <h1 className="font-semibold leading-none">Portfolio</h1>
             <p className="mt-1 text-xs font-semibold text-gray-500">
               {isAdmin ? "Admin access" : "Normal access"}
             </p>
@@ -3082,7 +3117,7 @@ export default function AssetManagerApp() {
         <nav className="space-y-4">
           {visibleGroups.map(([g, ids]: any) => (
             <div key={g}>
-              <div className="mb-2 px-3 text-[10px] font-black uppercase tracking-[.18em] text-gray-500">
+              <div className="mb-2 px-3 text-[10px] font-semibold uppercase tracking-[.18em] text-gray-500">
                 {g}
               </div>
               <div className="space-y-1">
@@ -3092,10 +3127,10 @@ export default function AssetManagerApp() {
           ))}
         </nav>
       </aside>
-      <main className="min-w-0 p-6 max-lg:p-4">
+      <main className="min-w-0 max-w-full overflow-hidden p-6 max-lg:p-0">
         <div className="mobile-appbar">
           <div>
-            <div className="text-[11px] font-black uppercase tracking-widest text-[#4f675b]">
+            <div className="text-[11px] font-semibold uppercase tracking-widest text-[#4f675b]">
               Portfolio
             </div>
             <h2>{allViews.find((v) => v[0] === view)?.[2]}</h2>
@@ -3145,14 +3180,14 @@ export default function AssetManagerApp() {
             </div>
           </div>
         )}
-        <div className="phone-content">
+        <div className="phone-content min-w-0 max-w-full overflow-hidden">
           {view === "shareList" ? shareListView() : phoneView()}
         </div>
         <div className="desktop-content">
           {view !== "stocks" && (
             <header className="desktop-header mb-5 flex items-start justify-between gap-4 max-md:flex-col">
               <div>
-                <h2 className="text-3xl font-black tracking-tight">
+                <h2 className="text-3xl font-semibold tracking-tight">
                   {allViews.find((v) => v[0] === view)?.[2]}
                 </h2>
                 <p className="mt-1 text-sm text-gray-600">
@@ -3249,14 +3284,14 @@ export default function AssetManagerApp() {
     icon?: any,
   ) {
     return (
-      <div className="kpi-card">
-        <div className="flex items-start justify-between">
-          <div className="flex-1">
-            <div className="stat-label">{label}</div>
-            <div className={`stat-value mt-2 ${cls}`}>{value}</div>
-            <div className="stat-note">{note}</div>
+      <div className="rounded-2xl border border-[#e0d8c8] bg-gradient-to-br from-white to-[#fbf8ef] p-4 shadow-sm transition hover:shadow-md">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0 flex-1">
+            <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">{label}</div>
+            <div className={`mt-2 truncate text-2xl font-semibold tracking-tight ${cls}`}>{value}</div>
+            <div className="mt-1 text-xs font-normal leading-snug text-slate-500">{note}</div>
           </div>
-          {icon && <div className="text-2xl opacity-50">{icon}</div>}
+          {icon && <div className="text-2xl opacity-40">{icon}</div>}
         </div>
       </div>
     );
@@ -3629,7 +3664,7 @@ export default function AssetManagerApp() {
               {s.scoped ? "AI Investment Engine" : "AI Portfolio Engine"}
             </div>
             <div
-              className={`mt-1 text-2xl font-black ${s.score >= 70 ? "text-emerald-700" : s.score >= 45 ? "text-amber-700" : "text-red-700"}`}
+              className={`mt-1 text-2xl font-semibold ${s.score >= 70 ? "text-emerald-700" : s.score >= 45 ? "text-amber-700" : "text-red-700"}`}
             >
               {Math.round(s.score)}/100
             </div>
@@ -3642,7 +3677,7 @@ export default function AssetManagerApp() {
           <div>
             <div className="stat-label">Daily Gain</div>
             <div
-              className={`mt-1 text-xl font-black ${s.daily >= 0 ? "text-emerald-700" : "text-red-700"}`}
+              className={`mt-1 text-xl font-semibold ${s.daily >= 0 ? "text-emerald-700" : "text-red-700"}`}
             >
               {fmt(s.daily)}
             </div>
@@ -3655,7 +3690,7 @@ export default function AssetManagerApp() {
           <div>
             <div className="stat-label">Monthly Gain</div>
             <div
-              className={`mt-1 text-xl font-black ${s.monthly >= 0 ? "text-emerald-700" : "text-red-700"}`}
+              className={`mt-1 text-xl font-semibold ${s.monthly >= 0 ? "text-emerald-700" : "text-red-700"}`}
             >
               {fmt(s.monthly)}
             </div>
@@ -3666,7 +3701,7 @@ export default function AssetManagerApp() {
           <div>
             <div className="stat-label">AI Recommendation</div>
             <div
-              className={`mt-1 text-xl font-black ${s.action === "Stay Invested" ? "text-emerald-700" : "text-red-700"}`}
+              className={`mt-1 text-xl font-semibold ${s.action === "Stay Invested" ? "text-emerald-700" : "text-red-700"}`}
             >
               {s.action}
             </div>
@@ -3692,10 +3727,10 @@ export default function AssetManagerApp() {
         }))
         .sort((a, b) => Math.abs(b.today) - Math.abs(a.today));
     return (
-      <section className="card p-5">
+      <section className="rounded-[26px] border border-[#ded6c4] bg-white/90 p-5 shadow-[0_14px_34px_rgba(15,23,42,0.05)]">
         <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h3 className="text-xl font-black">Portfolio Signals</h3>
+            <h3 className="text-xl font-semibold tracking-tight">Portfolio Signals</h3>
             <p className="text-sm text-gray-600">
               Instant local indicators from your records. Generate an AI
               review for deeper analysis.
@@ -3709,7 +3744,7 @@ export default function AssetManagerApp() {
           <div className="rounded-2xl border border-[#e3dccc] bg-white p-4">
             <div className="stat-label">Daily Gain</div>
             <div
-              className={`mt-1 text-xl font-black ${s.daily >= 0 ? "text-emerald-700" : "text-red-700"}`}
+              className={`mt-1 text-xl font-semibold ${s.daily >= 0 ? "text-emerald-700" : "text-red-700"}`}
             >
               {fmt(s.daily)}
             </div>
@@ -3720,7 +3755,7 @@ export default function AssetManagerApp() {
           <div className="rounded-2xl border border-[#e3dccc] bg-white p-4">
             <div className="stat-label">Monthly Gain</div>
             <div
-              className={`mt-1 text-xl font-black ${s.monthly >= 0 ? "text-emerald-700" : "text-red-700"}`}
+              className={`mt-1 text-xl font-semibold ${s.monthly >= 0 ? "text-emerald-700" : "text-red-700"}`}
             >
               {fmt(s.monthly)}
             </div>
@@ -3731,7 +3766,7 @@ export default function AssetManagerApp() {
           <div className="rounded-2xl border border-[#e3dccc] bg-white p-4">
             <div className="stat-label">Local Risk Signal</div>
             <div
-              className={`mt-1 text-xl font-black ${s.action === "Stay Invested" ? "text-emerald-700" : "text-red-700"}`}
+              className={`mt-1 text-xl font-semibold ${s.action === "Stay Invested" ? "text-emerald-700" : "text-red-700"}`}
             >
               {s.action}
             </div>
@@ -3790,7 +3825,7 @@ export default function AssetManagerApp() {
         <div className="border-b border-[#e3dccc] bg-[#f4faf5] p-5">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
-              <h3 className="text-xl font-black text-[#17382b]">
+              <h3 className="text-xl font-semibold text-[#17382b]">
                 AI Portfolio Analyst
               </h3>
               <p className="mt-1 text-sm text-gray-600">
@@ -3798,7 +3833,7 @@ export default function AssetManagerApp() {
                 goals using your current portfolio snapshot.
               </p>
             </div>
-            <span className="rounded-full border border-[#cfe4d7] bg-white px-3 py-1 text-xs font-black text-[#376454]">
+            <span className="rounded-full border border-[#cfe4d7] bg-white px-3 py-1 text-xs font-semibold text-[#376454]">
               Secure server analysis
             </span>
           </div>
@@ -3849,16 +3884,16 @@ export default function AssetManagerApp() {
           <div className="space-y-5 p-5">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div className="max-w-3xl">
-                <h4 className="text-lg font-black">{aiReview.headline}</h4>
+                <h4 className="text-lg font-semibold">{aiReview.headline}</h4>
                 <p className="mt-2 text-sm leading-6 text-gray-700">
                   {aiReview.summary}
                 </p>
               </div>
               <div className="flex gap-2">
-                <span className={`rounded-xl border px-3 py-2 text-sm font-black ${riskClass}`}>
+                <span className={`rounded-xl border px-3 py-2 text-sm font-semibold ${riskClass}`}>
                   {aiReview.risk_level} Risk
                 </span>
-                <span className="rounded-xl border border-[#d8e4d9] bg-[#f7fbf5] px-3 py-2 text-sm font-black text-[#17382b]">
+                <span className="rounded-xl border border-[#d8e4d9] bg-[#f7fbf5] px-3 py-2 text-sm font-semibold text-[#17382b]">
                   {aiReview.health_score}/100
                 </span>
               </div>
@@ -3871,7 +3906,7 @@ export default function AssetManagerApp() {
             </div>
             <div className="grid grid-cols-2 gap-4 max-lg:grid-cols-1">
               <div className="rounded-2xl border border-emerald-100 bg-emerald-50/50 p-4">
-                <h4 className="mb-2 font-black text-emerald-800">Strengths</h4>
+                <h4 className="mb-2 font-semibold text-emerald-800">Strengths</h4>
                 <ul className="space-y-2 text-sm text-emerald-950">
                   {aiReview.strengths.map((item, index) => (
                     <li key={`${item}-${index}`}>{item}</li>
@@ -3879,7 +3914,7 @@ export default function AssetManagerApp() {
                 </ul>
               </div>
               <div className="rounded-2xl border border-red-100 bg-red-50/50 p-4">
-                <h4 className="mb-2 font-black text-red-800">Risks</h4>
+                <h4 className="mb-2 font-semibold text-red-800">Risks</h4>
                 <ul className="space-y-2 text-sm text-red-950">
                   {aiReview.risks.map((item, index) => (
                     <li key={`${item}-${index}`}>{item}</li>
@@ -3889,7 +3924,7 @@ export default function AssetManagerApp() {
             </div>
             <div className="grid grid-cols-2 gap-4 max-lg:grid-cols-1">
               <div className="rounded-2xl border border-[#e3dccc] bg-white p-4">
-                <h4 className="mb-2 font-black">Actions To Review</h4>
+                <h4 className="mb-2 font-semibold">Actions To Review</h4>
                 <ol className="list-decimal space-y-2 pl-5 text-sm text-gray-700">
                   {aiReview.actions.map((item, index) => (
                     <li key={`${item}-${index}`}>{item}</li>
@@ -3897,7 +3932,7 @@ export default function AssetManagerApp() {
                 </ol>
               </div>
               <div className="rounded-2xl border border-[#e3dccc] bg-white p-4">
-                <h4 className="mb-2 font-black">Data Gaps</h4>
+                <h4 className="mb-2 font-semibold">Data Gaps</h4>
                 {aiReview.data_gaps.length ? (
                   <ul className="space-y-2 text-sm text-gray-700">
                     {aiReview.data_gaps.map((item, index) => (
@@ -3974,7 +4009,7 @@ export default function AssetManagerApp() {
       <section className="card overflow-hidden p-0">
         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#e3dccc] bg-[#fffdf8] px-5 py-3">
           <div className="flex flex-wrap items-baseline gap-2">
-            <h3 className="text-lg font-black uppercase text-[#004080]">
+            <h3 className="text-lg font-semibold uppercase text-[#004080]">
               Market
             </h3>
             <span className="text-lg text-[#004080]">Today</span>
@@ -3986,9 +4021,18 @@ export default function AssetManagerApp() {
               })}
             </span>
           </div>
-          <span className="rounded-full border border-[#d8e4d9] bg-[#f7fbf5] px-3 py-2 text-xs font-black text-[#4f675b]">
-            {refreshText}
-          </span>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              className="rounded-full border border-[#d8e4d9] bg-white px-3 py-2 text-xs font-semibold text-[#4f675b] transition hover:bg-[#f7fbf5]"
+              onClick={refreshMarketToday}
+            >
+              Manual refresh
+            </button>
+            <span className="rounded-full border border-[#d8e4d9] bg-[#f7fbf5] px-3 py-2 text-xs font-semibold text-[#4f675b]">
+              {refreshText}
+            </span>
+          </div>
         </div>
         <div className="grid grid-cols-8 divide-x divide-[#eef0e8] bg-white max-2xl:grid-cols-4 max-xl:grid-cols-2 max-sm:grid-cols-1">
           {rows.map((x: any) => (
@@ -3996,14 +4040,14 @@ export default function AssetManagerApp() {
               key={x.name}
               className="min-w-0 px-4 py-4 transition hover:bg-[#f7fbf5]"
             >
-              <div className="text-xs font-black uppercase tracking-wide text-[#17382b]">
+              <div className="text-xs font-semibold uppercase tracking-wide text-[#17382b]">
                 {x.name}
               </div>
-              <div className="mt-2 whitespace-nowrap text-2xl font-black leading-none tabular-nums text-black">
+              <div className="mt-2 whitespace-nowrap text-2xl font-semibold leading-none tabular-nums text-black">
                 {x.ok ? priceText(x) : "Loading"}
               </div>
               <div
-                className={`mt-2 flex items-center gap-1 whitespace-nowrap text-xs font-black tabular-nums ${num(x.change) >= 0 ? "text-emerald-700" : "text-red-600"}`}
+                className={`mt-2 flex items-center gap-1 whitespace-nowrap text-xs font-semibold tabular-nums ${num(x.change) >= 0 ? "text-emerald-700" : "text-red-600"}`}
               >
                 {x.ok && Number.isFinite(Number(x.change)) ? (
                   <>
@@ -4044,13 +4088,13 @@ export default function AssetManagerApp() {
       monthlyObligation = totalLoanEmi + totalPropertyEmi;
     return (
       <section className="card-gradient p-6">
-        <h3 className="mb-4 text-xl font-black">Financial Metrics</h3>
+        <h3 className="mb-4 text-xl font-semibold">Financial Metrics</h3>
         <div className="grid grid-cols-2 gap-4 md:grid-cols-3">
           <div className="rounded-2xl bg-white/60 p-4">
-            <div className="text-xs font-black uppercase text-gray-600">
+            <div className="text-xs font-semibold uppercase text-gray-600">
               Monthly EMI
             </div>
-            <div className="mt-2 text-2xl font-black text-emerald-700">
+            <div className="mt-2 text-2xl font-semibold text-emerald-700">
               {fmt(monthlyObligation)}
             </div>
             <div className="text-xs text-gray-500 mt-1">
@@ -4058,10 +4102,10 @@ export default function AssetManagerApp() {
             </div>
           </div>
           <div className="rounded-2xl bg-white/60 p-4">
-            <div className="text-xs font-black uppercase text-gray-600">
+            <div className="text-xs font-semibold uppercase text-gray-600">
               Net Income Available
             </div>
-            <div className="mt-2 text-2xl font-black text-blue-700">
+            <div className="mt-2 text-2xl font-semibold text-blue-700">
               {fmt(totals.assets - totals.liabilities)}
             </div>
             <div className="text-xs text-gray-500 mt-1">
@@ -4069,10 +4113,10 @@ export default function AssetManagerApp() {
             </div>
           </div>
           <div className="rounded-2xl bg-white/60 p-4">
-            <div className="text-xs font-black uppercase text-gray-600">
+            <div className="text-xs font-semibold uppercase text-gray-600">
               Asset Turnover Ratio
             </div>
-            <div className="mt-2 text-2xl font-black text-purple-700">
+            <div className="mt-2 text-2xl font-semibold text-purple-700">
               {num(totals.invested) > 0
                 ? (totals.assets / totals.invested).toFixed(2)
                 : "0.00"}
@@ -4246,7 +4290,7 @@ export default function AssetManagerApp() {
       <div className="flex gap-2 overflow-auto rounded-2xl border border-[#e3dccc] bg-white p-1">
         <button
           onClick={() => setDetailTabs((p) => ({ ...p, dashboard: "summary" }))}
-          className="shrink-0 rounded-xl bg-sage px-3 py-2 text-sm font-black text-white"
+          className="shrink-0 rounded-xl bg-sage px-3 py-2 text-sm font-semibold text-white"
         >
           Overall Dashboard
         </button>
@@ -4256,23 +4300,23 @@ export default function AssetManagerApp() {
   function holdingBrokerTabs(k: string) {
     const selected = detailTabs[k] || "holdings";
     return (
-      <div className="mb-4 flex gap-2 overflow-auto rounded-2xl border border-[#e3dccc] bg-white p-1">
+      <div className="mb-4 flex gap-2 overflow-auto rounded-2xl border border-[#e3dccc] bg-[#fffdf8] p-1">
         <button
           onClick={() => setDetailTabs((p) => ({ ...p, [k]: "holdings" }))}
-          className={`shrink-0 rounded-xl px-3 py-2 text-sm font-black ${selected === "holdings" ? "bg-sage text-white" : "hover:bg-[#eef5ee]"}`}
+          className={`shrink-0 rounded-xl px-3 py-2 text-sm font-semibold ${selected === "holdings" ? "bg-sage text-white" : "hover:bg-[#eef5ee]"}`}
         >
           Holdings
         </button>
         <button
           onClick={() => setDetailTabs((p) => ({ ...p, [k]: "brokers" }))}
-          className={`shrink-0 rounded-xl px-3 py-2 text-sm font-black ${selected === "brokers" ? "bg-sage text-white" : "hover:bg-[#eef5ee]"}`}
+          className={`shrink-0 rounded-xl px-3 py-2 text-sm font-semibold ${selected === "brokers" ? "bg-sage text-white" : "hover:bg-[#eef5ee]"}`}
         >
           Broker Details
         </button>
         {k === "stocks" && (
           <button
             onClick={() => setDetailTabs((p) => ({ ...p, [k]: "watchlist" }))}
-            className={`shrink-0 rounded-xl px-3 py-2 text-sm font-black ${selected === "watchlist" ? "bg-sage text-white" : "hover:bg-[#eef5ee]"}`}
+            className={`shrink-0 rounded-xl px-3 py-2 text-sm font-semibold ${selected === "watchlist" ? "bg-sage text-white" : "hover:bg-[#eef5ee]"}`}
           >
             Watchlist
           </button>
@@ -4429,7 +4473,7 @@ export default function AssetManagerApp() {
       <section className="card overflow-hidden p-0">
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#e3dccc] bg-[#fffdf8] px-5 py-4">
           <div>
-            <h3 className="text-xl font-black">Overall Dashboard</h3>
+            <h3 className="text-xl font-semibold tracking-tight">Overall Dashboard</h3>
             <p className="mt-1 text-xs font-semibold text-gray-600">
               Assets {fmt(assetCurrent)} | Liabilities {fmt(liabilityCurrent)}
             </p>
@@ -4454,19 +4498,19 @@ export default function AssetManagerApp() {
           <table className="w-full min-w-[920px] border-collapse text-sm">
             <thead className="bg-[#efe9e1] text-left">
               <tr>
-                <th className="px-4 py-3 text-xs font-black uppercase tracking-widest text-[#40584c]">
+                <th className="px-4 py-3 text-xs font-semibold uppercase tracking-widest text-[#40584c]">
                   Particulars
                 </th>
-                <th className="px-4 py-3 text-right text-xs font-black uppercase tracking-widest text-[#40584c]">
+                <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-widest text-[#40584c]">
                   Investments
                 </th>
-                <th className="px-4 py-3 text-right text-xs font-black uppercase tracking-widest text-[#40584c]">
+                <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-widest text-[#40584c]">
                   Todays Gain
                 </th>
-                <th className="px-4 py-3 text-right text-xs font-black uppercase tracking-widest text-[#40584c]">
+                <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-widest text-[#40584c]">
                   Overall Gain
                 </th>
-                <th className="px-4 py-3 text-right text-xs font-black uppercase tracking-widest text-[#40584c]">
+                <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-widest text-[#40584c]">
                   Current Value
                 </th>
               </tr>
@@ -4490,7 +4534,7 @@ export default function AssetManagerApp() {
                     <td className="px-4 py-4">
                       <div className="flex flex-wrap items-center gap-2">
                         <button
-                          className={`flex h-7 w-7 items-center justify-center rounded-lg text-[10px] font-black ${row.liability ? "bg-red-100 text-red-700" : "bg-emerald-100 text-emerald-800"}`}
+                          className={`flex h-7 w-7 items-center justify-center rounded-lg text-[10px] font-semibold ${row.liability ? "bg-red-100 text-red-700" : "bg-emerald-100 text-emerald-800"}`}
                           onClick={(e) => {
                             e.stopPropagation();
                             openModuleAll(row.openKey);
@@ -4499,7 +4543,7 @@ export default function AssetManagerApp() {
                           {row.def.emoji || row.def.title.slice(0, 2)}
                         </button>
                         <button
-                          className="font-black text-[#004080] hover:underline"
+                          className="font-semibold text-[#004080] hover:underline"
                           onClick={(e) => {
                             e.stopPropagation();
                             openModuleAll(row.openKey);
@@ -4511,7 +4555,7 @@ export default function AssetManagerApp() {
                           {row.rs.length} rows
                         </span>
                         <button
-                          className="text-xs font-black text-blue-700 hover:underline"
+                          className="text-xs font-semibold text-blue-700 hover:underline"
                           onClick={(e) => {
                             e.stopPropagation();
                             openModuleAll(row.openKey);
@@ -4521,7 +4565,7 @@ export default function AssetManagerApp() {
                         </button>
                         {!row.liability && !row.synthetic && (
                           <button
-                            className="text-xs font-black text-blue-700 hover:underline"
+                            className="text-xs font-semibold text-blue-700 hover:underline"
                             onClick={(e) => {
                               e.stopPropagation();
                               setEditing({ moduleKey: row.openKey });
@@ -4532,7 +4576,7 @@ export default function AssetManagerApp() {
                         )}
                         {row.rs.length > 0 && !row.synthetic && (
                           <button
-                            className="text-xs font-black text-blue-700 hover:underline"
+                            className="text-xs font-semibold text-blue-700 hover:underline"
                             onClick={(e) => {
                               e.stopPropagation();
                               openModuleAll(row.openKey);
@@ -4620,7 +4664,7 @@ export default function AssetManagerApp() {
                   </tr>
                 );
               })}
-              <tr className="border-t border-[#78b495] bg-[#f7fbf5] font-black">
+              <tr className="border-t border-[#78b495] bg-[#f7fbf5] font-semibold">
                 <td className="px-4 py-3 text-[#004080]">My Networth</td>
                 <td className="px-4 py-3 text-right tabular-nums">
                   {fmt(totals.invested)}
@@ -4707,9 +4751,9 @@ export default function AssetManagerApp() {
         })
         .filter((x) => x.rs.length);
     return (
-      <section className="card p-5">
+      <section className="rounded-[26px] border border-[#ded6c4] bg-white/90 p-5 shadow-[0_14px_34px_rgba(15,23,42,0.05)]">
         <div className="mb-4">
-          <h3 className="text-xl font-black">Data Freshness</h3>
+          <h3 className="text-xl font-semibold tracking-tight">Data Freshness</h3>
           <p className="mt-1 text-sm text-gray-600">
             Last uploaded or edited date by asset class.
           </p>
@@ -4723,7 +4767,7 @@ export default function AssetManagerApp() {
                 className="flex w-full items-center justify-between gap-3 rounded-2xl border border-[#e3dccc] bg-white px-3 py-2 text-left transition hover:border-[#78b495]"
               >
                 <div>
-                  <div className="font-black text-[#004080]">
+                  <div className="font-semibold text-[#004080]">
                     {MODULES[x.k]?.title}
                   </div>
                   <div className="text-xs font-semibold text-gray-500">
@@ -4734,7 +4778,7 @@ export default function AssetManagerApp() {
                   </div>
                 </div>
                 <span
-                  className={`rounded-full px-3 py-1 text-xs font-black ${x.status === "Fresh" ? "bg-emerald-50 text-emerald-700" : x.status === "Review" ? "bg-amber-50 text-amber-700" : "bg-red-50 text-red-700"}`}
+                  className={`rounded-full px-3 py-1 text-xs font-semibold ${x.status === "Fresh" ? "bg-emerald-50 text-emerald-700" : x.status === "Review" ? "bg-amber-50 text-amber-700" : "bg-red-50 text-red-700"}`}
                 >
                   {x.status === "Fresh" ? "Fresh" : `${x.days} days`}
                 </span>
@@ -4791,10 +4835,10 @@ export default function AssetManagerApp() {
       ),
       totalMove = (last?.net || 0) - (first?.net || 0);
     return (
-      <section className="card p-5">
+      <section className="rounded-[26px] border border-[#ded6c4] bg-white/90 p-5 shadow-[0_14px_34px_rgba(15,23,42,0.05)]">
         <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
           <div>
-            <h3 className="text-xl font-black">Net Worth History</h3>
+            <h3 className="text-xl font-semibold tracking-tight">Net Worth History</h3>
             <p className="mt-1 text-sm text-gray-600">
               Automatic daily snapshots, starting now.
             </p>
@@ -4904,9 +4948,9 @@ export default function AssetManagerApp() {
         "#c2410c",
       ];
     return (
-      <section className="card p-5">
+      <section className="rounded-[26px] border border-[#ded6c4] bg-white/90 p-5 shadow-[0_14px_34px_rgba(15,23,42,0.05)]">
         <div className="mb-4">
-          <h3 className="text-xl font-black">Asset Allocation</h3>
+          <h3 className="text-xl font-semibold tracking-tight">Asset Allocation</h3>
           <p className="mt-1 text-sm text-gray-600">
             Assets and liabilities by current value.
           </p>
@@ -4937,16 +4981,16 @@ export default function AssetManagerApp() {
                       className="h-3 w-3 rounded-full"
                       style={{ backgroundColor: colors[i % colors.length] }}
                     />
-                    <span className="font-black">{x.title}</span>
+                    <span className="font-semibold">{x.title}</span>
                     {x.liability && (
-                      <span className="rounded-full bg-red-50 px-2 py-0.5 text-[10px] font-black text-red-700">
+                      <span className="rounded-full bg-red-50 px-2 py-0.5 text-[10px] font-semibold text-red-700">
                         Liability
                       </span>
                     )}
                   </div>
                   <div className="text-right">
                     <div
-                      className={`font-black ${x.liability ? "text-red-700" : "text-[#17382b]"}`}
+                      className={`font-semibold ${x.liability ? "text-red-700" : "text-[#17382b]"}`}
                     >
                       {fmt(x.liability ? -x.value : x.value)}
                     </div>
@@ -5001,9 +5045,9 @@ export default function AssetManagerApp() {
           : "No major missing-data issues detected.",
       ];
     return (
-      <section className="card p-5">
+      <section className="rounded-[26px] border border-[#ded6c4] bg-white/90 p-5 shadow-[0_14px_34px_rgba(15,23,42,0.05)]">
         <div className="mb-4">
-          <h3 className="text-xl font-black">Risk & Performers</h3>
+          <h3 className="text-xl font-semibold tracking-tight">Risk & Performers</h3>
           <p className="mt-1 text-sm text-gray-600">
             Concentration, debt and best / worst movers.
           </p>
@@ -5118,8 +5162,8 @@ export default function AssetManagerApp() {
       (a, b) => a.broker.localeCompare(b.broker) || b.latest - a.latest,
     );
     return (
-      <section className="card p-5">
-        <h3 className="mb-3 text-xl font-black">{title}</h3>
+      <section className="rounded-[26px] border border-[#ded6c4] bg-white/90 p-5 shadow-[0_14px_34px_rgba(15,23,42,0.05)]">
+        <h3 className="mb-3 text-xl font-semibold">{title}</h3>
         {rows.length ? (
           <div className="overflow-auto rounded-2xl border border-[#e3dccc] bg-white">
             <table className="w-full min-w-[900px] border-collapse text-sm">
@@ -5159,10 +5203,10 @@ export default function AssetManagerApp() {
                         })
                       }
                     >
-                      <td className="p-3 font-black">{row.broker}</td>
+                      <td className="p-3 font-semibold">{row.broker}</td>
                       <td>
                         <button
-                          className="font-black text-[#004080]"
+                          className="font-semibold text-[#004080]"
                           onClick={(e) => {
                             e.stopPropagation();
                             setDetail({
@@ -5295,8 +5339,8 @@ export default function AssetManagerApp() {
           return num(b.c.latest) - num(a.c.latest);
         });
     return (
-      <section className="card p-5">
-        <h3 className="mb-3 text-xl font-black">{title}</h3>
+      <section className="rounded-[26px] border border-[#ded6c4] bg-white/90 p-5 shadow-[0_14px_34px_rgba(15,23,42,0.05)]">
+        <h3 className="mb-3 text-xl font-semibold">{title}</h3>
         {rows.length ? (
           <div className="overflow-auto rounded-2xl border border-[#e3dccc] bg-white">
             <table className="w-full min-w-[1720px] border-collapse text-sm">
@@ -5359,10 +5403,10 @@ export default function AssetManagerApp() {
                         })
                       }
                     >
-                      <td className="p-3 font-black">{row.broker}</td>
+                      <td className="p-3 font-semibold">{row.broker}</td>
                       <td className="p-3">
                         <a
-                          className="font-black text-[#004080]"
+                          className="font-semibold text-[#004080]"
                           href={moneycontrolHref(computed)}
                           target="_blank"
                           rel="noopener noreferrer"
@@ -5379,7 +5423,7 @@ export default function AssetManagerApp() {
                       <td className="p-3 text-right font-bold tabular-nums">
                         {row.quantity}
                       </td>
-                      <td className="p-3 text-right font-black tabular-nums">
+                      <td className="p-3 text-right font-semibold tabular-nums">
                         {fmtPrice(row.c.live_price)}
                       </td>
                       <td className="p-3 text-right tabular-nums">
@@ -5389,7 +5433,7 @@ export default function AssetManagerApp() {
                         {num(row.c.day_high) || num(row.c.day_low) ? (
                           <div className="inline-flex flex-col items-end gap-1">
                             {stockPricePill(row.c.day_high, "high")}
-                            <div className="flex items-center gap-1 text-[11px] font-black uppercase text-gray-500">
+                            <div className="flex items-center gap-1 text-[11px] font-semibold uppercase text-gray-500">
                               <span>Low</span>
                               {stockPricePill(row.c.day_low, "low")}
                             </div>
@@ -5403,7 +5447,7 @@ export default function AssetManagerApp() {
                         num(row.c.fifty_two_week_low) ? (
                           <div className="inline-flex flex-col items-end gap-1">
                             {stockPricePill(row.c.fifty_two_week_high, "rangeHigh")}
-                            <div className="flex items-center gap-1 text-[11px] font-black uppercase text-gray-500">
+                            <div className="flex items-center gap-1 text-[11px] font-semibold uppercase text-gray-500">
                               <span>Low</span>
                               {stockPricePill(row.c.fifty_two_week_low, "rangeLow")}
                             </div>
@@ -5415,7 +5459,7 @@ export default function AssetManagerApp() {
                       <td className="p-3 text-right text-xs tabular-nums">
                         {row.bestBid && row.bestAsk ? (
                           <>
-                            <div className="font-black text-gray-700">
+                            <div className="font-semibold text-gray-700">
                               {row.bestBid} / {row.bestAsk}
                             </div>
                             <div className="text-gray-500">
@@ -5549,10 +5593,10 @@ export default function AssetManagerApp() {
       { invested: 0, latest: 0, day: 0, overall: 0 },
     );
     return (
-      <section className="card p-5">
+      <section className="rounded-[26px] border border-[#ded6c4] bg-white/90 p-5 shadow-[0_14px_34px_rgba(15,23,42,0.05)]">
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h3 className="text-xl font-black">Stocks Watchlist</h3>
+            <h3 className="text-xl font-semibold tracking-tight">Stocks Watchlist</h3>
             <p className="text-sm text-gray-600">
               Saved stock ideas with date added, added price, current price,
               movement and paper gain tracking.
@@ -5686,7 +5730,7 @@ export default function AssetManagerApp() {
                     >
                       <td className="p-3">
                         <a
-                          className="font-black text-[#004080] underline decoration-[#004080]/40"
+                          className="font-semibold text-[#004080] underline decoration-[#004080]/40"
                           href={moneycontrolHref(computed)}
                           target="_blank"
                           rel="noopener noreferrer"
@@ -5699,7 +5743,7 @@ export default function AssetManagerApp() {
                         <div className="mt-1 text-sm text-black">
                           {x.sector}
                         </div>
-                        <span className="mt-1 inline-flex rounded border border-[#9bb4d8] px-1 text-[10px] font-bold text-[#17382b]">
+                        <span className="mt-1 inline-flex rounded border border-[#9bb4d8] px-1 text-[10px] font-medium text-[#17382b]">
                           {x.exchange}
                         </span>
                       </td>
@@ -5816,8 +5860,8 @@ export default function AssetManagerApp() {
             num(b.c.latest) - num(a.c.latest),
         );
     return (
-      <section className="card p-5">
-        <h3 className="mb-3 text-xl font-black">{title}</h3>
+      <section className="rounded-[26px] border border-[#ded6c4] bg-white/90 p-5 shadow-[0_14px_34px_rgba(15,23,42,0.05)]">
+        <h3 className="mb-3 text-xl font-semibold">{title}</h3>
         {rows.length ? (
           <div className="overflow-auto rounded-2xl border border-[#e3dccc] bg-white">
             <table className="w-full min-w-[860px] border-collapse text-sm">
@@ -5854,10 +5898,10 @@ export default function AssetManagerApp() {
                   className={`cursor-pointer border-t border-[#eee6d9] transition ${marketRowClass("bullion", computed)}`}
                   onClick={() => openMoneycontrolCommodity(computed)}
                 >
-                      <td className="p-3 font-black">{row.broker}</td>
+                      <td className="p-3 font-semibold">{row.broker}</td>
                       <td>
                         <button
-                          className="font-black text-[#004080]"
+                          className="font-semibold text-[#004080]"
                           onClick={(e) => {
                             e.stopPropagation();
                             openMoneycontrolCommodity(computed);
@@ -5984,8 +6028,8 @@ export default function AssetManagerApp() {
         {portfolioSummaryTable()}
         {dashboardFeaturePanels()}
         <div className="grid grid-cols-2 gap-5 max-xl:grid-cols-1">
-          <section className="card p-5">
-            <h3 className="mb-3 text-xl font-black">Current Value Composition</h3>
+          <section className="rounded-[26px] border border-[#ded6c4] bg-white/90 p-5 shadow-[0_14px_34px_rgba(15,23,42,0.05)]">
+            <h3 className="mb-3 text-xl font-semibold">Current Value Composition</h3>
             {simpleTable(
               ["Module", "Current Value", "Invested", "Gain", "Weight"],
               assetRows.map((r) => [
@@ -5997,8 +6041,8 @@ export default function AssetManagerApp() {
               ]),
             )}
           </section>
-          <section className="card p-5">
-            <h3 className="mb-3 text-xl font-black">Growth Leaders</h3>
+          <section className="rounded-[26px] border border-[#ded6c4] bg-white/90 p-5 shadow-[0_14px_34px_rgba(15,23,42,0.05)]">
+            <h3 className="mb-3 text-xl font-semibold">Growth Leaders</h3>
             {simpleTable(
               ["Module", "Gain", "Gain %"],
               [...assetRows]
@@ -6025,8 +6069,8 @@ export default function AssetManagerApp() {
       yearEnd = rows.reduce((s, r) => s + num(r.year_end_maturity_value), 0),
       maturity = rows.reduce((s, r) => s + num(r.maturity_value), 0);
     return (
-      <section className="card p-5">
-        <h3 className="mb-3 text-xl font-black">Fixed Income Dashboard</h3>
+      <section className="rounded-[26px] border border-[#ded6c4] bg-white/90 p-5 shadow-[0_14px_34px_rgba(15,23,42,0.05)]">
+        <h3 className="mb-3 text-xl font-semibold">Fixed Income Dashboard</h3>
         <div className="grid grid-cols-4 gap-3 max-lg:grid-cols-1">
           {kpi(
             "Current Worth",
@@ -6065,8 +6109,8 @@ export default function AssetManagerApp() {
       emiFuture = propertyLoans.reduce((s, r) => s + num(r.emiFuture), 0),
       emisLeft = propertyLoans.reduce((s, r) => s + num(r.emis_left), 0);
     return (
-      <section className="card p-5">
-        <h3 className="mb-3 text-xl font-black">Property Loan Future</h3>
+      <section className="rounded-[26px] border border-[#ded6c4] bg-white/90 p-5 shadow-[0_14px_34px_rgba(15,23,42,0.05)]">
+        <h3 className="mb-3 text-xl font-semibold">Property Loan Future</h3>
         <div className="grid grid-cols-3 gap-3 max-lg:grid-cols-1">
           {kpi(
             "Loan Balance",
@@ -6113,15 +6157,15 @@ export default function AssetManagerApp() {
         : "0.00";
     return (
       <section className="card-gradient p-6">
-        <h3 className="mb-5 text-xl font-black flex items-center gap-2">
+        <h3 className="mb-5 text-xl font-semibold flex items-center gap-2">
           Liabilities Overview
         </h3>
         <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
           <div className="rounded-2xl border border-red-200 bg-gradient-to-br from-red-50 to-red-100/50 p-4">
-            <div className="text-xs font-black uppercase text-red-700">
+            <div className="text-xs font-semibold uppercase text-red-700">
               Bank Loans
             </div>
-            <div className="mt-2 text-2xl font-black text-red-700">
+            <div className="mt-2 text-2xl font-semibold text-red-700">
               {fmt(loanTotal)}
             </div>
             <div className="text-xs text-red-600 mt-2">
@@ -6129,10 +6173,10 @@ export default function AssetManagerApp() {
             </div>
           </div>
           <div className="rounded-2xl border border-orange-200 bg-gradient-to-br from-orange-50 to-orange-100/50 p-4">
-            <div className="text-xs font-black uppercase text-orange-700">
+            <div className="text-xs font-semibold uppercase text-orange-700">
               Borrowings
             </div>
-            <div className="mt-2 text-2xl font-black text-orange-700">
+            <div className="mt-2 text-2xl font-semibold text-orange-700">
               {fmt(borrowingTotal)}
             </div>
             <div className="text-xs text-orange-600 mt-2">
@@ -6140,10 +6184,10 @@ export default function AssetManagerApp() {
             </div>
           </div>
           <div className="rounded-2xl border border-amber-200 bg-gradient-to-br from-amber-50 to-amber-100/50 p-4">
-            <div className="text-xs font-black uppercase text-amber-700">
+            <div className="text-xs font-semibold uppercase text-amber-700">
               Property-Linked Loans
             </div>
-            <div className="mt-2 text-2xl font-black text-amber-700">
+            <div className="mt-2 text-2xl font-semibold text-amber-700">
               {fmt(propertyLoanTotal)}
             </div>
             <div className="text-xs text-amber-600 mt-2">
@@ -6151,10 +6195,10 @@ export default function AssetManagerApp() {
             </div>
           </div>
           <div className="rounded-2xl border border-red-200 bg-gradient-to-br from-red-100 to-red-200/50 p-4">
-            <div className="text-xs font-black uppercase text-red-800">
+            <div className="text-xs font-semibold uppercase text-red-800">
               Total Liabilities
             </div>
-            <div className="mt-2 text-2xl font-black text-red-800">
+            <div className="mt-2 text-2xl font-semibold text-red-800">
               {fmt(totalLiability)}
             </div>
             <div className="text-xs text-red-700 mt-2">
@@ -6278,15 +6322,15 @@ export default function AssetManagerApp() {
         </div>
         {detailedMetrics()}
         <div className="grid grid-cols-2 gap-5 max-xl:grid-cols-1">
-          <section className="card p-5">
-            <h3 className="mb-3 text-xl font-black">Investment Spread</h3>
+          <section className="rounded-[26px] border border-[#ded6c4] bg-white/90 p-5 shadow-[0_14px_34px_rgba(15,23,42,0.05)]">
+            <h3 className="mb-3 text-xl font-semibold">Investment Spread</h3>
             {simpleTable(
               ["Module", "Current Value", "Invested", "Gain", "Weight"],
               assets,
             )}
           </section>
-          <section className="card p-5">
-            <h3 className="mb-3 text-xl font-black">AI Attributes</h3>
+          <section className="rounded-[26px] border border-[#ded6c4] bg-white/90 p-5 shadow-[0_14px_34px_rgba(15,23,42,0.05)]">
+            <h3 className="mb-3 text-xl font-semibold">AI Attributes</h3>
             <div className="grid grid-cols-2 gap-3 max-md:grid-cols-1">
               {kpi(
                 "Spread",
@@ -6323,8 +6367,8 @@ export default function AssetManagerApp() {
           </section>
         </div>
         <div className="grid grid-cols-2 gap-5 max-xl:grid-cols-1">
-          <section className="card p-5">
-            <h3 className="mb-3 text-xl font-black">Growth Leaders</h3>
+          <section className="rounded-[26px] border border-[#ded6c4] bg-white/90 p-5 shadow-[0_14px_34px_rgba(15,23,42,0.05)]">
+            <h3 className="mb-3 text-xl font-semibold">Growth Leaders</h3>
             {simpleTable(
               ["Module", "Gain", "Gain %"],
               gainers.map((r) => [
@@ -6334,8 +6378,8 @@ export default function AssetManagerApp() {
               ]),
             )}
           </section>
-          <section className="card p-5">
-            <h3 className="mb-3 text-xl font-black">Account Spread</h3>
+          <section className="rounded-[26px] border border-[#ded6c4] bg-white/90 p-5 shadow-[0_14px_34px_rgba(15,23,42,0.05)]">
+            <h3 className="mb-3 text-xl font-semibold">Account Spread</h3>
             {simpleTable(
               ["Account", "Current Value", "Invested", "Gain", "Rows"],
               accountsSummary,
@@ -6350,10 +6394,10 @@ export default function AssetManagerApp() {
       JSON.stringify(a).toLowerCase().includes(query.toLowerCase()),
     );
     return (
-      <section className="card p-5">
+      <section className="rounded-[26px] border border-[#ded6c4] bg-white/90 p-5 shadow-[0_14px_34px_rgba(15,23,42,0.05)]">
         <div className="mb-4 flex items-center justify-between">
           <div>
-            <h3 className="text-xl font-black">Accounts</h3>
+            <h3 className="text-xl font-semibold tracking-tight">Accounts</h3>
             <p className="text-sm text-gray-600">
               No primary account. Deleting clears the name from all linked
               records.
@@ -6442,7 +6486,7 @@ export default function AssetManagerApp() {
               return (
                 <tr key={d.id} className="border-t border-[#eee6d9]">
                   <td className="p-3">
-                    <div className="flex items-center gap-2 font-black">
+                    <div className="flex items-center gap-2 font-semibold">
                       <FileText size={16} />
                       {d.file_name}
                     </div>
@@ -6534,10 +6578,10 @@ export default function AssetManagerApp() {
             "Asset sections",
           )}
         </div>
-        <section className="card p-5">
+        <section className="rounded-[26px] border border-[#ded6c4] bg-white/90 p-5 shadow-[0_14px_34px_rgba(15,23,42,0.05)]">
           <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
             <div>
-              <h3 className="text-xl font-black">Upload Documents</h3>
+              <h3 className="text-xl font-semibold tracking-tight">Upload Documents</h3>
               <p className="text-sm text-gray-600">
                 Upload files to Google Drive and link them to an existing asset,
                 or keep them as repository documents.
@@ -6628,10 +6672,10 @@ export default function AssetManagerApp() {
             </div>
           </div>
         </section>
-        <section className="card p-5">
+        <section className="rounded-[26px] border border-[#ded6c4] bg-white/90 p-5 shadow-[0_14px_34px_rgba(15,23,42,0.05)]">
           <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
             <div>
-              <h3 className="text-xl font-black">Document Repository</h3>
+              <h3 className="text-xl font-semibold tracking-tight">Document Repository</h3>
               <p className="text-sm text-gray-600">
                 New asset references are stored in Google Drive and linked back
                 to each asset here.
@@ -6672,10 +6716,10 @@ export default function AssetManagerApp() {
             "All user records",
           )}
         </div>
-        <section className="card p-5">
+        <section className="rounded-[26px] border border-[#ded6c4] bg-white/90 p-5 shadow-[0_14px_34px_rgba(15,23,42,0.05)]">
           <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
             <div>
-              <h3 className="text-xl font-black">Admin Console</h3>
+              <h3 className="text-xl font-semibold tracking-tight">Admin Console</h3>
               <p className="text-sm text-gray-600">
                 Manage user IDs, roles, password resets, disabled accounts and
                 deletion.
@@ -6691,7 +6735,7 @@ export default function AssetManagerApp() {
           </div>
           {resetLink && (
             <div className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
-              <div className="mb-1 font-black">Password reset link</div>
+              <div className="mb-1 font-semibold">Password reset link</div>
               <input
                 className="field-input font-mono text-xs"
                 readOnly
@@ -6726,7 +6770,7 @@ export default function AssetManagerApp() {
                       className="border-t border-[#eee6d9] align-top"
                     >
                       <td className="p-3">
-                        <div className="font-black">
+                        <div className="font-semibold">
                           {u.full_name || "Unnamed"}
                         </div>
                         <div className="text-xs text-gray-500">{u.email}</div>
@@ -7114,7 +7158,7 @@ export default function AssetManagerApp() {
               ? "text-[#17382b]"
               : "";
     return (
-      <span className={`inline-flex items-center justify-end gap-1 whitespace-nowrap font-bold tabular-nums ${cls}`}>
+      <span className={`inline-flex items-center justify-end gap-1 whitespace-nowrap font-semibold tabular-nums ${cls}`}>
         {Arrow && <Arrow size={14} strokeWidth={3} />}
         {formatted}
       </span>
@@ -7166,7 +7210,7 @@ export default function AssetManagerApp() {
       Arrow = positive ? ArrowUp : negative ? ArrowDown : null;
     return (
       <span
-        className={`inline-flex w-full max-w-[6.5rem] items-center justify-end gap-1 rounded-full border px-2 py-0.5 text-xs font-black tabular-nums shadow-sm ${cls}`}
+        className={`inline-flex w-full max-w-[6.5rem] items-center justify-end gap-1 rounded-full border px-2 py-0.5 text-xs font-semibold tabular-nums shadow-sm ${cls}`}
       >
         {Arrow && <Arrow size={14} strokeWidth={3} />}
         {fmtSignedPrice(move)}
@@ -7186,7 +7230,7 @@ export default function AssetManagerApp() {
             : "border-slate-200 bg-slate-50 text-slate-800";
     return (
       <span
-        className={`inline-flex w-full max-w-[6rem] justify-end rounded-lg border px-2 py-0.5 text-xs font-black tabular-nums ${cls}`}
+        className={`inline-flex w-full max-w-[6rem] justify-end rounded-lg border px-2 py-0.5 text-xs font-semibold tabular-nums ${cls}`}
       >
         {fmtPrice(v)}
       </span>
@@ -7223,9 +7267,9 @@ export default function AssetManagerApp() {
           onClick={(e) => e.stopPropagation()}
           title={fullName}
         >
-          <span className="block truncate font-black">{shortName}</span>
+          <span className="block truncate font-semibold">{shortName}</span>
           {shortName !== fullName && (
-            <span className="block truncate text-[10px] font-bold text-[#6d7c73] no-underline">
+            <span className="block truncate text-[10px] font-medium text-[#6d7c73] no-underline">
               {fullName}
             </span>
           )}
@@ -7242,7 +7286,7 @@ export default function AssetManagerApp() {
               : "bg-gray-100 text-gray-700 border-gray-200";
       return (
         <span
-          className={`inline-flex w-full items-center justify-end gap-1 whitespace-nowrap rounded-full border px-2 py-0.5 text-xs font-black tabular-nums ${cls}`}
+          className={`inline-flex w-full items-center justify-end gap-1 whitespace-nowrap rounded-full border px-2 py-0.5 text-xs font-semibold tabular-nums ${cls}`}
         >
           {move > 0 ? (
             <ArrowUp size={14} strokeWidth={3} />
@@ -7264,7 +7308,7 @@ export default function AssetManagerApp() {
               : "bg-gray-100 text-gray-700 border-gray-200";
       return (
         <span
-          className={`bullion-price-pill inline-grid w-full justify-items-end rounded-xl border px-2 py-1 font-black tabular-nums ${cls}`}
+          className={`bullion-price-pill inline-grid w-full justify-items-end rounded-xl border px-3 py-1.5 text-sm font-semibold tabular-nums ${cls}`}
         >
           <span className="inline-flex items-center gap-1 whitespace-nowrap">
             {positive ? (
@@ -7275,7 +7319,7 @@ export default function AssetManagerApp() {
             {fmtPrice(c[col])}
           </span>
           {!!move && (
-            <span className="whitespace-nowrap text-[11px]">
+            <span className="whitespace-nowrap text-[11px] font-medium opacity-80">
               {positive ? "+" : ""}
               {fmt(move)}
             </span>
@@ -7312,9 +7356,9 @@ export default function AssetManagerApp() {
         shortName = compactName(fullName);
       return (
         <div className="leading-tight" title={fullName}>
-          <div className="truncate font-black text-[#17382b]">{shortName}</div>
+          <div className="truncate font-semibold text-[#17382b]">{shortName}</div>
           {shortName !== fullName && (
-            <div className="truncate text-[10px] font-bold text-gray-500">
+            <div className="truncate text-[10px] font-medium text-gray-500">
               {fullName}
             </div>
           )}
@@ -7430,7 +7474,7 @@ export default function AssetManagerApp() {
             className={`cursor-pointer border-t border-[#eee6d9] transition hover:brightness-[0.98] ${marketRowClass(k, c)}`}
             key={`${groupKey}-lot-${lot.id}`}
           >
-            <td className="p-3 text-xs font-black text-gray-500">
+            <td className="p-3 text-xs font-medium text-gray-500">
               {lot.data?.account_name || `Lot ${i + 1}`}
             </td>
             {visibleCols.slice(1).map((col) => (
@@ -7461,16 +7505,16 @@ export default function AssetManagerApp() {
     if (k === "stocks" && mode === "watchlist")
       return (
         <div className="space-y-5">
-          <section className="card p-5">
+          <section className="rounded-[26px] border border-[#ded6c4] bg-white/90 p-5 shadow-[0_14px_34px_rgba(15,23,42,0.05)]">
             <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
               <div>
-                <h3 className="text-xl font-black">{def.title}</h3>
+                <h3 className="text-xl font-semibold tracking-tight">{def.title}</h3>
                 <p className="text-sm text-gray-600">{def.desc}</p>
               </div>
               <div className="flex flex-wrap items-center gap-2">
                 <button
                   type="button"
-                  className="pill hover:border-[#78b495]"
+                  className="inline-flex items-center rounded-full border border-[#e1d8c8] bg-[#fffdf8] px-3 py-1.5 text-xs font-medium text-[#37534a] shadow-none"
                   onClick={() => setAutoRefresh((v) => !v)}
                 >
                   Auto refresh: {autoRefresh ? "On" : "Off"}
@@ -7499,16 +7543,16 @@ export default function AssetManagerApp() {
     if (k === "stocks" && mode === "brokers")
       return (
         <div className="space-y-5">
-          <section className="card p-5">
+          <section className="rounded-[26px] border border-[#ded6c4] bg-white/90 p-5 shadow-[0_14px_34px_rgba(15,23,42,0.05)]">
             <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
               <div>
-                <h3 className="text-xl font-black">{def.title}</h3>
+                <h3 className="text-xl font-semibold tracking-tight">{def.title}</h3>
                 <p className="text-sm text-gray-600">{def.desc}</p>
               </div>
               <div className="flex flex-wrap items-center gap-2">
                 <button
                   type="button"
-                  className="pill hover:border-[#78b495]"
+                  className="inline-flex items-center rounded-full border border-[#e1d8c8] bg-[#fffdf8] px-3 py-1.5 text-xs font-medium text-[#37534a] shadow-none"
                   onClick={() => setAutoRefresh((v) => !v)}
                 >
                   Auto refresh: {autoRefresh ? "On" : "Off"}
@@ -7534,7 +7578,7 @@ export default function AssetManagerApp() {
             </div>
             {holdingBrokerTabs(k)}
             {hasAccountTabs && tabs.length > 1 && (
-              <div className="mb-4 flex gap-2 overflow-auto rounded-2xl border border-[#e3dccc] bg-white p-1">
+              <div className="mb-4 flex gap-2 overflow-auto rounded-2xl border border-[#e3dccc] bg-[#fffdf8] p-1">
                 {tabs.map((t) => {
                   const count =
                     t === "All"
@@ -7549,7 +7593,7 @@ export default function AssetManagerApp() {
                       onClick={() =>
                         setAccountTabs((prev) => ({ ...prev, [k]: t }))
                       }
-                      className={`shrink-0 rounded-xl px-3 py-2 text-sm font-black ${selected === t ? "bg-sage text-white" : "text-[#17382b] hover:bg-[#eef5ee]"}`}
+                      className={`shrink-0 rounded-xl px-3 py-2 text-sm font-semibold ${selected === t ? "bg-sage text-white shadow-sm" : "text-[#17382b] hover:bg-[#eef5ee]"}`}
                     >
                       {t} <span className="opacity-70">({count})</span>
                     </button>
@@ -7595,17 +7639,17 @@ export default function AssetManagerApp() {
         </div>
       );
     return (
-      <section className="card p-5">
+      <section className="rounded-[26px] border border-[#ded6c4] bg-white/90 p-5 shadow-[0_14px_34px_rgba(15,23,42,0.05)]">
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h3 className="text-xl font-black">{def.title}</h3>
+            <h3 className="text-xl font-semibold tracking-tight">{def.title}</h3>
             <p className="text-sm text-gray-600">{def.desc}</p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             {(k === "stocks" || k === "bullion") && (
               <button
                 type="button"
-                className="pill hover:border-[#78b495]"
+                className="inline-flex items-center rounded-full border border-[#e1d8c8] bg-[#fffdf8] px-3 py-1.5 text-xs font-medium text-[#37534a] shadow-none"
                 onClick={() => setAutoRefresh((v) => !v)}
               >
                 Auto refresh: {autoRefresh ? "On" : "Off"}
@@ -7631,7 +7675,7 @@ export default function AssetManagerApp() {
         </div>
         {k === "stocks" && holdingBrokerTabs(k)}
         {hasAccountTabs && tabs.length > 1 && (
-          <div className="mb-4 flex gap-2 overflow-auto rounded-2xl border border-[#e3dccc] bg-white p-1">
+          <div className="mb-4 flex gap-2 overflow-auto rounded-2xl border border-[#e3dccc] bg-[#fffdf8] p-1">
             {tabs.map((t) => {
               const count =
                 t === "All"
@@ -7645,7 +7689,7 @@ export default function AssetManagerApp() {
                   onClick={() =>
                     setAccountTabs((prev) => ({ ...prev, [k]: t }))
                   }
-                  className={`shrink-0 rounded-xl px-3 py-2 text-sm font-black ${selected === t ? "bg-sage text-white" : "text-[#17382b] hover:bg-[#eef5ee]"}`}
+                  className={`shrink-0 rounded-xl px-3 py-2 text-sm font-semibold ${selected === t ? "bg-sage text-white shadow-sm" : "text-[#17382b] hover:bg-[#eef5ee]"}`}
                 >
                   {t} <span className="opacity-70">({count})</span>
                 </button>
@@ -7728,7 +7772,7 @@ export default function AssetManagerApp() {
         )}
         {k === "fixedIncome" && reviewRows.length > 0 && (
           <div className="mb-4 rounded-3xl border border-amber-200 bg-amber-50 p-4">
-            <div className="mb-3 flex items-center gap-2 text-sm font-black text-amber-900">
+            <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-amber-900">
               <Bell size={16} /> Quarterly value review due
             </div>
             <div className="grid gap-2">
@@ -7738,7 +7782,7 @@ export default function AssetManagerApp() {
                   className="flex flex-wrap items-center justify-between gap-2 rounded-2xl bg-white px-3 py-2 text-sm"
                 >
                   <span>
-                    <span className="font-black">
+                    <span className="font-semibold">
                       {fixedIncomeCategoryLabel(r.data?.category) ||
                         "Fixed income item"}
                     </span>
@@ -7768,7 +7812,7 @@ export default function AssetManagerApp() {
         )}
         {k === "fixedIncome" && maturityRows.length > 0 && (
           <div className="mb-4 rounded-3xl border border-red-200 bg-red-50 p-4">
-            <div className="mb-3 flex items-center gap-2 text-sm font-black text-red-900">
+            <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-red-900">
               <Bell size={16} /> Maturity due in next 3 months
             </div>
             <div className="grid gap-2">
@@ -7780,7 +7824,7 @@ export default function AssetManagerApp() {
                     className="flex flex-wrap items-center justify-between gap-2 rounded-2xl bg-white px-3 py-2 text-sm"
                   >
                     <span>
-                      <span className="font-black">
+                      <span className="font-semibold">
                         {fixedIncomeCategoryLabel(r.data?.category) ||
                           "Fixed income item"}
                       </span>
@@ -7811,7 +7855,7 @@ export default function AssetManagerApp() {
         )}
         {rows.length ? (
           <div
-            className={`overflow-auto rounded-3xl border border-[#e3dccc] bg-white investment-table ${k === "stocks" ? "stock-holdings-table" : ""} ${k === "bullion" ? "bullion-holdings-table" : ""} ${k === "fixedIncome" ? "fixed-income-table" : ""}`}
+            className={`overflow-auto rounded-[22px] border border-[#ded6c4] bg-white shadow-[0_10px_30px_rgba(15,23,42,0.04)] investment-table ${k === "stocks" ? "stock-holdings-table" : ""} ${k === "bullion" ? "bullion-holdings-table" : ""} ${k === "fixedIncome" ? "fixed-income-table" : ""}`}
           >
             <table
               className={`border-collapse text-sm ${
@@ -7963,8 +8007,8 @@ export default function AssetManagerApp() {
   function shareListView() {
     return (
       <section className="grid grid-cols-[1.2fr_.8fr] gap-4 max-xl:grid-cols-1">
-        <div className="card p-5">
-          <h3 className="text-xl font-black">Add Share List To Watchlist</h3>
+        <div className="rounded-[26px] border border-[#ded6c4] bg-white/90 p-5 shadow-[0_14px_34px_rgba(15,23,42,0.05)]">
+          <h3 className="text-xl font-semibold tracking-tight">Add Share List To Watchlist</h3>
           <p className="mt-1 text-sm text-gray-600">
             Paste share names or symbols, or upload a spreadsheet. Every row
             will be added to your watchlist with the available current price.
@@ -8041,8 +8085,8 @@ export default function AssetManagerApp() {
             )}
           </div>
         </div>
-        <div className="card p-5">
-          <h3 className="text-xl font-black">Paste Format</h3>
+        <div className="rounded-[26px] border border-[#ded6c4] bg-white/90 p-5 shadow-[0_14px_34px_rgba(15,23,42,0.05)]">
+          <h3 className="text-xl font-semibold tracking-tight">Paste Format</h3>
           <ol className="mt-3 list-decimal space-y-2 pl-5 text-sm text-gray-700">
             <li>Paste one NSE symbol or known company name on each line.</li>
             <li>Alternatively upload an Excel or CSV file with share columns.</li>
@@ -8103,8 +8147,8 @@ export default function AssetManagerApp() {
           )}
         </div>
         {aiAnalystPanel()}
-        <section className="card p-5">
-          <h3 className="text-xl font-black">Local Signal Notes</h3>
+        <section className="rounded-[26px] border border-[#ded6c4] bg-white/90 p-5 shadow-[0_14px_34px_rgba(15,23,42,0.05)]">
+          <h3 className="text-xl font-semibold tracking-tight">Local Signal Notes</h3>
           <ul className="mt-3 list-disc space-y-2 pl-5 text-sm text-gray-700">
             {s.notes.map((n) => (
               <li key={n}>{n}</li>
@@ -8116,8 +8160,8 @@ export default function AssetManagerApp() {
           </ul>
         </section>
         <div className="grid grid-cols-2 gap-5 max-xl:grid-cols-1">
-          <section className="card p-5">
-            <h3 className="mb-3 text-xl font-black">Allocation Risk</h3>
+          <section className="rounded-[26px] border border-[#ded6c4] bg-white/90 p-5 shadow-[0_14px_34px_rgba(15,23,42,0.05)]">
+            <h3 className="mb-3 text-xl font-semibold">Allocation Risk</h3>
             {simpleTable(
               ["Holding", "Section", "Weight", "Today"],
               assets
@@ -8132,8 +8176,8 @@ export default function AssetManagerApp() {
                 ]),
             )}
           </section>
-          <section className="card p-5">
-            <h3 className="mb-3 text-xl font-black">Growth Stock Radar</h3>
+          <section className="rounded-[26px] border border-[#ded6c4] bg-white/90 p-5 shadow-[0_14px_34px_rgba(15,23,42,0.05)]">
+            <h3 className="mb-3 text-xl font-semibold">Growth Stock Radar</h3>
             {simpleTable(
               ["Candidate", "Sector", "Score", "Why"],
               stocks
@@ -8175,10 +8219,10 @@ export default function AssetManagerApp() {
         .sort((a, b) => b.score - a.score);
     return (
       <div className="space-y-5">
-        <section className="card p-5">
+        <section className="rounded-[26px] border border-[#ded6c4] bg-white/90 p-5 shadow-[0_14px_34px_rgba(15,23,42,0.05)]">
           <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
             <div>
-              <h3 className="text-xl font-black">AI Watchlist</h3>
+              <h3 className="text-xl font-semibold tracking-tight">AI Watchlist</h3>
               <p className="text-sm text-gray-600">
                 Growth candidates are ranked by sector momentum, ownership gap,
                 exchange quality and volatility sensitivity.
@@ -8201,8 +8245,8 @@ export default function AssetManagerApp() {
             ]),
           )}
         </section>
-        <section className="card p-5">
-          <h3 className="mb-3 text-xl font-black">Saved Watchlist</h3>
+        <section className="rounded-[26px] border border-[#ded6c4] bg-white/90 p-5 shadow-[0_14px_34px_rgba(15,23,42,0.05)]">
+          <h3 className="mb-3 text-xl font-semibold">Saved Watchlist</h3>
           {rows.length ? (
             <div className="overflow-auto rounded-2xl border border-[#e3dccc] bg-white">
               <table className="w-full min-w-[980px] border-collapse text-sm">
@@ -8221,7 +8265,7 @@ export default function AssetManagerApp() {
                 <tbody>
                   {rows.map((x) => (
                     <tr key={x.r.id} className="border-t border-[#eee6d9]">
-                      <td className="p-3 font-black">
+                      <td className="p-3 font-semibold">
                         {x.r.data?.security_name}
                       </td>
                       <td>{x.r.data?.ticker_symbol}</td>
@@ -8274,8 +8318,8 @@ export default function AssetManagerApp() {
   function settings() {
     return (
       <div className="grid grid-cols-[1.1fr_.9fr] gap-4 max-xl:grid-cols-1">
-        <div className="card p-5">
-          <h3 className="text-xl font-black">Profile</h3>
+        <div className="rounded-[26px] border border-[#ded6c4] bg-white/90 p-5 shadow-[0_14px_34px_rgba(15,23,42,0.05)]">
+          <h3 className="text-xl font-semibold tracking-tight">Profile</h3>
           <form
             onSubmit={(e) => {
               e.preventDefault();
@@ -8333,8 +8377,8 @@ export default function AssetManagerApp() {
             blocked.
           </p>
         </div>
-        <div className="card p-5">
-          <h3 className="text-xl font-black">Backup</h3>
+        <div className="rounded-[26px] border border-[#ded6c4] bg-white/90 p-5 shadow-[0_14px_34px_rgba(15,23,42,0.05)]">
+          <h3 className="text-xl font-semibold tracking-tight">Backup</h3>
           <div className="mt-4 space-y-3">
             <button className="btn w-full" onClick={exportBackup}>
               Download JSON Backup
@@ -8393,7 +8437,7 @@ export default function AssetManagerApp() {
             </div>
           ))}
           <div className="col-span-2 max-md:col-span-1">
-            <div className="mb-2 flex items-center gap-2 text-sm font-black">
+            <div className="mb-2 flex items-center gap-2 text-sm font-semibold">
               <Paperclip size={16} /> Documents
             </div>
             {docRows(linkedDocs)}
@@ -8601,12 +8645,12 @@ export default function AssetManagerApp() {
                           }}
                         >
                           <span>
-                            <span className="font-black">{s.name}</span>
+                            <span className="font-semibold">{s.name}</span>
                             <span className="block text-xs text-gray-500">
                               {s.category}
                             </span>
                           </span>
-                          <span className="shrink-0 rounded-full bg-[#f5efe3] px-2 py-1 text-xs font-black">
+                          <span className="shrink-0 rounded-full bg-[#f5efe3] px-2 py-1 text-xs font-semibold">
                             {s.exchange}: {s.ticker}
                           </span>
                         </button>
