@@ -1,0 +1,7 @@
+{
+  "/api/market-rate/route": "app/api/market-rate/route.js",
+  "/api/google-drive/status/route": "app/api/google-drive/status/route.js",
+  "/manifest.webmanifest/route": "app/manifest.webmanifest/route.js",
+  "/api/quote/route": "app/api/quote/route.js",
+  "/page": "app/page.js"
+}
