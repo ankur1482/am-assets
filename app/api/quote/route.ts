@@ -1,9 +1,12 @@
 import { NextResponse } from "next/server";
+import { gunzipSync } from "zlib";
+import { getUpstoxAccessToken } from "@/lib/upstox";
 
+export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-type Provider = "twelvedata" | "alphavantage" | "polygon" | "yahoo";
+type Provider = "upstox" | "twelvedata" | "alphavantage" | "polygon" | "yahoo";
 type Quote = {
   symbol: string;
   price: number;
@@ -21,18 +24,38 @@ type Quote = {
 };
 
 const DEFAULT_PROVIDER_ORDER: Provider[] = [
+  "upstox",
   "twelvedata",
   "alphavantage",
   "polygon",
   "yahoo",
 ];
+const QUOTE_CACHE_TTL_MS = 15 * 1000;
+const QUOTE_STALE_TTL_MS = 2 * 60 * 1000;
+
+type QuoteCacheEntry = {
+  quote: Quote;
+  attempted: string[];
+  savedAt: number;
+};
+
+const quoteCache = new Map<string, QuoteCacheEntry>();
+let upstoxCooldownUntil = 0;
 
 function normalizedExchange(exchange = "NSE") {
   return exchange.trim().toUpperCase() || "NSE";
 }
 
+function quoteCacheKey(symbol: string, exchange: string) {
+  return `${normalizedExchange(exchange)}:${symbol.trim().toUpperCase()}`;
+}
+
 function isIndianExchange(exchange: string) {
   return ["NSE", "BSE"].includes(normalizedExchange(exchange));
+}
+
+function isIndexExchange(exchange: string) {
+  return normalizedExchange(exchange) === "INDEX";
 }
 
 function isUsExchange(exchange: string) {
@@ -101,6 +124,160 @@ function yahooSymbol(symbol: string, exchange = "NSE") {
   if (normalizedExchange(exchange) === "BSE") return `${ticker}.BO`;
   if (normalizedExchange(exchange) === "NSE") return `${ticker}.NS`;
   return ticker;
+}
+
+const UPSTOX_INSTRUMENT_URLS: Record<string,string> = {
+  NSE: "https://assets.upstox.com/market-quote/instruments/exchange/NSE.json.gz",
+  BSE: "https://assets.upstox.com/market-quote/instruments/exchange/BSE.json.gz",
+};
+
+type UpstoxInstrument = {
+  segment?: string;
+  exchange?: string;
+  isin?: string;
+  instrument_type?: string;
+  instrument_key?: string;
+  exchange_token?: string;
+  trading_symbol?: string;
+  name?: string;
+  short_name?: string;
+};
+
+type UpstoxInstrumentIndex = {
+  bySymbol: Map<string, UpstoxInstrument>;
+  byToken: Map<string, UpstoxInstrument>;
+  byName: Map<string, UpstoxInstrument>;
+};
+
+const upstoxInstrumentCache = new Map<string, Promise<UpstoxInstrumentIndex>>();
+
+function lookupKey(value: string) {
+  return String(value || "").toUpperCase().replace(/[^A-Z0-9]+/g, "");
+}
+
+async function upstoxInstruments(exchange: string) {
+  const market = normalizedExchange(exchange);
+  const url = UPSTOX_INSTRUMENT_URLS[market];
+  if (!url) throw new Error("unsupported market");
+  if (!upstoxInstrumentCache.has(market)) {
+    upstoxInstrumentCache.set(
+      market,
+      fetch(url, { cache: "no-store" })
+        .then(async (res) => {
+          if (!res.ok) throw new Error("Upstox instruments unavailable");
+          const zipped = Buffer.from(await res.arrayBuffer());
+          const instruments = JSON.parse(gunzipSync(zipped).toString("utf8")) as UpstoxInstrument[];
+          const bySymbol = new Map<string, UpstoxInstrument>();
+          const byToken = new Map<string, UpstoxInstrument>();
+          const byName = new Map<string, UpstoxInstrument>();
+          for (const item of instruments) {
+            const isEquity =
+              market === "NSE"
+                ? item?.instrument_type === "EQ"
+                : item?.instrument_type !== "F";
+            if (
+              item?.segment !== `${market}_EQ` ||
+              !isEquity ||
+              !item?.instrument_key
+            ) continue;
+            const symbol = lookupKey(item.trading_symbol || "");
+            const token = lookupKey(item.exchange_token || "");
+            const name = lookupKey(item.name || item.short_name || "");
+            if (symbol) bySymbol.set(symbol, item);
+            if (token) byToken.set(token, item);
+            if (name) byName.set(name, item);
+          }
+          return { bySymbol, byToken, byName };
+        }),
+    );
+  }
+  return upstoxInstrumentCache.get(market)!;
+}
+
+async function upstoxInstrumentKey(symbol: string, exchange: string) {
+  const index = await upstoxInstruments(exchange);
+  const symbolKey = lookupKey(symbol);
+  const found =
+    index.bySymbol.get(symbolKey) ||
+    index.byToken.get(symbolKey) ||
+    index.byName.get(symbolKey);
+  if (!found?.instrument_key) throw new Error("Upstox instrument not found");
+  return found.instrument_key;
+}
+
+function upstoxIndexKey(symbol: string) {
+  const normalized = lookupKey(symbol);
+  const indexKeys: Record<string, string> = {
+    BSESN: "BSE_INDEX|SENSEX",
+    SENSEX: "BSE_INDEX|SENSEX",
+    NSEI: "NSE_INDEX|Nifty 50",
+    NIFTY: "NSE_INDEX|Nifty 50",
+    NIFTY50: "NSE_INDEX|Nifty 50",
+    NSEBANK: "NSE_INDEX|Nifty Bank",
+    BANKNIFTY: "NSE_INDEX|Nifty Bank",
+    NIFTYBANK: "NSE_INDEX|Nifty Bank",
+    NIFTYMIDCAP100NS: "NSE_INDEX|NIFTY MIDCAP 100",
+    NIFTYMIDCAP100: "NSE_INDEX|NIFTY MIDCAP 100",
+    CNXMIDCAP: "NSE_INDEX|NIFTY MIDCAP 100",
+  };
+  if (symbol.includes("|")) return symbol;
+  const found = indexKeys[normalized];
+  if (!found) throw new Error("Upstox index not found");
+  return found;
+}
+
+async function upstoxQuote(symbol: string, exchange: string) {
+  if (!isIndianExchange(exchange) && !isIndexExchange(exchange))
+    throw new Error("unsupported market");
+  if (Date.now() < upstoxCooldownUntil)
+    throw new Error("rate limited cooldown");
+  const token = await getUpstoxAccessToken();
+  if (!token) throw new Error("not configured");
+  const instrumentKey = isIndexExchange(exchange)
+    ? upstoxIndexKey(symbol)
+    : await upstoxInstrumentKey(symbol, exchange);
+  const params = new URLSearchParams({ instrument_key: instrumentKey });
+  const headers = {
+    Authorization: `Bearer ${token}`,
+    Accept: "application/json",
+  };
+  let res = await fetch(`https://api.upstox.com/v2/market-quote/quotes?${params}`, {
+    headers,
+    cache: "no-store",
+  });
+  if (res.status === 429) {
+    await new Promise((resolve) => setTimeout(resolve, 700));
+    res = await fetch(`https://api.upstox.com/v2/market-quote/quotes?${params}`, {
+      headers,
+      cache: "no-store",
+    });
+    if (res.status === 429) upstoxCooldownUntil = Date.now() + 60 * 1000;
+  }
+  const data = await res.json();
+  if (!res.ok || data?.status === "error") {
+    throw new Error(data?.errors?.[0]?.message || data?.message || "Upstox quote failed");
+  }
+  const row = Object.values(data?.data || {})[0] as any;
+  if (!row) throw new Error("Upstox quote unavailable");
+  const price = number(row.last_price);
+  const change = number(row.net_change);
+  const previousClose =
+    price !== null && change !== null ? price - change : number(row?.ohlc?.close);
+  return quoteResult(
+    row.symbol || symbol,
+    price,
+    previousClose,
+    change,
+    null,
+    "INR",
+    "Upstox live market quote",
+    "exchange snapshot",
+    row.timestamp || (row.last_trade_time ? new Date(Number(row.last_trade_time)).toISOString() : undefined),
+    {
+      dayHigh: number(row?.ohlc?.high),
+      dayLow: number(row?.ohlc?.low),
+    },
+  );
 }
 
 async function twelveDataQuote(symbol: string, exchange: string) {
@@ -270,6 +447,7 @@ async function yahooQuote(symbol: string, exchange: string) {
 }
 
 async function fetchProvider(provider: Provider, symbol: string, exchange: string) {
+  if (provider === "upstox") return upstoxQuote(symbol, exchange);
   if (provider === "twelvedata") return twelveDataQuote(symbol, exchange);
   if (provider === "alphavantage") return alphaVantageQuote(symbol, exchange);
   if (provider === "polygon") return polygonQuote(symbol, exchange);
@@ -284,10 +462,25 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "Ticker missing" }, { status: 400 });
   }
 
+  const cacheKey = quoteCacheKey(symbol, exchange);
+  const cached = quoteCache.get(cacheKey);
+  if (cached && Date.now() - cached.savedAt < QUOTE_CACHE_TTL_MS) {
+    return NextResponse.json(
+      {
+        ...cached.quote,
+        attempted: cached.attempted,
+        cached: true,
+        time: new Date().toISOString(),
+      },
+      { headers: { "Cache-Control": "no-store, max-age=0" } },
+    );
+  }
+
   const attempted: string[] = [];
   for (const provider of providerOrder()) {
     try {
       const quote = await fetchProvider(provider, symbol, exchange);
+      quoteCache.set(cacheKey, { quote, attempted: [...attempted], savedAt: Date.now() });
       return NextResponse.json(
         { ...quote, attempted, time: new Date().toISOString() },
         { headers: { "Cache-Control": "no-store, max-age=0" } },
@@ -295,6 +488,20 @@ export async function GET(request: Request) {
     } catch (error: any) {
       attempted.push(`${provider}: ${error?.message || "failed"}`);
     }
+  }
+
+  if (cached && Date.now() - cached.savedAt < QUOTE_STALE_TTL_MS) {
+    return NextResponse.json(
+      {
+        ...cached.quote,
+        attempted,
+        cached: true,
+        stale: true,
+        warning: "Showing last quote because providers are rate-limited or unavailable",
+        time: new Date().toISOString(),
+      },
+      { headers: { "Cache-Control": "no-store, max-age=0" } },
+    );
   }
 
   return NextResponse.json(

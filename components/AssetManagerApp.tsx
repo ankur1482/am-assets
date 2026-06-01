@@ -521,8 +521,38 @@ const fixedIncomeCategoryLabel = (value: any) => {
 const isCompanyPfType = (value: any) =>
   /^(companypf|pf)$/.test(key(String(value || "")));
 const NET_WORTH_SNAPSHOT_MODULE = "netWorthSnapshot";
-const LIVE_DISPLAY_REFRESH_MS = 60000;
-const SAVED_RATE_REFRESH_MS = 60000;
+const AUTO_REFRESH_MS = 5 * 1000;
+const LIVE_DISPLAY_REFRESH_MS = AUTO_REFRESH_MS;
+const SAVED_RATE_REFRESH_MS = AUTO_REFRESH_MS;
+const IST_TIME_ZONE = "Asia/Kolkata";
+function istMarketClock(date = new Date()) {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: IST_TIME_ZONE,
+    weekday: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).formatToParts(date);
+  const value = (type: string) => parts.find((p) => p.type === type)?.value || "";
+  const hour = Number(value("hour")) % 24,
+    minute = Number(value("minute"));
+  return {
+    weekday: value("weekday"),
+    minutes: hour * 60 + minute,
+  };
+}
+function isAutoRefreshWindow(kind: "stocks" | "bullion", date = new Date()) {
+  const { weekday, minutes } = istMarketClock(date),
+    weekdayOpen = !["Sat", "Sun"].includes(weekday),
+    start = 9 * 60,
+    end = kind === "stocks" ? 15 * 60 + 45 : 23 * 60 + 45;
+  return weekdayOpen && minutes >= start && minutes <= end;
+}
+function autoRefreshScheduleText(kind?: "stocks" | "bullion") {
+  if (kind === "stocks") return "Mon-Fri, 9:00 AM-3:45 PM IST";
+  if (kind === "bullion") return "Mon-Fri, 9:00 AM-11:45 PM IST";
+  return "Stocks 9:00 AM-3:45 PM, bullion 9:00 AM-11:45 PM IST";
+}
 function csvEscape(v: any) {
   const s = v == null ? "" : String(v);
   return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
@@ -639,7 +669,8 @@ export default function AssetManagerApp() {
     [authMsg, setAuthMsg] = useState("");
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false),
     [phoneMode, setPhoneMode] = useState(false),
-    [mobileAccountMenu, setMobileAccountMenu] = useState("");
+    [mobileAccountMenu, setMobileAccountMenu] = useState(""),
+    [mobileNavMode, setMobileNavMode] = useState<"main" | "investments">("main");
   const [view, setView] = useState(() => {
       if (typeof window === "undefined") return "dashboard";
       const saved = localStorage.getItem("asset-manager-view") || "dashboard";
@@ -655,14 +686,15 @@ export default function AssetManagerApp() {
   const [adminUsers, setAdminUsers] = useState<AdminUser[]>([]),
     [adminBusy, setAdminBusy] = useState(false),
     [resetLink, setResetLink] = useState(""),
-    [autoRefresh, setAutoRefresh] = useState(false),
+    [autoRefresh, setAutoRefresh] = useState(true),
     [docUploadRecordId, setDocUploadRecordId] = useState(""),
     [docUploadModule, setDocUploadModule] = useState("documents"),
     [docUploadNotes, setDocUploadNotes] = useState(""),
     [docUploading, setDocUploading] = useState(false),
     [googleDriveConnected, setGoogleDriveConnected] = useState(false),
     [bullionMarket, setBullionMarket] = useState<any>(null),
-    [marketToday, setMarketToday] = useState<any[]>([]);
+    [marketToday, setMarketToday] = useState<any[]>([]),
+    [marketTodayUpdatedAt, setMarketTodayUpdatedAt] = useState("");
   const [aiQuestion, setAiQuestion] = useState(
       "What are the main risks in my current portfolio and what should I review first?",
     ),
@@ -821,7 +853,10 @@ export default function AssetManagerApp() {
       !["stocks", "bullion"].includes(view)
     )
       return;
-    const t = setInterval(() => refreshModuleRates(view, true), SAVED_RATE_REFRESH_MS);
+    const t = setInterval(() => {
+      if (isAutoRefreshWindow(view as "stocks" | "bullion"))
+        refreshModuleRates(view, true);
+    }, SAVED_RATE_REFRESH_MS);
     return () => clearInterval(t);
   }, [user?.id, view, accountTabs, autoRefresh, editing, detail, accModal]);
   useEffect(() => {
@@ -841,11 +876,17 @@ export default function AssetManagerApp() {
       busy = true;
       try {
         if (view === "dashboard") {
-          await Promise.all([refreshStockDisplay(true), refreshBullionMarket()]);
+          const jobs: Promise<any>[] = [];
+          if (isAutoRefreshWindow("stocks")) {
+            jobs.push(refreshStockDisplay(true), refreshMarketToday());
+          }
+          if (isAutoRefreshWindow("bullion")) jobs.push(refreshBullionMarket());
+          if (jobs.length) await Promise.all(jobs);
         } else if (view === "stocks") {
-          await refreshStockDisplay();
+          if (isAutoRefreshWindow("stocks"))
+            await Promise.all([refreshStockDisplay(), refreshMarketToday()]);
         } else {
-          await refreshBullionMarket();
+          if (isAutoRefreshWindow("bullion")) await refreshBullionMarket();
         }
       } finally {
         busy = false;
@@ -869,9 +910,9 @@ export default function AssetManagerApp() {
   useEffect(() => {
     if (!user?.id || !phoneMode || !autoRefresh || editing || detail || accModal) return;
     const t = setInterval(() => {
-      refreshMarketToday();
-      refreshBullionMarket();
-    }, 60000);
+      if (isAutoRefreshWindow("stocks")) refreshMarketToday();
+      if (isAutoRefreshWindow("bullion")) refreshBullionMarket();
+    }, AUTO_REFRESH_MS);
     return () => clearInterval(t);
   }, [user?.id, phoneMode, autoRefresh, editing, detail, accModal]);
   useEffect(() => {
@@ -887,11 +928,14 @@ export default function AssetManagerApp() {
     let cancelled = false;
     const run = async () => {
       if (cancelled) return;
-      await refreshStocks(true, true);
+      if (isAutoRefreshWindow("stocks")) {
+        await refreshStocks(true, true);
+        if (cancelled) return;
+        await refreshWatchlist(true);
+      }
       if (cancelled) return;
-      await refreshWatchlist(true);
-      if (cancelled) return;
-      await refreshMetals("bullion", true, true);
+      if (isAutoRefreshWindow("bullion"))
+        await refreshMetals("bullion", true, true);
     };
     run();
     const t = setInterval(run, SAVED_RATE_REFRESH_MS);
@@ -1018,6 +1062,18 @@ export default function AssetManagerApp() {
         if (active && document.contains(active))
           active.focus?.({ preventScroll: true } as any);
       });
+  }
+  async function saveRecordData(recordId: string, data: Record<string, any>) {
+    if (!user?.id) throw new Error("Not signed in");
+    const { error } = await supabase
+      .from("records")
+      .update({ data })
+      .eq("id", recordId)
+      .eq("user_id", user.id);
+    if (error) throw error;
+    const apply = (r: Rec) => (r.id === recordId ? { ...r, data } : r);
+    recordsRef.current = recordsRef.current.map(apply);
+    setRecords((prev) => prev.map(apply));
   }
   async function captureDailyNetWorthSnapshot() {
     if (
@@ -1306,38 +1362,38 @@ export default function AssetManagerApp() {
       ["NIFTY", "^NSEI"],
       ["CNX Midcap", "NIFTY_MIDCAP_100.NS"],
       ["NIFTY BANK", "^NSEBANK"],
+      ["NASDAQ", "^IXIC"],
     ];
     try {
-      const indexRows = await Promise.all(
-        indices.map(async ([name, symbol]) => {
-          try {
-            const res = await fetch(
-                `/api/quote?symbol=${encodeURIComponent(symbol)}&exchange=INDEX&t=${Date.now()}`,
-                { cache: "no-store" },
-              ),
-              q = await res.json();
-            if (!res.ok || !Number.isFinite(Number(q.price))) throw new Error();
-            return {
-              name,
-              symbol,
-              price: num(q.price),
-              change: num(q.change),
-              changePct: num(q.changePct),
-              time: q.time,
-              ok: true,
-            };
-          } catch {
-            return {
-              name,
-              symbol,
-              price: 0,
-              change: 0,
-              changePct: 0,
-              ok: false,
-            };
-          }
-        }),
-      );
+      const indexRows = [];
+      for (const [name, symbol] of indices) {
+        try {
+          const res = await fetch(
+              `/api/quote?symbol=${encodeURIComponent(symbol)}&exchange=INDEX&t=${Date.now()}`,
+              { cache: "no-store" },
+            ),
+            q = await res.json();
+          if (!res.ok || !Number.isFinite(Number(q.price))) throw new Error();
+          indexRows.push({
+            name,
+            symbol,
+            price: num(q.price),
+            change: num(q.change),
+            changePct: num(q.changePct),
+            time: q.time,
+            ok: true,
+          });
+        } catch {
+          indexRows.push({
+            name,
+            symbol,
+            price: 0,
+            change: 0,
+            changePct: 0,
+            ok: false,
+          });
+        }
+      }
       const [goldRes, silverRes, crudeRes, usdRes] = await Promise.all([
         fetch(`/api/market-rate?asset=gold&t=${Date.now()}`, {
           cache: "no-store",
@@ -1405,9 +1461,16 @@ export default function AssetManagerApp() {
           unit: "USD",
         },
       ];
-      setMarketToday([...indexRows, ...commodityRows]);
+      const nextRows = [...indexRows, ...commodityRows];
+      setMarketToday((prev) =>
+        nextRows.map((row) => {
+          const previous = prev.find((x) => x.name === row.name);
+          return row.ok || !previous ? row : { ...previous, stale: true };
+        }),
+      );
+      setMarketTodayUpdatedAt(new Date().toISOString());
     } catch {
-      setMarketToday([]);
+      setMarketTodayUpdatedAt(new Date().toISOString());
     }
   }
   async function connectGoogleDrive() {
@@ -1755,7 +1818,8 @@ export default function AssetManagerApp() {
         r.module_key === "stocks" && (allAccounts || inAccountTab("stocks", r)),
     );
     let ok = 0,
-      fail = 0;
+      fail = 0,
+      firstError = "";
     for (const r of rows) {
       const d = { ...r.data },
         s = findStock(d.security_name || d.ticker_symbol || "");
@@ -1774,26 +1838,26 @@ export default function AssetManagerApp() {
           `/api/quote?symbol=${encodeURIComponent(d.ticker_symbol)}&exchange=${encodeURIComponent(d.exchange || "NSE")}&name=${encodeURIComponent(d.security_name || "")}`,
         );
         const q = await res.json();
-        if (!res.ok || !Number.isFinite(Number(q.price))) throw new Error();
+        if (!res.ok || !Number.isFinite(Number(q.price)))
+          throw new Error(q?.error || "Quote unavailable");
         assignStockQuoteFields(d, q);
         d.today_gain = (num(d.quantity) * num(d.day_change)).toFixed(2);
         d.latest_value = (num(d.quantity) * num(d.live_price)).toFixed(2);
         if (!num(d.investment_amount) && num(d.quantity) && num(d.inv_price))
           d.investment_amount = (num(d.quantity) * num(d.inv_price)).toFixed(2);
         d.last_synced = new Date().toLocaleString();
-        await supabase
-          .from("records")
-          .update({ data: d })
-          .eq("id", r.id)
-          .eq("user_id", user.id);
+        await saveRecordData(r.id, d);
         ok++;
-      } catch {
+      } catch (e: any) {
+        firstError ||= e?.message || "refresh failed";
         fail++;
       }
     }
     if (!silent)
-      setToast(`Live prices: ${ok} updated${fail ? `, ${fail} failed` : ""}`);
-    await loadAll(true);
+      setToast(
+        `Live prices: ${ok} updated${fail ? `, ${fail} failed${firstError ? ` (${firstError})` : ""}` : ""}`,
+      );
+    if (ok) await loadAll(true);
   }
   async function refreshStockDisplay(allAccounts = false) {
     const rows = recordsRef.current.filter(
@@ -1854,7 +1918,8 @@ export default function AssetManagerApp() {
   async function refreshWatchlist(silent = false) {
     const rows = recordsRef.current.filter((r) => r.module_key === "watchlist");
     let ok = 0,
-      fail = 0;
+      fail = 0,
+      firstError = "";
     for (const r of rows) {
       const d = { ...r.data },
         s = findStock(d.security_name || d.ticker_symbol || "");
@@ -1873,7 +1938,8 @@ export default function AssetManagerApp() {
           `/api/quote?symbol=${encodeURIComponent(d.ticker_symbol)}&exchange=${encodeURIComponent(d.exchange || "NSE")}&name=${encodeURIComponent(d.security_name || "")}`,
         );
         const q = await res.json();
-        if (!res.ok || !Number.isFinite(Number(q.price))) throw new Error();
+        if (!res.ok || !Number.isFinite(Number(q.price)))
+          throw new Error(q?.error || "Quote unavailable");
         assignStockQuoteFields(d, q, "current_price");
         d.live_price = d.current_price;
         if (!num(d.base_price)) {
@@ -1888,21 +1954,18 @@ export default function AssetManagerApp() {
         if (num(d.inv_price))
           d.investment_amount = (qty * num(d.inv_price)).toFixed(2);
         d.last_synced = new Date().toLocaleString();
-        await supabase
-          .from("records")
-          .update({ data: d })
-          .eq("id", r.id)
-          .eq("user_id", user.id);
+        await saveRecordData(r.id, d);
         ok++;
-      } catch {
+      } catch (e: any) {
+        firstError ||= e?.message || "refresh failed";
         fail++;
       }
     }
     if (!silent)
       setToast(
-        `Watchlist prices: ${ok} updated${fail ? `, ${fail} failed` : ""}`,
+        `Watchlist prices: ${ok} updated${fail ? `, ${fail} failed${firstError ? ` (${firstError})` : ""}` : ""}`,
       );
-    await loadAll(true);
+    if (ok) await loadAll(true);
   }
   async function refreshMutualFundNavs() {
     const rows = records.filter(
@@ -1925,11 +1988,7 @@ export default function AssetManagerApp() {
         d.live_nav = Number(q.nav).toFixed(4);
         d.latest_value = (num(d.quantity) * num(d.live_nav)).toFixed(2);
         d.nav_date = q.navDate || new Date().toISOString().slice(0, 10);
-        await supabase
-          .from("records")
-          .update({ data: d })
-          .eq("id", r.id)
-          .eq("user_id", user.id);
+        await saveRecordData(r.id, d);
         ok++;
       } catch {
         fail++;
@@ -1956,7 +2015,8 @@ export default function AssetManagerApp() {
       ),
       quotes = new Map<string, Promise<any>>();
     let ok = 0,
-      fail = 0;
+      fail = 0,
+      firstError = "";
     const quoteFor = (asset: string) => {
       if (!quotes.has(asset))
         quotes.set(
@@ -1967,7 +2027,7 @@ export default function AssetManagerApp() {
           ).then(async (res) => {
             const q = await res.json();
             if (!res.ok || !Number.isFinite(Number(q.ratePerGramInr)))
-              throw new Error();
+              throw new Error(q?.error || "Rate unavailable");
             return q;
           }),
         );
@@ -2021,27 +2081,25 @@ export default function AssetManagerApp() {
         d.rate_provider = q.provider || "";
         d.rate_source_url = q.sourceUrl || "";
         d.last_synced = new Date().toLocaleString();
-        await supabase
-          .from("records")
-          .update({ data: d })
-          .eq("id", r.id)
-          .eq("user_id", user.id);
+        await saveRecordData(r.id, d);
         ok++;
-      } catch {
+      } catch (e: any) {
+        firstError ||= e?.message || "refresh failed";
         fail++;
       }
     }
     if (!silent)
       setToast(
-        `Bullion rates: ${ok} updated${fail ? `, ${fail} failed` : ""}`,
+        `Bullion rates: ${ok} updated${fail ? `, ${fail} failed${firstError ? ` (${firstError})` : ""}` : ""}`,
       );
     await refreshBullionMarket();
-    await loadAll(true);
+    if (ok) await loadAll(true);
   }
-  async function refreshModuleRates(k: string, silent = false) {
-    if (k === "stocks") return refreshStocks(silent);
+  async function refreshModuleRates(k: string, silent = false, allAccounts = false) {
+    if (k === "stocks") return refreshStocks(silent, allAccounts);
     if (k === "mutualFunds") return refreshMutualFundNavs();
-    if (k === "bullion" || k === "nsel") return refreshMetals(k, silent);
+    if (k === "bullion" || k === "nsel")
+      return refreshMetals(k, silent, allAccounts);
     setToast(
       "Live market refresh is available for stocks, mutual funds, bullion and NSEL. Other assets need manual valuation.",
     );
@@ -2494,39 +2552,36 @@ export default function AssetManagerApp() {
       </button>
     );
   };
-  const mobileTabs = [
+  const mobileMainTabs = [
     ["dashboard", "Summary", Home],
-    ["stocks", "Stocks", BarChart3],
-    ["mutualFunds", "MF", BriefcaseBusiness],
-    ["bullion", "Gold/Silver", BriefcaseBusiness],
-    ["fixedIncome", "Fixed", FolderOpen],
+    ["investments", "Investments", BriefcaseBusiness],
+    ["goals", "Goals", CheckCircle2],
+    ["insights", "Insights", BarChart3],
+    ["settings", "Settings", KeyRound],
   ] as const;
   const mobileInvestmentTabs = [
       ["stocks", "Stocks", BarChart3],
-      ["mutualFunds", "MF", BriefcaseBusiness],
       ["bullion", "Gold/Silver", BriefcaseBusiness],
+      ["mutualFunds", "MF", BriefcaseBusiness],
       ["fixedIncome", "Fixed", FolderOpen],
       ["property", "Property", Home],
       ["ulips", "ULIP", Shield],
       ["nsel", "NSEL", BriefcaseBusiness],
       ["otherAssets", "Other", FolderOpen],
     ] as const,
-    mobileTabsByValue = [
-      ["dashboard", "Summary", Home] as const,
-      ...mobileInvestmentTabs
-        .map((tab) => {
-          const [id] = tab,
-            value = records
-              .filter((r) => r.module_key === id)
-              .reduce(
-                (s, r) => s + num(computeLiveRecord(id, r.data).latest),
-                0,
-              );
-          return { tab, value };
-        })
-        .sort((a, b) => b.value - a.value)
-        .map((x) => x.tab),
-    ],
+    mobileInvestmentTabsByValue = mobileInvestmentTabs
+      .map((tab) => {
+        const [id] = tab,
+          value = records
+            .filter((r) => r.module_key === id)
+            .reduce(
+              (sum, r) => sum + num(computeLiveRecord(id, r.data).latest),
+              0,
+            );
+        return { tab, value };
+      })
+      .sort((a, b) => b.value - a.value)
+      .map((x) => x.tab),
     mobileTabAccounts =
       mobileAccountMenu && MODULES[mobileAccountMenu]
         ? [
@@ -2542,13 +2597,29 @@ export default function AssetManagerApp() {
           ]
         : [];
   function selectMobileTab(id: string) {
+    if (id === "investments") {
+      setMobileNavMode("investments");
+      setMobileAccountMenu(view !== "dashboard" && MODULES[view] ? view : "");
+      return;
+    }
+    if (id === "__back") {
+      setMobileNavMode("main");
+      setMobileAccountMenu("");
+      return;
+    }
     setView(id);
     if (id === "dashboard") {
+      setMobileNavMode("main");
       setMobileAccountMenu("");
       setAccountTabs((p) => ({ ...p, __phone: "All" }));
       return;
     }
-    setMobileAccountMenu((current) => (current === id ? "" : id));
+    if (MODULES[id]) {
+      setMobileNavMode("investments");
+      setMobileAccountMenu(id);
+    } else {
+      setMobileAccountMenu("");
+    }
   }
   async function adminFetch(body?: any) {
     if (!session?.access_token) throw new Error("Missing session");
@@ -2620,17 +2691,37 @@ export default function AssetManagerApp() {
       </div>
     );
   }
+  function phoneAccountStrip() {
+    if (!mobileTabAccounts.length) return null;
+    return (
+      <div className="phone-account-strip">
+        {mobileTabAccounts.map((account) => (
+          <button
+            key={account}
+            type="button"
+            className={accountTab("__phone") === account ? "active" : ""}
+            onClick={() => {
+              setAccountTabs((p) => ({ ...p, __phone: account }));
+            }}
+          >
+            {account === "All" ? "All" : account}
+          </button>
+        ))}
+      </div>
+    );
+  }
   function phoneRow(
     title: string,
     meta: string,
     value: any,
     items: any[],
     onClick?: () => void,
+    rowKey?: string,
   ) {
     const visibleItems = items.filter(Boolean);
     return (
       <button
-        key={`${title}|${meta}`}
+        key={rowKey || `${title}|${meta}`}
         type="button"
         className="phone-row !block !w-full !max-w-full !overflow-hidden !rounded-none !border-x-0 !px-3 !py-2.5 text-left"
         style={{
@@ -2685,6 +2776,169 @@ export default function AssetManagerApp() {
       </button>
     );
   }
+  function phoneStockHoldingCard(x: any) {
+    const c = x.c || {},
+      shortName = compactName(String(c.security_name || x.title || "Stock")),
+      broker = String(c.broker || c.account_name || "Stocks"),
+      quantity = x.records.reduce((s: number, r: Rec) => s + num(r.data?.quantity), 0),
+      quantityText = quantity.toLocaleString("en-IN", {
+        maximumFractionDigits: 3,
+      }),
+      currentPrice = num(c.live_price || c.current_price),
+      dayLow = num(c.day_low),
+      dayHigh = num(c.day_high),
+      gainClass = x.gain >= 0 ? "phone-green" : "phone-red",
+      todayClass = x.today >= 0 ? "phone-green" : "phone-red",
+      openHolding = () => {
+        if (x.lots > 1) {
+          setExpandedLots((prev) => ({
+            ...prev,
+            [x.key]: !prev[x.key],
+          }));
+          return;
+        }
+        setDetail({
+          moduleKey: "stocks",
+          record: x.records[0],
+          computed: c,
+          cols: MODULES.stocks.cols || [],
+          linkedProperty: false,
+        });
+      };
+    return (
+      <article className="phone-stock-card">
+        <button
+          type="button"
+          className="phone-stock-card-top"
+          onClick={openHolding}
+        >
+          <div className="min-w-0">
+            <div className="phone-stock-name">{shortName}</div>
+            <div className="phone-stock-meta">
+              {broker} | {x.lots} lot{x.lots > 1 ? "s" : ""} | Qty {quantityText}
+            </div>
+          </div>
+          <div className="phone-stock-total">{fmt(x.latest)}</div>
+        </button>
+        <div className="phone-stock-metrics">
+          <div>
+            <span>Invested</span>
+            <b>{fmt(x.invested)}</b>
+            <small>Qty {quantityText}</small>
+          </div>
+          <div>
+            <span>Gain</span>
+            <b className={gainClass}>{fmt(x.gain)}</b>
+            <small className={todayClass}>Today {fmt(x.today)}</small>
+          </div>
+        </div>
+        <a
+          className="phone-stock-prices"
+          href={moneycontrolHref(c)}
+          target="_blank"
+          rel="noreferrer"
+          onClick={(event) => event.stopPropagation()}
+        >
+          <span>
+            <em>Curr</em>
+            <b>{fmt(currentPrice)}</b>
+          </span>
+          <span>
+            <em>Low</em>
+            <b>{fmt(dayLow)}</b>
+          </span>
+          <span>
+            <em>High</em>
+            <b>{fmt(dayHigh)}</b>
+          </span>
+        </a>
+      </article>
+    );
+  }
+  function phoneBullionHoldingCard(x: any) {
+    const c = x.c || {},
+      title = bullionDisplayName(c) || compactName(String(c.security_name || x.title || "Bullion")),
+      broker = String(c.broker || c.account_name || "MCX"),
+      quantity = x.records.reduce(
+        (sum: number, r: Rec) => sum + num(r.data?.quantity || r.data?.qty || r.data?.units),
+        0,
+      ),
+      quantityText = quantity
+        ? quantity.toLocaleString("en-IN", { maximumFractionDigits: 3 })
+        : String(x.lots),
+      currentPrice = num(c.live_price || c.current_price || c.rate || c.price),
+      fallbackUnitPrice = quantity ? num(x.latest) / quantity : 0,
+      displayCurrent = currentPrice || fallbackUnitPrice,
+      dayLow = num(c.day_low || c.low || c.today_low),
+      dayHigh = num(c.day_high || c.high || c.today_high),
+      gainClass = x.gain >= 0 ? "phone-green" : "phone-red",
+      todayClass = x.today >= 0 ? "phone-green" : "phone-red",
+      openHolding = () => {
+        if (x.lots > 1) {
+          setExpandedLots((prev) => ({
+            ...prev,
+            [x.key]: !prev[x.key],
+          }));
+          return;
+        }
+        setDetail({
+          moduleKey: "bullion",
+          record: x.records[0],
+          computed: c,
+          cols: MODULES.bullion.cols || [],
+          linkedProperty: false,
+        });
+      };
+    return (
+      <article className="phone-stock-card phone-bullion-card">
+        <button
+          type="button"
+          className="phone-stock-card-top"
+          onClick={openHolding}
+        >
+          <div className="min-w-0">
+            <div className="phone-stock-name">{title}</div>
+            <div className="phone-stock-meta">
+              {broker} | {x.lots} lot{x.lots > 1 ? "s" : ""} | Qty {quantityText}
+            </div>
+          </div>
+          <div className="phone-stock-total">{fmt(x.latest)}</div>
+        </button>
+        <div className="phone-stock-metrics">
+          <div>
+            <span>Invested</span>
+            <b>{fmt(x.invested)}</b>
+            <small>{quantity ? `Qty ${quantityText}` : `${x.lots} lot${x.lots > 1 ? "s" : ""}`}</small>
+          </div>
+          <div>
+            <span>Gain</span>
+            <b className={gainClass}>{fmt(x.gain)}</b>
+            <small className={todayClass}>Today {fmt(x.today)}</small>
+          </div>
+        </div>
+        <a
+          className="phone-stock-prices"
+          href={moneycontrolCommodityHref(c)}
+          target="_blank"
+          rel="noreferrer"
+          onClick={(event) => event.stopPropagation()}
+        >
+          <span>
+            <em>Curr</em>
+            <b>{displayCurrent ? fmt(displayCurrent) : "—"}</b>
+          </span>
+          <span>
+            <em>Low</em>
+            <b>{dayLow ? fmt(dayLow) : "—"}</b>
+          </span>
+          <span>
+            <em>High</em>
+            <b>{dayHigh ? fmt(dayHigh) : "—"}</b>
+          </span>
+        </a>
+      </article>
+    );
+  }
   function phoneMarketValue(x: any) {
     const price = num(x.price);
     if (!x.ok && !price) return "Loading";
@@ -2701,6 +2955,83 @@ export default function AssetManagerApp() {
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
     });
+  }
+  function phoneMarketChange(x: any) {
+    if (!x.ok && !num(x.change)) return "";
+    const change = num(x.change),
+      prefix = change > 0 ? "+" : change < 0 ? "-" : "";
+    if (x.unit === "USD" || x.name === "Crude $ / Barrel")
+      return `${prefix}$${Math.abs(change).toLocaleString("en-IN", {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      })}`;
+    if (["Gold - 10 GM", "Silver - 1 KG"].includes(String(x.name)))
+      return `${prefix}${fmt(Math.abs(change))}`;
+    if (x.name === "Dollar / INR")
+      return `${prefix}${Math.abs(change).toLocaleString("en-IN", {
+        minimumFractionDigits: 4,
+        maximumFractionDigits: 4,
+      })}`;
+    return `${prefix}${Math.abs(change).toLocaleString("en-IN", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    })}`;
+  }
+  function phoneMarketLabel(x: any) {
+    return String(x.name || "")
+      .replace("Gold - 10 GM", "GOLD")
+      .replace("Silver - 1 KG", "SILVER")
+      .replace("Dollar / INR", "DOLLAR")
+      .replace("Crude $ / Barrel", "CRUDE")
+      .replace("NIFTY BANK", "BANK");
+  }
+  function phoneLotRows(moduleKey: string, lots: Rec[], groupKey: string) {
+    const def = MODULES[moduleKey];
+    return (
+      <div className="phone-lot-list">
+        {lots.map((lot, i) => {
+          const c = computeLiveRecord(moduleKey, lot.data),
+            title = String(
+              c.security_name ||
+                c.category ||
+                c.location ||
+                c.policy_name ||
+                `Lot ${i + 1}`,
+            ),
+            latest = num(
+              c.latest ||
+                c.balance ||
+                c.loan_balance ||
+                c.latest_value ||
+                c.current_value,
+            ),
+            invested = num(
+              c.invested ||
+                c.investment_amount ||
+                c.purchase_price ||
+                c.loan_amount,
+            );
+          return phoneRow(
+            title,
+            `${lot.data?.account_name || "Unassigned"} | Lot ${i + 1}`,
+            fmt(latest),
+            [
+              ["Invested", fmt(invested)],
+              ["Gain", fmt(num(c.gain)), num(c.gain) >= 0 ? "phone-green" : "phone-red"],
+            ],
+            () =>
+              setDetail({
+                moduleKey,
+                record: lot,
+                computed: c,
+                cols: def?.cols || [],
+                linkedProperty: moduleKey === "property",
+              }),
+            `${groupKey}-phone-lot-${lot.id}`,
+          );
+        })}
+      </div>
+    );
   }
   function phoneView() {
     const selectedAccount = accountTab("__phone"),
@@ -2795,7 +3126,7 @@ export default function AssetManagerApp() {
             const id = key(
                 `${x.title}|${x.c.ticker_symbol || x.c.scheme_code || x.c.category || ""}`,
               ),
-              g = m.get(id) || { ...x, records: [] as Rec[], lots: 0 };
+              g = m.get(id) || { ...x, key: `${view}|${id}`, records: [] as Rec[], lots: 0 };
             g.records.push(x.r);
             g.lots += 1;
             g.latest += g.lots === 1 ? 0 : x.latest;
@@ -2818,7 +3149,16 @@ export default function AssetManagerApp() {
       todayTotal = assetRows
         .filter((x) => showsDailyChange(x.k))
         .reduce((s, x) => s + x.today, 0),
-      market = marketToday.slice(0, 6),
+      marketNames = new Set([
+        "SENSEX",
+        "NIFTY",
+        "Gold - 10 GM",
+        "Silver - 1 KG",
+        "NASDAQ",
+        "Dollar / INR",
+        "Crude $ / Barrel",
+      ]),
+      market = marketToday.filter((x) => marketNames.has(x.name)),
       tabs = [
         "dashboard",
         "stocks",
@@ -2852,12 +3192,18 @@ export default function AssetManagerApp() {
                   change: x.today,
                   ok: true,
                 }))
-          ).map((x: any) => (
-            <span key={x.name} className="phone-chip">
-              {x.name}{" "}
-              <span className="phone-market-value">{phoneMarketValue(x)}</span>
-            </span>
-          ))}
+          ).map((x: any) => {
+            const change = num(x.change);
+            return (
+              <span key={x.name} className="phone-chip">
+                <span className="phone-market-label">{phoneMarketLabel(x)}</span>
+                <span className="phone-market-value">{phoneMarketValue(x)}</span>
+                <span className={change >= 0 ? "phone-market-up" : "phone-market-down"}>
+                  {phoneMarketChange(x)}
+                </span>
+              </span>
+            );
+          })}
         </div>
       );
     if (moduleDef && view !== "dashboard")
@@ -2903,40 +3249,59 @@ export default function AssetManagerApp() {
                 : "phone-red",
             )}
           </section>
+          {phoneAccountStrip()}
           <h3 className="phone-section-title">Consolidated Holdings</h3>
           <div className="phone-list">
             {moduleRows.length ? (
               moduleRows.map((x) =>
-                phoneRow(
-                  x.title,
-                  `${String(x.c.broker || x.c.account_name || moduleDef.title)} | ${x.lots} lot${x.lots > 1 ? "s" : ""}`,
-                  fmt(x.latest),
-                  [
-                    ["Invested", fmt(x.invested)],
-                    ...(showsDailyChange(view)
-                      ? [
+                <div key={`${view}-phone-group-${x.key}`} className="phone-group">
+                  {view === "stocks"
+                    ? phoneStockHoldingCard(x)
+                    : view === "bullion"
+                      ? phoneBullionHoldingCard(x)
+                      : phoneRow(
+                        x.title,
+                        `${String(x.c.broker || x.c.account_name || moduleDef.title)} | ${x.lots} lot${x.lots > 1 ? "s" : ""}${x.lots > 1 ? ` | ${expandedLots[x.key] ? "Tap to hide" : "Tap to open"}` : ""}`,
+                        fmt(x.latest),
+                        [
+                          ["Invested", fmt(x.invested)],
+                          ...(showsDailyChange(view)
+                            ? [
+                                [
+                                  "Today",
+                                  fmt(x.today),
+                                  x.today >= 0 ? "phone-green" : "phone-red",
+                                ],
+                              ]
+                            : []),
                           [
-                            "Today",
-                            fmt(x.today),
-                            x.today >= 0 ? "phone-green" : "phone-red",
+                            "Gain",
+                            fmt(x.gain),
+                            x.gain >= 0 ? "phone-green" : "phone-red",
                           ],
-                        ]
-                      : []),
-                    [
-                      "Gain",
-                      fmt(x.gain),
-                      x.gain >= 0 ? "phone-green" : "phone-red",
-                    ],
-                  ],
-                  () =>
-                    setDetail({
-                      moduleKey: view,
-                      record: x.records[0],
-                      computed: x.c,
-                      cols: moduleDef.cols || [],
-                      linkedProperty: view === "property",
-                    }),
-                ),
+                        ],
+                        () => {
+                          if (x.lots > 1) {
+                            setExpandedLots((prev) => ({
+                              ...prev,
+                              [x.key]: !prev[x.key],
+                            }));
+                            return;
+                          }
+                          setDetail({
+                            moduleKey: view,
+                            record: x.records[0],
+                            computed: x.c,
+                            cols: moduleDef.cols || [],
+                            linkedProperty: view === "property",
+                          });
+                        },
+                        `${view}-phone-group-button-${x.key}`,
+                      )}
+                  {x.lots > 1 &&
+                    expandedLots[x.key] &&
+                    phoneLotRows(view, x.records, x.key)}
+                </div>,
               )
             ) : (
               <Empty text={`No ${moduleDef.title} records yet.`} />
@@ -2972,6 +3337,7 @@ export default function AssetManagerApp() {
             phoneRecords.filter((r) => MODULES[r.module_key]).length,
           )}
         </div>
+        {phoneAccountStrip()}
         <h3 className="phone-section-title">Assets</h3>
         <div className="phone-list">
           {assetRows.map((x) =>
@@ -3252,8 +3618,8 @@ export default function AssetManagerApp() {
           display: flex;
           align-items: center;
           justify-content: space-between;
-          min-height: 92px;
-          padding: calc(env(safe-area-inset-top, 0px) + 16px) 14px 16px !important;
+          min-height: 72px;
+          padding: calc(env(safe-area-inset-top, 0px) + 10px) 12px 10px !important;
           color: var(--am-ink) !important;
           background:
             linear-gradient(115deg, rgba(255,255,255,.92) 0%, rgba(255,248,232,.90) 48%, rgba(255,239,196,.82) 100%),
@@ -3280,14 +3646,14 @@ export default function AssetManagerApp() {
         }
         .mobile-appbar h2 {
           color: var(--am-ink) !important;
-          font-size: 23px !important;
+          font-size: 20px !important;
           line-height: 1.04 !important;
           letter-spacing: -0.052em !important;
           font-weight: 950 !important;
         }
         .mobile-icon-btn {
-          width: 44px !important;
-          height: 44px !important;
+          width: 38px !important;
+          height: 38px !important;
           border-radius: 999px !important;
           color: var(--am-plum) !important;
           border: 1px solid rgba(83,43,72,.14) !important;
@@ -3297,9 +3663,9 @@ export default function AssetManagerApp() {
         }
         .mobile-icon-btn svg { stroke-width: 2.4 !important; }
         .phone-add-btn {
-          height: 46px !important;
+          height: 38px !important;
           border-radius: 999px !important;
-          padding: 0 17px !important;
+          padding: 0 13px !important;
           background:
             radial-gradient(circle at 24% 18%, rgba(255,255,255,.30), transparent 1.2rem),
             linear-gradient(135deg, #A3195B 0%, #7A1248 52%, #4B082A 100%) !important;
@@ -3308,7 +3674,7 @@ export default function AssetManagerApp() {
         }
 
         .phone-content {
-          min-height: calc(100vh - 92px);
+          min-height: calc(100vh - 72px);
           background:
             radial-gradient(circle at -8% 0%, rgba(255,226,148,.45), transparent 17rem),
             radial-gradient(circle at 108% 4%, rgba(154,31,94,.11), transparent 18rem),
@@ -3316,7 +3682,7 @@ export default function AssetManagerApp() {
           color: var(--am-ink) !important;
         }
         .phone-screen {
-          padding: 12px 12px 174px !important;
+          padding: 10px 10px 94px !important;
           max-width: 100vw !important;
           overflow: hidden !important;
         }
@@ -3327,6 +3693,9 @@ export default function AssetManagerApp() {
           margin: -2px -12px 14px !important;
           padding: 10px 12px 12px !important;
           overflow-x: auto !important;
+          overscroll-behavior-x: contain !important;
+          scroll-snap-type: x proximity !important;
+          -webkit-overflow-scrolling: touch !important;
           scrollbar-width: none;
           background: rgba(255,250,241,.74) !important;
           border-bottom: 1px solid rgba(126,82,36,.12) !important;
@@ -3334,19 +3703,45 @@ export default function AssetManagerApp() {
         }
         .phone-market-strip::-webkit-scrollbar { display: none; }
         .phone-chip {
-          flex: 0 0 auto;
-          padding: 7px 11px !important;
-          border-radius: 999px !important;
+          flex: 0 0 112px;
+          min-height: 54px !important;
+          display: grid !important;
+          align-content: center !important;
+          gap: 2px !important;
+          padding: 7px 10px !important;
+          scroll-snap-align: start !important;
+          border-radius: 14px !important;
           border: 1px solid rgba(83,43,72,.12) !important;
           background:
             linear-gradient(180deg, rgba(255,255,255,.96), rgba(255,247,232,.88)) !important;
           color: #3b2c3c !important;
           box-shadow: 0 7px 16px rgba(48,26,50,.06), inset 0 1px 0 rgba(255,255,255,.9) !important;
-          font-size: 10.2px !important;
           font-weight: 950 !important;
-          letter-spacing: .045em !important;
+          letter-spacing: 0 !important;
         }
-        .phone-market-value { color: var(--am-plum-3) !important; font-weight: 950 !important; }
+        .phone-market-label {
+          color: #4b3349 !important;
+          font-size: 9.4px !important;
+          line-height: 1 !important;
+          text-transform: uppercase !important;
+          white-space: nowrap !important;
+        }
+        .phone-market-value {
+          color: var(--am-plum-3) !important;
+          font-size: 12.4px !important;
+          line-height: 1.12 !important;
+          font-weight: 950 !important;
+          white-space: nowrap !important;
+        }
+        .phone-market-up,
+        .phone-market-down {
+          font-size: 10.4px !important;
+          line-height: 1 !important;
+          font-weight: 950 !important;
+          white-space: nowrap !important;
+        }
+        .phone-market-up { color: #007a52 !important; }
+        .phone-market-down { color: #e11d2e !important; }
 
         .phone-hero,
         .phone-module-strip,
@@ -3384,17 +3779,17 @@ export default function AssetManagerApp() {
         }
         .phone-hero,
         .phone-module-main {
-          border-radius: 26px !important;
-          padding: 17px !important;
+          border-radius: 20px !important;
+          padding: 13px !important;
         }
         .phone-module-strip {
-          border-radius: 27px !important;
-          padding: 10px !important;
+          border-radius: 21px !important;
+          padding: 8px !important;
           gap: 8px !important;
         }
         .phone-stat {
-          border-radius: 20px !important;
-          padding: 14px !important;
+          border-radius: 16px !important;
+          padding: 10px !important;
         }
         .phone-stats {
           gap: 8px !important;
@@ -3415,12 +3810,12 @@ export default function AssetManagerApp() {
           letter-spacing: -0.055em !important;
           font-weight: 950 !important;
         }
-        .phone-hero-value { font-size: 31px !important; line-height: .98 !important; }
-        .phone-stat-value { font-size: 18px !important; line-height: 1.05 !important; }
+        .phone-hero-value { font-size: 26px !important; line-height: 1 !important; }
+        .phone-stat-value { font-size: 15px !important; line-height: 1.05 !important; }
         .phone-hero-sub,
         .phone-row-meta { color: #746675 !important; font-weight: 820 !important; }
         .phone-section-title {
-          margin: 19px 2px 10px !important;
+          margin: 13px 2px 8px !important;
           font-size: 11px !important;
         }
         .phone-section-title::after {
@@ -3437,7 +3832,180 @@ export default function AssetManagerApp() {
 
         .phone-list {
           display: grid !important;
-          gap: 11px !important;
+          gap: 9px !important;
+        }
+        .phone-account-strip {
+          display: flex !important;
+          gap: 7px !important;
+          margin: 9px 0 2px !important;
+          padding: 5px !important;
+          overflow-x: auto !important;
+          border: 1px solid rgba(83,43,72,.12) !important;
+          border-radius: 18px !important;
+          background: rgba(255,253,248,.78) !important;
+          box-shadow: 0 8px 20px rgba(48,26,50,.07), inset 0 1px 0 rgba(255,255,255,.86) !important;
+          scrollbar-width: none !important;
+          -webkit-overflow-scrolling: touch !important;
+        }
+        .phone-account-strip::-webkit-scrollbar { display: none; }
+        .phone-account-strip button {
+          flex: 0 0 auto !important;
+          min-height: 30px !important;
+          border-radius: 999px !important;
+          padding: 0 13px !important;
+          color: #544653 !important;
+          background: rgba(255,255,255,.70) !important;
+          border: 1px solid rgba(83,43,72,.10) !important;
+          font-size: 11px !important;
+          font-weight: 950 !important;
+          line-height: 1 !important;
+          white-space: nowrap !important;
+        }
+        .phone-account-strip button.active {
+          color: #211521 !important;
+          background: linear-gradient(135deg, #FFF1C9 0%, #e4bd5b 48%, #C89A36 100%) !important;
+          border-color: rgba(200,148,37,.45) !important;
+          box-shadow: 0 5px 12px rgba(200,148,37,.18), inset 0 1px 0 rgba(255,255,255,.72) !important;
+        }
+        .phone-group {
+          min-width: 0 !important;
+          overflow: hidden !important;
+        }
+        .phone-lot-list {
+          display: grid !important;
+          gap: 8px !important;
+          margin: 0 0 4px 14px !important;
+          border-left: 2px solid rgba(122, 18, 72, .18) !important;
+          padding-left: 8px !important;
+        }
+        .phone-lot-list .phone-row {
+          background: rgba(255,255,255,.78) !important;
+        }
+        .phone-stock-card {
+          position: relative;
+          display: grid !important;
+          gap: 6px !important;
+          min-width: 0 !important;
+          padding: 9px 10px 8px 13px !important;
+          border: 1px solid rgba(83,43,72,.12) !important;
+          border-radius: 18px !important;
+          overflow: hidden !important;
+          background:
+            linear-gradient(145deg, rgba(255,255,255,.99), rgba(255,249,237,.96) 62%, rgba(255,243,214,.88)) !important;
+          box-shadow: 0 8px 21px rgba(48,26,50,.08), inset 0 1px 0 rgba(255,255,255,.92) !important;
+        }
+        .phone-stock-card::before {
+          content: "";
+          position: absolute;
+          left: 0;
+          top: 13px;
+          bottom: 13px;
+          width: 4px;
+          border-radius: 999px;
+          background: linear-gradient(180deg, var(--am-gold-3), var(--am-gold), var(--am-plum-3));
+          box-shadow: 0 0 12px rgba(200,148,37,.35);
+        }
+        .phone-stock-card-top {
+          position: relative;
+          z-index: 1;
+          display: grid !important;
+          grid-template-columns: minmax(0, 1fr) auto !important;
+          gap: 8px !important;
+          align-items: start !important;
+          width: 100% !important;
+          text-align: left !important;
+        }
+        .phone-stock-name {
+          max-width: 100% !important;
+          overflow: hidden !important;
+          text-overflow: ellipsis !important;
+          white-space: nowrap !important;
+          color: #1d111c !important;
+          font-size: 13.2px !important;
+          line-height: 1.05 !important;
+          font-weight: 950 !important;
+          letter-spacing: 0 !important;
+        }
+        .phone-stock-meta {
+          margin-top: 2px !important;
+          max-width: 100% !important;
+          overflow: hidden !important;
+          text-overflow: ellipsis !important;
+          white-space: nowrap !important;
+          color: #6c596a !important;
+          font-size: 9.8px !important;
+          line-height: 1.12 !important;
+          font-weight: 850 !important;
+        }
+        .phone-stock-total {
+          color: #160d16 !important;
+          font-size: 13.2px !important;
+          line-height: 1.05 !important;
+          font-weight: 950 !important;
+          text-align: right !important;
+          white-space: nowrap !important;
+        }
+        .phone-stock-metrics,
+        .phone-stock-prices {
+          position: relative;
+          z-index: 1;
+          display: grid !important;
+          gap: 6px !important;
+        }
+        .phone-stock-metrics {
+          grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+        }
+        .phone-stock-metrics > div,
+        .phone-stock-prices > span {
+          min-width: 0 !important;
+          border-radius: 12px !important;
+          padding: 6px 7px !important;
+          background: rgba(255,255,255,.56) !important;
+          border: 1px solid rgba(200,148,37,.18) !important;
+          box-shadow: inset 0 1px 0 rgba(255,255,255,.78) !important;
+        }
+        .phone-stock-metrics span,
+        .phone-stock-prices em {
+          display: block !important;
+          color: #8b7182 !important;
+          font-size: 7.8px !important;
+          line-height: 1 !important;
+          font-style: normal !important;
+          font-weight: 950 !important;
+          text-transform: uppercase !important;
+        }
+        .phone-stock-metrics b,
+        .phone-stock-prices b {
+          display: block !important;
+          margin-top: 2px !important;
+          color: #211521 !important;
+          font-size: 10.5px !important;
+          line-height: 1.08 !important;
+          font-weight: 950 !important;
+          text-align: right !important;
+          white-space: nowrap !important;
+          overflow: hidden !important;
+          text-overflow: ellipsis !important;
+        }
+        .phone-stock-metrics small {
+          display: block !important;
+          margin-top: 2px !important;
+          color: #6c596a !important;
+          font-size: 8.8px !important;
+          line-height: 1 !important;
+          font-weight: 850 !important;
+          text-align: right !important;
+          white-space: nowrap !important;
+        }
+        .phone-stock-prices {
+          grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+          color: inherit !important;
+          text-decoration: none !important;
+          -webkit-tap-highlight-color: transparent !important;
+        }
+        .phone-stock-prices:active > span {
+          border-color: rgba(122,18,72,.34) !important;
+          background: rgba(255,255,255,.92) !important;
         }
         .phone-row {
           position: relative;
@@ -3544,6 +4112,62 @@ export default function AssetManagerApp() {
           box-shadow: 0 9px 20px rgba(200,148,37,.28), inset 0 1px 0 rgba(255,255,255,.72) !important;
         }
         .mobile-tab-account-menu { padding: 6px !important; }
+        .mobile-tabbar {
+          right: 0.65rem !important;
+          left: 0.65rem !important;
+          bottom: calc(env(safe-area-inset-bottom) + 0.5rem) !important;
+          justify-content: space-between !important;
+          gap: 0.1rem !important;
+          border-radius: 20px !important;
+          padding: 4px !important;
+          box-shadow: 0 12px 26px rgba(48,26,50,.14), inset 0 1px 0 rgba(255,255,255,.88) !important;
+        }
+        .mobile-tabbar button {
+          flex: 1 1 0 !important;
+          min-width: 0 !important;
+          min-height: 38px !important;
+          padding: 0 4px !important;
+          font-size: 10px !important;
+        }
+        .mobile-tabbar.mobile-top-nav {
+          position: sticky !important;
+          top: calc(env(safe-area-inset-top) + 72px) !important;
+          right: auto !important;
+          bottom: auto !important;
+          left: auto !important;
+          z-index: 39 !important;
+          width: calc(100vw - 18px) !important;
+          max-width: calc(100vw - 18px) !important;
+          margin: -4px auto 12px !important;
+          justify-content: flex-start !important;
+          gap: 7px !important;
+          overflow-x: auto !important;
+          border-radius: 22px !important;
+          padding: 7px !important;
+          white-space: nowrap !important;
+        }
+        .mobile-tabbar.mobile-top-nav button {
+          flex: 0 0 auto !important;
+          min-width: max-content !important;
+          min-height: 38px !important;
+          gap: 6px !important;
+          padding: 0 13px !important;
+          font-size: 12px !important;
+          letter-spacing: -.03em !important;
+        }
+        .mobile-tabbar.mobile-top-nav .mobile-nav-back {
+          border: 1px solid rgba(83,43,72,.12) !important;
+          background: rgba(255,255,255,.64) !important;
+          color: #4f354a !important;
+        }
+        .mobile-tabbar.mobile-top-nav .mobile-nav-back span:first-child {
+          font-size: 18px !important;
+          line-height: 1 !important;
+        }
+        .phone-content {
+          padding-bottom: 18px !important;
+        }
+
         .mobile-menu-panel {
           border-color: rgba(83,43,72,.13) !important;
           background: rgba(255,253,248,.98) !important;
@@ -3567,6 +4191,352 @@ export default function AssetManagerApp() {
           .phone-mini-value { font-size: 11px !important; }
           .phone-tab { font-size: 10px !important; }
           .mobile-appbar h2 { font-size: 22px !important; }
+        }
+      `}</style>
+
+      <style>{`
+        /* Ultra premium override layer: high-end ivory, oxblood plum, champagne gold */
+        :root {
+          --lux-ink: #12060d;
+          --lux-ink-soft: #38202f;
+          --lux-muted: #7b6875;
+          --lux-cream: #fff8eb;
+          --lux-cream-2: #f6ead5;
+          --lux-porcelain: rgba(255,255,255,.86);
+          --lux-plum: #4b082a;
+          --lux-plum-2: #790f46;
+          --lux-plum-3: #a21a61;
+          --lux-gold: #c69632;
+          --lux-gold-2: #f0d794;
+          --lux-line: rgba(95, 46, 74, .14);
+          --lux-line-strong: rgba(198, 150, 50, .32);
+          --lux-green: #007a55;
+          --lux-red: #cc2c2c;
+          --lux-shadow: 0 28px 78px rgba(55, 18, 39, .15);
+          --lux-shadow-soft: 0 18px 45px rgba(55, 18, 39, .10);
+          --lux-inner: inset 0 1px 0 rgba(255,255,255,.82), inset 0 -1px 0 rgba(120,72,18,.06);
+        }
+
+        body {
+          background:
+            radial-gradient(circle at 8% -8%, rgba(255, 219, 128, .50), transparent 28rem),
+            radial-gradient(circle at 100% 0%, rgba(121, 15, 70, .16), transparent 30rem),
+            radial-gradient(circle at 78% 96%, rgba(198, 150, 50, .12), transparent 26rem),
+            linear-gradient(135deg, #fffdf9 0%, #fbf0dc 42%, #f3dfbf 100%) !important;
+          color: var(--lux-ink) !important;
+          font-feature-settings: "tnum" 1, "cv02" 1, "cv03" 1, "cv04" 1;
+          letter-spacing: -.01em;
+        }
+
+        .app-shell {
+          background:
+            linear-gradient(90deg, rgba(255,255,255,.42), rgba(255,255,255,0)),
+            radial-gradient(circle at 16% 8%, rgba(255, 227, 154, .46), transparent 30rem),
+            radial-gradient(circle at 92% -2%, rgba(94, 10, 54, .16), transparent 32rem),
+            linear-gradient(180deg, #fffdf8 0%, #f9edda 100%) !important;
+        }
+
+        main {
+          background:
+            radial-gradient(circle at 84% 0%, rgba(255,255,255,.70), transparent 20rem),
+            linear-gradient(180deg, rgba(255,255,255,.54), rgba(255,255,255,.10)) !important;
+        }
+
+        .desktop-sidebar {
+          background:
+            linear-gradient(180deg, rgba(255,255,255,.82), rgba(255,246,229,.92)),
+            radial-gradient(circle at 22% 0%, rgba(246, 207, 111, .38), transparent 18rem),
+            linear-gradient(180deg, #fffaf0, #f5e4c9) !important;
+          border-right: 1px solid rgba(198,150,50,.28) !important;
+          box-shadow: 24px 0 70px rgba(45, 14, 32, .10) !important;
+          backdrop-filter: blur(28px) saturate(145%) !important;
+        }
+        .desktop-sidebar::before {
+          content: "";
+          position: fixed;
+          left: 0;
+          top: 0;
+          width: 280px;
+          height: 3px;
+          background: linear-gradient(90deg, var(--lux-plum), var(--lux-gold), transparent);
+          z-index: 20;
+        }
+        .desktop-sidebar h1 {
+          color: var(--lux-plum) !important;
+          font-weight: 950 !important;
+          letter-spacing: -.055em !important;
+        }
+        .desktop-sidebar .bg-sage,
+        .bg-sage {
+          background:
+            radial-gradient(circle at 22% 10%, rgba(255,255,255,.32), transparent 1.25rem),
+            linear-gradient(135deg, #a21a61 0%, #790f46 42%, #3f0624 100%) !important;
+          color: #fff !important;
+          box-shadow: 0 16px 34px rgba(75,8,42,.28), inset 0 1px 0 rgba(255,255,255,.28) !important;
+        }
+        .desktop-sidebar nav button {
+          border: 1px solid transparent !important;
+          color: #4b3d48 !important;
+          font-weight: 850 !important;
+          letter-spacing: -.015em !important;
+        }
+        .desktop-sidebar nav button:hover {
+          background: rgba(255,255,255,.72) !important;
+          border-color: rgba(198,150,50,.22) !important;
+          color: var(--lux-plum) !important;
+          box-shadow: 0 10px 26px rgba(75,8,42,.08), inset 0 1px 0 rgba(255,255,255,.85) !important;
+        }
+        .desktop-sidebar nav button.bg-sage {
+          background:
+            linear-gradient(135deg, #6e0c3f 0%, #9d185c 54%, #c69632 135%) !important;
+          color: #fff !important;
+          border-color: rgba(255,255,255,.28) !important;
+          box-shadow: 0 16px 34px rgba(75,8,42,.24), inset 0 1px 0 rgba(255,255,255,.25) !important;
+        }
+
+        .desktop-header,
+        .mobile-appbar {
+          border: 1px solid rgba(198,150,50,.20) !important;
+          border-radius: 28px !important;
+          background:
+            linear-gradient(135deg, rgba(255,255,255,.88), rgba(255,247,231,.78)),
+            radial-gradient(circle at 94% 0%, rgba(198,150,50,.22), transparent 12rem) !important;
+          box-shadow: var(--lux-shadow-soft) !important;
+          padding: 16px 18px !important;
+          backdrop-filter: blur(22px) saturate(135%) !important;
+        }
+
+        .card,
+        .card-gradient,
+        .kpi-card,
+        .overflow-auto.rounded-\[22px\],
+        .investment-table {
+          border: 1px solid rgba(198,150,50,.22) !important;
+          background:
+            linear-gradient(180deg, rgba(255,255,255,.92), rgba(255,250,241,.88)) !important;
+          box-shadow: var(--lux-shadow-soft), var(--lux-inner) !important;
+          backdrop-filter: blur(22px) saturate(140%) !important;
+        }
+        .card:hover,
+        .kpi-card:hover {
+          transform: translateY(-1px);
+          box-shadow: var(--lux-shadow), var(--lux-inner) !important;
+        }
+        .card > .border-b,
+        .card-gradient > .border-b {
+          border-color: rgba(198,150,50,.20) !important;
+          background:
+            linear-gradient(135deg, rgba(255,255,255,.78), rgba(255,246,226,.70)) !important;
+        }
+
+        h1, h2, h3 {
+          color: var(--lux-ink) !important;
+          letter-spacing: -.045em !important;
+          font-weight: 900 !important;
+        }
+        p, span, td, th, label, input, select, textarea, button {
+          font-variant-numeric: tabular-nums;
+        }
+
+        .btn,
+        .btn-danger {
+          border: 1px solid rgba(198,150,50,.24) !important;
+          background: linear-gradient(180deg, #ffffff, #fff7e9) !important;
+          color: #3d2835 !important;
+          border-radius: 999px !important;
+          box-shadow: 0 10px 22px rgba(75,8,42,.07), inset 0 1px 0 rgba(255,255,255,.88) !important;
+          font-weight: 850 !important;
+        }
+        .btn:hover,
+        .btn-danger:hover {
+          transform: translateY(-1px) !important;
+          border-color: rgba(121,15,70,.32) !important;
+          color: var(--lux-plum) !important;
+          box-shadow: 0 16px 30px rgba(75,8,42,.13), inset 0 1px 0 rgba(255,255,255,.9) !important;
+        }
+        .btn-primary,
+        .phone-add-btn {
+          border: 1px solid rgba(255,255,255,.28) !important;
+          background:
+            radial-gradient(circle at 18% 0%, rgba(255,255,255,.26), transparent 2.2rem),
+            linear-gradient(135deg, #a51b61, #790f46 50%, #4b082a) !important;
+          color: #fff !important;
+          border-radius: 999px !important;
+          box-shadow: 0 18px 34px rgba(75,8,42,.28), inset 0 1px 0 rgba(255,255,255,.24) !important;
+          font-weight: 900 !important;
+        }
+        .btn-primary:hover { filter: brightness(1.05); transform: translateY(-1px) !important; }
+
+        .pill,
+        [class*="rounded-full"] {
+          border-color: rgba(198,150,50,.22) !important;
+          background: linear-gradient(180deg, rgba(255,255,255,.90), rgba(255,247,229,.82)) !important;
+          color: #4d3342 !important;
+          box-shadow: inset 0 1px 0 rgba(255,255,255,.82) !important;
+        }
+
+        .field-label {
+          color: #654b5c !important;
+          letter-spacing: .15em !important;
+          font-weight: 950 !important;
+        }
+        .field-input,
+        input,
+        select,
+        textarea {
+          background: rgba(255,255,255,.84) !important;
+          border-color: rgba(198,150,50,.24) !important;
+          border-radius: 18px !important;
+          box-shadow: inset 0 1px 0 rgba(255,255,255,.85), 0 8px 22px rgba(75,8,42,.05) !important;
+        }
+        .field-input:focus,
+        input:focus,
+        select:focus,
+        textarea:focus {
+          border-color: rgba(121,15,70,.48) !important;
+          box-shadow: 0 0 0 4px rgba(121,15,70,.10), 0 12px 28px rgba(75,8,42,.09) !important;
+        }
+
+        .kpi-card {
+          position: relative;
+          overflow: hidden;
+          border-radius: 26px !important;
+          padding: 18px !important;
+        }
+        .kpi-card::before {
+          content: "";
+          position: absolute;
+          inset: 0 auto 0 0;
+          width: 4px;
+          background: linear-gradient(180deg, var(--lux-plum-2), var(--lux-gold));
+          opacity: .9;
+        }
+        .kpi-card::after {
+          content: "";
+          position: absolute;
+          right: -34px;
+          top: -44px;
+          width: 120px;
+          height: 120px;
+          border-radius: 999px;
+          background: radial-gradient(circle, rgba(240,215,148,.35), transparent 70%);
+          pointer-events: none;
+        }
+        .stat-label {
+          color: #705a6a !important;
+          font-weight: 950 !important;
+          letter-spacing: .16em !important;
+        }
+        .stat-value,
+        .text-emerald-700,
+        .text-green-700 {
+          color: var(--lux-green) !important;
+        }
+        .text-red-700,
+        .text-red-600 {
+          color: var(--lux-red) !important;
+        }
+        .stat-note { color: #8c7986 !important; font-weight: 650 !important; }
+
+        .investment-table,
+        .table-smooth,
+        .stock-holdings-table {
+          border-radius: 28px !important;
+          overflow: auto !important;
+        }
+        .investment-table table,
+        .stock-holdings-table table,
+        .table-smooth table {
+          border-collapse: separate !important;
+          border-spacing: 0 !important;
+          background: transparent !important;
+        }
+        .investment-table thead th,
+        .stock-holdings-table thead th,
+        .table-smooth thead th,
+        .overflow-auto table thead th {
+          position: sticky;
+          top: 0;
+          z-index: 2;
+          background:
+            linear-gradient(180deg, #f5e9d4, #ead8b7) !important;
+          color: #342433 !important;
+          border-bottom: 1px solid rgba(198,150,50,.35) !important;
+          font-size: 11px !important;
+          font-weight: 950 !important;
+          letter-spacing: .105em !important;
+        }
+        .investment-table tbody td,
+        .stock-holdings-table tbody td,
+        .table-smooth tbody td,
+        .overflow-auto table tbody td {
+          border-bottom: 1px solid rgba(95,46,74,.09) !important;
+          color: #2e2230 !important;
+          font-weight: 650 !important;
+        }
+        .investment-table tbody tr,
+        .stock-holdings-table tbody tr,
+        .table-smooth tbody tr {
+          background: rgba(255,255,255,.64) !important;
+          transition: transform .14s ease, box-shadow .14s ease, background .14s ease !important;
+        }
+        .investment-table tbody tr:nth-child(even),
+        .stock-holdings-table tbody tr:nth-child(even) {
+          background: rgba(255,249,238,.72) !important;
+        }
+        .investment-table tbody tr:hover,
+        .stock-holdings-table tbody tr:hover,
+        .table-smooth tbody tr:hover {
+          background: linear-gradient(90deg, rgba(255,245,218,.95), rgba(255,255,255,.86)) !important;
+          box-shadow: inset 4px 0 0 var(--lux-plum-2), 0 10px 26px rgba(75,8,42,.08) !important;
+        }
+        .investment-table a,
+        .stock-holdings-table a {
+          color: #075f8c !important;
+          font-weight: 900 !important;
+          text-decoration: none !important;
+        }
+        .investment-table a:hover { color: var(--lux-plum-2) !important; }
+
+        .stock-range-box {
+          border-radius: 999px !important;
+          min-height: 28px !important;
+          background: linear-gradient(180deg, rgba(255,255,255,.86), rgba(255,247,229,.82)) !important;
+          box-shadow: inset 0 1px 0 rgba(255,255,255,.72), 0 6px 14px rgba(75,8,42,.05) !important;
+          font-size: 11px !important;
+        }
+
+        .mobile-appbar,
+        .mobile-menu-panel,
+        .phone-card,
+        .phone-row,
+        .phone-summary-card,
+        .phone-metric-card {
+          border-color: rgba(198,150,50,.22) !important;
+          background:
+            linear-gradient(180deg, rgba(255,255,255,.88), rgba(255,248,235,.82)) !important;
+          box-shadow: var(--lux-shadow-soft), var(--lux-inner) !important;
+          backdrop-filter: blur(22px) saturate(140%) !important;
+        }
+        .mobile-icon-btn {
+          background: linear-gradient(180deg, #fff, #fff2d9) !important;
+          border-color: rgba(198,150,50,.26) !important;
+          color: var(--lux-plum) !important;
+        }
+        .phone-hero-value,
+        .phone-row-value,
+        .phone-stat-value {
+          color: var(--lux-plum) !important;
+          font-weight: 950 !important;
+        }
+
+        ::selection { background: rgba(121,15,70,.20); color: var(--lux-ink); }
+        ::-webkit-scrollbar { width: 11px; height: 11px; }
+        ::-webkit-scrollbar-track { background: rgba(255,248,235,.76); }
+        ::-webkit-scrollbar-thumb {
+          background: linear-gradient(180deg, rgba(121,15,70,.45), rgba(198,150,50,.55));
+          border: 3px solid rgba(255,248,235,.9);
+          border-radius: 999px;
         }
       `}</style>
       <aside className="desktop-sidebar sticky top-0 h-screen overflow-auto border-r border-[#e3dccc] bg-[#FFFFFF]/90 p-4 backdrop-blur-xl">
@@ -3647,6 +4617,30 @@ export default function AssetManagerApp() {
             </div>
           </div>
         )}
+        <nav className="mobile-tabbar mobile-top-nav" aria-label="Mobile section navigation">
+          {mobileNavMode === "investments" && (
+            <button
+              type="button"
+              onClick={() => selectMobileTab("__back")}
+              className="mobile-nav-back"
+              aria-label="Back to summary navigation"
+            >
+              <span aria-hidden="true">←</span>
+              <span>Back</span>
+            </button>
+          )}
+          {(mobileNavMode === "investments" ? mobileInvestmentTabsByValue : mobileMainTabs).map(([id, label, Icon]) => (
+            <button
+              key={id}
+              type="button"
+              onClick={() => selectMobileTab(id)}
+              className={(id === "investments" ? mobileNavMode === "investments" : view === id) ? "active" : ""}
+            >
+              <Icon size={18} />
+              <span>{label}</span>
+            </button>
+          ))}
+        </nav>
         <div className="phone-content min-w-0 max-w-full overflow-hidden">
           {view === "shareList" ? shareListView() : phoneView()}
         </div>
@@ -3711,35 +4705,7 @@ export default function AssetManagerApp() {
             {toast}
           </div>
         )}
-        {mobileTabAccounts.length > 0 && (
-          <div className="mobile-tab-account-menu">
-            {mobileTabAccounts.map((account) => (
-              <button
-                key={account}
-                className={
-                  accountTab("__phone") === account ? "active" : ""
-                }
-                onClick={() => {
-                  setAccountTabs((p) => ({ ...p, __phone: account }));
-                }}
-              >
-                {account === "All" ? "All" : account}
-              </button>
-            ))}
-          </div>
-        )}
-        <nav className="mobile-tabbar">
-          {mobileTabsByValue.map(([id, label, Icon]) => (
-            <button
-              key={id}
-              onClick={() => selectMobileTab(id)}
-              className={view === id ? "active" : ""}
-            >
-              <Icon size={20} />
-              <span>{label}</span>
-            </button>
-          ))}
-        </nav>
+
       </main>
     </div>
   );
@@ -4471,7 +5437,13 @@ export default function AssetManagerApp() {
           return `${c > 0 ? "+" : ""}$${plain(c, 2)} (${cp > 0 ? "+" : ""}${cp.toFixed(2)}%)`;
         return `${prefix}${plain(c, 2)} (${cp > 0 ? "+" : ""}${cp.toFixed(2)}%)`;
       },
-      refreshText = autoRefresh ? "Auto refresh 60 sec" : "Auto refresh Off";
+      refreshText = autoRefresh
+        ? `Auto refresh 5 sec | ${autoRefreshScheduleText()}`
+        : "Auto refresh Off",
+      marketTime =
+        marketTodayUpdatedAt ||
+        rows.find((x: any) => x?.time)?.time ||
+        new Date().toISOString();
     return (
       <section className="card overflow-hidden p-0">
         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#e3dccc] bg-[#FFFFFF] px-5 py-3">
@@ -4481,8 +5453,8 @@ export default function AssetManagerApp() {
             </h3>
             <span className="text-lg text-[#004080]">Today</span>
             <span className="text-xs font-semibold text-gray-500">
-              {new Date().toLocaleDateString()}{" "}
-              {new Date().toLocaleTimeString([], {
+              {new Date(marketTime).toLocaleDateString()}{" "}
+              {new Date(marketTime).toLocaleTimeString([], {
                 hour: "2-digit",
                 minute: "2-digit",
               })}
@@ -7843,22 +8815,25 @@ export default function AssetManagerApp() {
               ...propertyLoanLiabilityRecords(),
             ]
           : records.filter((r) => r.module_key === k),
-      tabs = [
-        "All",
-        ...Array.from(
-          new Set(
-            moduleRecords.map((r) =>
-              String(r.data?.account_name || "Unassigned"),
-            ),
-          ),
+      stockWatchlistCount =
+        k === "stocks"
+          ? records.filter((r) => r.module_key === "watchlist").length
+          : 0,
+      accountNames = Array.from(
+        new Set(
+          moduleRecords.map((r) => String(r.data?.account_name || "Unassigned")),
         ),
-      ],
-      selected = tabs.includes(accountTab(k)) ? accountTab(k) : "All",
-      filtered = moduleRecords.filter(
-        (r) =>
-          selected === "All" ||
-          String(r.data?.account_name || "Unassigned") === selected,
       ),
+      tabs = k === "stocks" ? ["All", ...accountNames, "Watchlist"] : ["All", ...accountNames],
+      selected = tabs.includes(accountTab(k)) ? accountTab(k) : "All",
+      filtered =
+        k === "stocks" && selected === "Watchlist"
+          ? []
+          : moduleRecords.filter(
+              (r) =>
+                selected === "All" ||
+                String(r.data?.account_name || "Unassigned") === selected,
+            ),
       tabTotals = computeModuleTotals(k, filtered),
       rows = groupedRows(k, filtered).filter((x) =>
         JSON.stringify(x.c).toLowerCase().includes(query.toLowerCase()),
@@ -7874,7 +8849,7 @@ export default function AssetManagerApp() {
         "otherAssets",
       ].includes(k),
       hasAccountTabs = isInvestment || k === "insurance" || k === "loans",
-      mode = detailTabs[k] || "holdings",
+      mode = k === "stocks" && selected === "Watchlist" ? "watchlist" : "holdings",
       reviewRows =
         k === "fixedIncome" ? filtered.filter(fixedIncomeReviewDue) : [],
       maturityRows =
@@ -7990,7 +8965,7 @@ export default function AssetManagerApp() {
                     : ""}
                   {lastSynced ? ` | Last sync: ${lastSynced}` : ""}
                 </button>
-                <button className="btn" onClick={() => refreshStocks()}>
+                <button className="btn" onClick={() => refreshStocks(false, true)}>
                   <RefreshCw size={16} className="inline" /> Refresh Holdings
                 </button>
                 <button
@@ -8001,8 +8976,32 @@ export default function AssetManagerApp() {
                 </button>
               </div>
             </div>
-            {holdingBrokerTabs(k)}
           </section>
+          {hasAccountTabs && tabs.length > 1 && (
+            <div className="mb-4 flex gap-2 overflow-auto rounded-2xl border border-[#e3dccc] bg-[#FFFFFF] p-1">
+              {tabs.map((t) => {
+                const count =
+                  t === "All"
+                    ? moduleRecords.length
+                    : k === "stocks" && t === "Watchlist"
+                      ? stockWatchlistCount
+                      : moduleRecords.filter(
+                          (r) => String(r.data?.account_name || "Unassigned") === t,
+                        ).length;
+                return (
+                  <button
+                    key={t}
+                    onClick={() =>
+                      setAccountTabs((prev) => ({ ...prev, [k]: t }))
+                    }
+                    className={`shrink-0 rounded-xl px-3 py-2 text-sm font-semibold ${selected === t ? "bg-sage text-white shadow-sm" : "text-[#17382b] hover:bg-[#eef5ee]"}`}
+                  >
+                    {t} <span className="opacity-70">({count})</span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
           {marketTodayHeader()}
           {stockWatchlistTable()}
         </div>
@@ -8028,7 +9027,7 @@ export default function AssetManagerApp() {
                     : ""}
                   {lastSynced ? ` | Last sync: ${lastSynced}` : ""}
                 </button>
-                <button className="btn" onClick={() => refreshModuleRates(k)}>
+                <button className="btn" onClick={() => refreshModuleRates(k, false, true)}>
                   <RefreshCw size={16} className="inline" /> Refresh Current
                   Rates
                 </button>
@@ -8043,17 +9042,18 @@ export default function AssetManagerApp() {
                 </button>
               </div>
             </div>
-            {holdingBrokerTabs(k)}
             {hasAccountTabs && tabs.length > 1 && (
               <div className="mb-4 flex gap-2 overflow-auto rounded-2xl border border-[#e3dccc] bg-[#FFFFFF] p-1">
                 {tabs.map((t) => {
                   const count =
                     t === "All"
                       ? moduleRecords.length
-                      : moduleRecords.filter(
-                          (r) =>
-                            String(r.data?.account_name || "Unassigned") === t,
-                        ).length;
+                      : k === "stocks" && t === "Watchlist"
+                        ? stockWatchlistCount
+                        : moduleRecords.filter(
+                            (r) =>
+                              String(r.data?.account_name || "Unassigned") === t,
+                          ).length;
                   return (
                     <button
                       key={t}
@@ -8125,7 +9125,7 @@ export default function AssetManagerApp() {
               </button>
             )}
             {isInvestment && (
-              <button className="btn" onClick={() => refreshModuleRates(k)}>
+              <button className="btn" onClick={() => refreshModuleRates(k, false, true)}>
                 <RefreshCw size={16} className="inline" /> Refresh Current Rates
               </button>
             )}
@@ -8140,16 +9140,17 @@ export default function AssetManagerApp() {
             </button>
           </div>
         </div>
-        {k === "stocks" && holdingBrokerTabs(k)}
         {hasAccountTabs && tabs.length > 1 && (
           <div className="mb-4 flex gap-2 overflow-auto rounded-2xl border border-[#e3dccc] bg-[#FFFFFF] p-1">
             {tabs.map((t) => {
               const count =
                 t === "All"
                   ? moduleRecords.length
-                  : moduleRecords.filter(
-                      (r) => String(r.data?.account_name || "Unassigned") === t,
-                    ).length;
+                  : k === "stocks" && t === "Watchlist"
+                    ? stockWatchlistCount
+                    : moduleRecords.filter(
+                        (r) => String(r.data?.account_name || "Unassigned") === t,
+                      ).length;
               return (
                 <button
                   key={t}

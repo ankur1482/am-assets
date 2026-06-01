@@ -1461,3 +1461,158 @@ main .rounded-3xl {
     padding: 13px 12px !important;
   }
 }
+
+/* =========================================================
+   ULTRA PREMIUM VISUAL SYSTEM OVERRIDES
+   Safe to keep at the very end of globals.css.
+   ========================================================= */
+:root {
+  --lux-ink: #12060d;
+  --lux-ink-soft: #38202f;
+  --lux-muted: #7b6875;
+  --lux-cream: #fff8eb;
+  --lux-cream-2: #f6ead5;
+  --lux-plum: #4b082a;
+  --lux-plum-2: #790f46;
+  --lux-plum-3: #a21a61;
+  --lux-gold: #c69632;
+  --lux-gold-2: #f0d794;
+  --lux-line: rgba(95, 46, 74, .14);
+  --lux-line-strong: rgba(198, 150, 50, .32);
+  --lux-green: #007a55;
+  --lux-red: #cc2c2c;
+  --lux-shadow: 0 28px 78px rgba(55, 18, 39, .15);
+  --lux-shadow-soft: 0 18px 45px rgba(55, 18, 39, .10);
+  --lux-inner: inset 0 1px 0 rgba(255,255,255,.82), inset 0 -1px 0 rgba(120,72,18,.06);
+}
+
+html, body {
+  background:
+    radial-gradient(circle at 8% -8%, rgba(255, 219, 128, .50), transparent 28rem),
+    radial-gradient(circle at 100% 0%, rgba(121, 15, 70, .16), transparent 30rem),
+    radial-gradient(circle at 78% 96%, rgba(198, 150, 50, .12), transparent 26rem),
+    linear-gradient(135deg, #fffdf9 0%, #fbf0dc 42%, #f3dfbf 100%) !important;
+  color: var(--lux-ink) !important;
+}
+
+body {
+  font-feature-settings: "tnum" 1, "cv02" 1, "cv03" 1, "cv04" 1;
+  letter-spacing: -.01em;
+  text-rendering: geometricPrecision;
+  -webkit-font-smoothing: antialiased;
+}
+
+.app-shell {
+  background:
+    linear-gradient(90deg, rgba(255,255,255,.42), rgba(255,255,255,0)),
+    radial-gradient(circle at 16% 8%, rgba(255, 227, 154, .46), transparent 30rem),
+    radial-gradient(circle at 92% -2%, rgba(94, 10, 54, .16), transparent 32rem),
+    linear-gradient(180deg, #fffdf8 0%, #f9edda 100%) !important;
+}
+
+.card, .card-gradient, .kpi-card, .investment-table, .table-smooth, .stock-holdings-table {
+  border-color: rgba(198,150,50,.22) !important;
+  box-shadow: var(--lux-shadow-soft), var(--lux-inner) !important;
+  backdrop-filter: blur(22px) saturate(140%) !important;
+}
+
+.btn, .btn-danger {
+  border-color: rgba(198,150,50,.24) !important;
+  background: linear-gradient(180deg, #ffffff, #fff7e9) !important;
+  color: #3d2835 !important;
+  border-radius: 999px !important;
+  box-shadow: 0 10px 22px rgba(75,8,42,.07), inset 0 1px 0 rgba(255,255,255,.88) !important;
+}
+
+.btn-primary {
+  border-color: rgba(255,255,255,.28) !important;
+  background: radial-gradient(circle at 18% 0%, rgba(255,255,255,.26), transparent 2.2rem), linear-gradient(135deg, #a51b61, #790f46 50%, #4b082a) !important;
+  color: #fff !important;
+  border-radius: 999px !important;
+  box-shadow: 0 18px 34px rgba(75,8,42,.28), inset 0 1px 0 rgba(255,255,255,.24) !important;
+}
+
+.investment-table thead th,
+.stock-holdings-table thead th,
+.table-smooth thead th,
+.overflow-auto table thead th {
+  background: linear-gradient(180deg, #f5e9d4, #ead8b7) !important;
+  color: #342433 !important;
+  border-bottom-color: rgba(198,150,50,.35) !important;
+  font-weight: 950 !important;
+  letter-spacing: .105em !important;
+}
+
+.investment-table tbody tr:nth-child(even), .stock-holdings-table tbody tr:nth-child(even) {
+  background: rgba(255,249,238,.72) !important;
+}
+
+.investment-table tbody tr:hover, .stock-holdings-table tbody tr:hover, .table-smooth tbody tr:hover {
+  background: linear-gradient(90deg, rgba(255,245,218,.95), rgba(255,255,255,.86)) !important;
+  box-shadow: inset 4px 0 0 var(--lux-plum-2), 0 10px 26px rgba(75,8,42,.08) !important;
+}
+
+/* =========================================================
+   MOBILE NAV V2 FIXES
+   Moves the mobile summary/investment navigation to the top,
+   prevents label overlap, and removes the old bottom-bar spacing.
+========================================================= */
+@media (max-width: 768px) {
+  main {
+    padding-bottom: calc(env(safe-area-inset-bottom) + 1.25rem) !important;
+  }
+
+  .mobile-tabbar.mobile-top-nav {
+    position: sticky !important;
+    top: calc(env(safe-area-inset-top) + 72px) !important;
+    right: auto !important;
+    bottom: auto !important;
+    left: auto !important;
+    z-index: 39 !important;
+    display: flex !important;
+    width: calc(100vw - 18px) !important;
+    max-width: calc(100vw - 18px) !important;
+    margin: -4px auto 12px !important;
+    justify-content: flex-start !important;
+    gap: 7px !important;
+    overflow-x: auto !important;
+    overflow-y: hidden !important;
+    border-radius: 22px !important;
+    padding: 7px !important;
+    white-space: nowrap !important;
+  }
+
+  .mobile-tabbar.mobile-top-nav button {
+    flex: 0 0 auto !important;
+    min-width: max-content !important;
+    min-height: 38px !important;
+    flex-direction: row !important;
+    gap: 6px !important;
+    padding: 0 13px !important;
+    font-size: 12px !important;
+    letter-spacing: -0.03em !important;
+  }
+
+  .mobile-tabbar.mobile-top-nav button svg {
+    display: none !important;
+  }
+
+  .mobile-tabbar.mobile-top-nav .mobile-nav-back {
+    border: 1px solid rgba(83, 43, 72, 0.12) !important;
+    background: rgba(255, 255, 255, 0.64) !important;
+    color: #4f354a !important;
+  }
+
+  .mobile-tabbar.mobile-top-nav .mobile-nav-back span:first-child {
+    font-size: 18px !important;
+    line-height: 1 !important;
+  }
+
+  .phone-content {
+    padding-bottom: 18px !important;
+  }
+
+  .phone-bullion-card .phone-stock-prices span b:empty::after {
+    content: "—";
+  }
+}
