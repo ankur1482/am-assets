@@ -270,6 +270,12 @@ const APP_THEMES = [
     note: "Clean broker terminal with blue actions and red brand accent",
     swatches: ["#FFFFFF", "#004B8D", "#ED1C24"],
   },
+  {
+    id: "studio",
+    name: "Studio Store",
+    note: "Elegant product-gallery calm with soft gray, white and blue",
+    swatches: ["#F5F5F7", "#FFFFFF", "#0071E3"],
+  },
 ];
 const APP_FONTS = [
   { label: "Inter", value: "Inter, ui-sans-serif, system-ui, sans-serif" },
@@ -5844,6 +5850,276 @@ export default function AssetManagerApp() {
         .phone-stat-value {
           color: var(--lux-plum) !important;
           font-weight: 950 !important;
+        }
+
+        /* Studio Store: a restrained product-gallery theme inspired by premium
+           storefront rhythm, adapted for financial data rather than branding. */
+        .app-theme-studio {
+          --am-bg: #F5F5F7;
+          --am-bg-2: #F5F5F7;
+          --am-surface: #FFFFFF;
+          --am-surface-2: #FBFBFD;
+          --am-ink: #1D1D1F;
+          --am-ink-2: #000000;
+          --am-muted: #6E6E73;
+          --am-muted-2: #86868B;
+          --am-line: rgba(0, 0, 0, .08);
+          --am-line-strong: rgba(0, 0, 0, .14);
+          --am-plum: #0071E3;
+          --am-plum-2: #0077ED;
+          --am-plum-3: #2997FF;
+          --am-gold: #0071E3;
+          --am-green: #248A3D;
+          --am-red: #D70015;
+          --am-shadow: 0 12px 30px rgba(0, 0, 0, .08);
+          --am-soft-shadow: 0 5px 18px rgba(0, 0, 0, .06);
+          color: #1D1D1F !important;
+          background: #F5F5F7 !important;
+          font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display",
+            "SF Pro Text", "Helvetica Neue", Arial, sans-serif !important;
+          letter-spacing: -.012em;
+        }
+        .app-theme-studio,
+        .app-theme-studio main,
+        .app-theme-studio .phone-content {
+          background: #F5F5F7 !important;
+        }
+        .app-theme-studio .desktop-sidebar {
+          background: rgba(255, 255, 255, .92) !important;
+          border-right: 1px solid rgba(0, 0, 0, .07) !important;
+          box-shadow: none !important;
+          backdrop-filter: saturate(180%) blur(22px) !important;
+          scrollbar-color: rgba(0, 0, 0, .22) transparent !important;
+        }
+        .app-theme-studio .desktop-sidebar::before {
+          display: none !important;
+        }
+        .app-theme-studio .desktop-sidebar h1 {
+          color: #1D1D1F !important;
+          font-weight: 700 !important;
+          letter-spacing: -.035em !important;
+        }
+        .app-theme-studio .desktop-sidebar p,
+        .app-theme-studio .text-gray-500,
+        .app-theme-studio .text-gray-600,
+        .app-theme-studio .text-slate-500 {
+          color: #6E6E73 !important;
+        }
+        .app-theme-studio .desktop-sidebar nav button {
+          min-height: 42px;
+          border: 0 !important;
+          border-radius: 12px !important;
+          color: #424245 !important;
+          background: transparent !important;
+          box-shadow: none !important;
+          font-weight: 600 !important;
+          letter-spacing: -.01em !important;
+        }
+        .app-theme-studio .desktop-sidebar nav button:hover {
+          color: #1D1D1F !important;
+          background: #F5F5F7 !important;
+        }
+        .app-theme-studio .desktop-sidebar nav button.bg-sage {
+          color: #0066CC !important;
+          background: #EAF4FF !important;
+          box-shadow: none !important;
+        }
+        .app-theme-studio .desktop-header {
+          border: 0 !important;
+          background: transparent !important;
+          box-shadow: none !important;
+          padding: 10px 2px 18px !important;
+        }
+        .app-theme-studio h1,
+        .app-theme-studio h2,
+        .app-theme-studio h3,
+        .app-theme-studio h4,
+        .app-theme-studio .stat-value,
+        .app-theme-studio .phone-hero-value,
+        .app-theme-studio .phone-row-value,
+        .app-theme-studio .phone-stat-value {
+          color: #1D1D1F !important;
+          font-weight: 700 !important;
+          letter-spacing: -.04em !important;
+          text-shadow: none !important;
+        }
+        .app-theme-studio .desktop-header h2 {
+          font-size: clamp(2.35rem, 4vw, 4rem) !important;
+          line-height: .95 !important;
+        }
+        .app-theme-studio .card,
+        .app-theme-studio .card-gradient,
+        .app-theme-studio .kpi-card,
+        .app-theme-studio section,
+        .app-theme-studio .rounded-2xl,
+        .app-theme-studio .rounded-3xl,
+        .app-theme-studio .investment-table,
+        .app-theme-studio .stock-holdings-table,
+        .app-theme-studio .table-smooth,
+        .app-theme-studio .desktop-market-card,
+        .app-theme-studio .phone-card,
+        .app-theme-studio .phone-row,
+        .app-theme-studio .phone-summary-card,
+        .app-theme-studio .phone-metric-card {
+          border-color: rgba(0, 0, 0, .06) !important;
+          border-radius: 22px !important;
+          background: #FFFFFF !important;
+          box-shadow: 0 5px 18px rgba(0, 0, 0, .055) !important;
+          backdrop-filter: none !important;
+        }
+        .app-theme-studio .kpi-card,
+        .app-theme-studio .desktop-market-card {
+          transition: transform .22s ease, box-shadow .22s ease !important;
+        }
+        .app-theme-studio .kpi-card:hover,
+        .app-theme-studio .desktop-market-card:hover {
+          transform: translateY(-2px);
+          box-shadow: 0 12px 28px rgba(0, 0, 0, .09) !important;
+        }
+        .app-theme-studio .card::before,
+        .app-theme-studio .desktop-market-card::before {
+          display: none !important;
+        }
+        .app-theme-studio .field-label,
+        .app-theme-studio .stat-label,
+        .app-theme-studio .phone-eyebrow {
+          color: #6E6E73 !important;
+          font-weight: 600 !important;
+          letter-spacing: .04em !important;
+        }
+        .app-theme-studio .field-input,
+        .app-theme-studio input,
+        .app-theme-studio select,
+        .app-theme-studio textarea {
+          border: 1px solid rgba(0, 0, 0, .12) !important;
+          border-radius: 12px !important;
+          color: #1D1D1F !important;
+          background: rgba(255, 255, 255, .94) !important;
+          box-shadow: none !important;
+        }
+        .app-theme-studio .field-input:focus,
+        .app-theme-studio input:focus,
+        .app-theme-studio select:focus,
+        .app-theme-studio textarea:focus {
+          border-color: #0071E3 !important;
+          box-shadow: 0 0 0 4px rgba(0, 113, 227, .14) !important;
+        }
+        .app-theme-studio .btn-primary,
+        .app-theme-studio .bg-sage,
+        .app-theme-studio .phone-add-btn {
+          border: 0 !important;
+          border-radius: 999px !important;
+          color: #FFFFFF !important;
+          background: #0071E3 !important;
+          box-shadow: none !important;
+          font-weight: 600 !important;
+        }
+        .app-theme-studio .btn-primary:hover,
+        .app-theme-studio .phone-add-btn:hover {
+          background: #0077ED !important;
+          transform: none !important;
+          filter: none !important;
+        }
+        .app-theme-studio .btn,
+        .app-theme-studio .btn-danger {
+          border: 1px solid rgba(0, 0, 0, .09) !important;
+          border-radius: 999px !important;
+          color: #0066CC !important;
+          background: #FFFFFF !important;
+          box-shadow: none !important;
+          font-weight: 600 !important;
+        }
+        .app-theme-studio .btn:hover {
+          border-color: rgba(0, 113, 227, .25) !important;
+          background: #F7FBFF !important;
+          transform: none !important;
+        }
+        .app-theme-studio .btn-danger {
+          color: #D70015 !important;
+          background: #FFF5F5 !important;
+        }
+        .app-theme-studio .pill,
+        .app-theme-studio .badge,
+        .app-theme-studio .chip,
+        .app-theme-studio .tag {
+          border-color: transparent !important;
+          color: #0066CC !important;
+          background: #EAF4FF !important;
+          box-shadow: none !important;
+        }
+        .app-theme-studio .investment-table,
+        .app-theme-studio .stock-holdings-table,
+        .app-theme-studio .table-smooth {
+          overflow: hidden;
+        }
+        .app-theme-studio .investment-table thead th,
+        .app-theme-studio .stock-holdings-table thead th,
+        .app-theme-studio .table-smooth thead th,
+        .app-theme-studio .overflow-auto table thead th {
+          color: #6E6E73 !important;
+          background: #FBFBFD !important;
+          border-bottom: 1px solid rgba(0, 0, 0, .08) !important;
+          font-weight: 600 !important;
+          letter-spacing: .02em !important;
+        }
+        .app-theme-studio .investment-table tbody tr,
+        .app-theme-studio .stock-holdings-table tbody tr,
+        .app-theme-studio .table-smooth tbody tr {
+          background: #FFFFFF !important;
+          box-shadow: none !important;
+        }
+        .app-theme-studio .investment-table tbody tr:hover,
+        .app-theme-studio .stock-holdings-table tbody tr:hover,
+        .app-theme-studio .table-smooth tbody tr:hover {
+          background: #F5F5F7 !important;
+          box-shadow: none !important;
+        }
+        .app-theme-studio .investment-table tbody td,
+        .app-theme-studio .stock-holdings-table tbody td,
+        .app-theme-studio .table-smooth tbody td {
+          color: #424245 !important;
+          border-bottom-color: rgba(0, 0, 0, .06) !important;
+        }
+        .app-theme-studio .text-emerald-700,
+        .app-theme-studio .text-green-700,
+        .app-theme-studio .text-green-600 {
+          color: #248A3D !important;
+        }
+        .app-theme-studio .text-red-700,
+        .app-theme-studio .text-red-600 {
+          color: #D70015 !important;
+        }
+        .app-theme-studio .mobile-appbar,
+        .app-theme-studio .mobile-menu-panel,
+        .app-theme-studio .mobile-tabbar.mobile-top-nav {
+          border-color: rgba(0, 0, 0, .07) !important;
+          color: #1D1D1F !important;
+          background: rgba(255, 255, 255, .88) !important;
+          box-shadow: 0 5px 18px rgba(0, 0, 0, .06) !important;
+          backdrop-filter: saturate(180%) blur(20px) !important;
+        }
+        .app-theme-studio .mobile-appbar::after {
+          display: none !important;
+        }
+        .app-theme-studio .mobile-icon-btn {
+          border-color: rgba(0, 0, 0, .08) !important;
+          color: #0066CC !important;
+          background: #F5F5F7 !important;
+          box-shadow: none !important;
+        }
+        .app-theme-studio .mobile-tabbar button {
+          color: #424245 !important;
+          background: transparent !important;
+          box-shadow: none !important;
+        }
+        .app-theme-studio .mobile-tabbar button.active {
+          color: #FFFFFF !important;
+          background: #0071E3 !important;
+          box-shadow: none !important;
+        }
+        .app-theme-studio ::selection {
+          color: #1D1D1F;
+          background: rgba(0, 113, 227, .18);
         }
 
         ::selection { background: rgba(121,15,70,.20); color: var(--lux-ink); }
