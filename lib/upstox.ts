@@ -9,7 +9,7 @@ export const UPSTOX_PROFILE_URL='https://api.upstox.com/v2/user/profile';
 export function upstoxConfig(){
   const clientId=process.env.UPSTOX_API_KEY?.trim();
   const clientSecret=process.env.UPSTOX_API_SECRET?.trim();
-  const redirectUri=(process.env.UPSTOX_REDIRECT_URI||`${process.env.NEXT_PUBLIC_APP_URL||'https://am-assets.vercel.app'}/api/upstox/callback`).trim();
+  const redirectUri=(process.env.UPSTOX_REDIRECT_URI||`${process.env.NEXT_PUBLIC_APP_URL||'https://gupta.vercel.app'}/api/upstox/callback`).trim();
   if(!clientId||!clientSecret)throw new Error('Missing UPSTOX_API_KEY or UPSTOX_API_SECRET');
   return {clientId,clientSecret,redirectUri};
 }

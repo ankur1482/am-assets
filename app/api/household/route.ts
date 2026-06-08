@@ -229,7 +229,7 @@ export async function POST(req: NextRequest) {
       );
       let invited = false;
       if (!target) {
-        const redirectTo = `${process.env.NEXT_PUBLIC_APP_URL || "https://am-assets.vercel.app"}/`;
+        const redirectTo = `${process.env.NEXT_PUBLIC_APP_URL || "https://gupta.vercel.app"}/`;
         const { data, error: inviteError } =
           await serviceClient.auth.admin.inviteUserByEmail(emailAddress, {
             redirectTo,
