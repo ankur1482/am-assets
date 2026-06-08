@@ -6757,9 +6757,6 @@ export default function AssetManagerApp() {
               review for deeper analysis.
             </p>
           </div>
-          <button className="btn" onClick={() => setView("insights")}>
-            Open Insights
-          </button>
         </div>
         <div className="grid grid-cols-3 gap-3 max-xl:grid-cols-1">
           <div className="rounded-2xl border border-[#e3dccc] bg-white p-4">

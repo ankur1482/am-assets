@@ -2,7 +2,7 @@
 
 Deploy-ready online version of the asset management tool.
 
-Production URL: `https://gupta.vercel.app`
+Production URL: `https://am-assets.vercel.app`
 
 ## Includes
 
@@ -32,7 +32,7 @@ Create `.env.local`:
 ```bash
 NEXT_PUBLIC_SUPABASE_URL=https://YOUR-PROJECT.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=YOUR_SUPABASE_ANON_KEY
-NEXT_PUBLIC_APP_URL=https://gupta.vercel.app
+NEXT_PUBLIC_APP_URL=https://am-assets.vercel.app
 SUPABASE_SERVICE_ROLE_KEY=YOUR_SUPABASE_SERVICE_ROLE_KEY
 GOOGLE_DRIVE_ROOT_FOLDER_ID=YOUR_SHARED_DRIVE_FOLDER_ID
 GOOGLE_DRIVE_SERVICE_ACCOUNT_JSON=YOUR_GOOGLE_SERVICE_ACCOUNT_JSON
@@ -48,12 +48,12 @@ GROQ_AI_MODEL=openai/gpt-oss-20b
 OPENAI_API_KEY=YOUR_OPENAI_API_KEY
 OPENAI_AI_MODEL=gpt-5.5
 OPENAI_AI_REASONING_EFFORT=medium
-UPSTOX_REDIRECT_URI=https://gupta.vercel.app/api/upstox/callback
+UPSTOX_REDIRECT_URI=https://am-assets.vercel.app/api/upstox/callback
 ```
 
 `SUPABASE_SERVICE_ROLE_KEY` must stay server-only. It is required for the Admin Console because Supabase Auth admin actions cannot run with the public anon key.
 
-Google Drive OAuth is used as the document repository for normal Gmail / personal Drive accounts. Create a Google Cloud OAuth Web client and add `https://gupta.vercel.app/api/google-drive/callback` as an authorized redirect URI, then set `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET`, and `GOOGLE_OAUTH_COOKIE_SECRET`. Service-account Drive variables are still supported for Workspace Shared Drives, but normal My Drive uploads require the OAuth connection popup in the app.
+Google Drive OAuth is used as the document repository for normal Gmail / personal Drive accounts. Create a Google Cloud OAuth Web client and add `https://am-assets.vercel.app/api/google-drive/callback` as an authorized redirect URI, then set `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET`, and `GOOGLE_OAUTH_COOKIE_SECRET`. Service-account Drive variables are still supported for Workspace Shared Drives, but normal My Drive uploads require the OAuth connection popup in the app.
 
 Stock quote keys are optional server-side settings. `/api/quote` attempts configured providers in `MARKET_DATA_PROVIDERS` order and uses Yahoo as a final fallback. Twelve Data supports NSE/BSE symbols but lists those exchanges as end-of-day coverage; it should not be treated as a true live Indian equity feed. Alpha Vantage supports BSE-formatted symbols such as `RELIANCE.BSE`, but documents real-time entitlement for U.S. market data only. Polygon.io is used for supported U.S. stock exchanges. For eligible U.S. Alpha Vantage quotes, entitlement can be passed with `ALPHA_VANTAGE_ENTITLEMENT`.
 
