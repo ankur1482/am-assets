@@ -103,7 +103,11 @@ function quoteResult(
   };
 }
 
-function providerOrder() {
+function providerOrder(preferredProvider = "") {
+  const preferred = preferredProvider.trim().toLowerCase();
+  const preferredList = DEFAULT_PROVIDER_ORDER.includes(preferred as Provider)
+    ? [preferred as Provider]
+    : [];
   const configured = String(process.env.MARKET_DATA_PROVIDERS || "")
     .toLowerCase()
     .split(",")
@@ -111,7 +115,11 @@ function providerOrder() {
     .filter((provider): provider is Provider =>
       DEFAULT_PROVIDER_ORDER.includes(provider as Provider),
     );
-  const selected = configured.length ? configured : DEFAULT_PROVIDER_ORDER;
+  const selected = preferredList.length
+    ? preferredList
+    : configured.length
+      ? configured
+      : DEFAULT_PROVIDER_ORDER;
   return [...new Set([...selected, "yahoo" as Provider])];
 }
 
@@ -458,6 +466,7 @@ export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const symbol = searchParams.get("symbol") || "";
   const exchange = searchParams.get("exchange") || "NSE";
+  const preferredProvider = searchParams.get("provider") || "";
   if (!symbol.trim()) {
     return NextResponse.json({ error: "Ticker missing" }, { status: 400 });
   }
@@ -477,7 +486,7 @@ export async function GET(request: Request) {
   }
 
   const attempted: string[] = [];
-  for (const provider of providerOrder()) {
+  for (const provider of providerOrder(preferredProvider)) {
     try {
       const quote = await fetchProvider(provider, symbol, exchange);
       quoteCache.set(cacheKey, { quote, attempted: [...attempted], savedAt: Date.now() });

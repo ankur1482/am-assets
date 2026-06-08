@@ -6,10 +6,10 @@ export const UPSTOX_AUTH_URL='https://api.upstox.com/v2/login/authorization/dial
 export const UPSTOX_TOKEN_URL='https://api.upstox.com/v2/login/authorization/token';
 export const UPSTOX_PROFILE_URL='https://api.upstox.com/v2/user/profile';
 
-export function upstoxConfig(origin?:string){
+export function upstoxConfig(){
   const clientId=process.env.UPSTOX_API_KEY?.trim();
   const clientSecret=process.env.UPSTOX_API_SECRET?.trim();
-  const redirectUri=(process.env.UPSTOX_REDIRECT_URI||`${origin||'http://localhost:3000'}/api/upstox/callback`).trim();
+  const redirectUri=(process.env.UPSTOX_REDIRECT_URI||`${process.env.NEXT_PUBLIC_APP_URL||'https://gupta.vercel.app'}/api/upstox/callback`).trim();
   if(!clientId||!clientSecret)throw new Error('Missing UPSTOX_API_KEY or UPSTOX_API_SECRET');
   return {clientId,clientSecret,redirectUri};
 }

@@ -75,22 +75,22 @@ export function clearGoogleOAuthCookieOptions(){
   return {httpOnly:true,sameSite:'lax' as const,secure:process.env.NODE_ENV==='production',path:'/',maxAge:0};
 }
 
-function oauthConfig(req?:NextRequest){
+function oauthConfig(){
   const clientId=process.env.GOOGLE_OAUTH_CLIENT_ID;
   const clientSecret=process.env.GOOGLE_OAUTH_CLIENT_SECRET;
   if(!clientId||!clientSecret)throw new Error('Missing Google OAuth credentials. Add GOOGLE_OAUTH_CLIENT_ID and GOOGLE_OAUTH_CLIENT_SECRET to .env.local.');
-  const origin=req?.nextUrl.origin||process.env.NEXT_PUBLIC_APP_URL||'http://localhost:3000';
+  const origin=process.env.NEXT_PUBLIC_APP_URL||'https://gupta.vercel.app';
   const redirectUri=process.env.GOOGLE_OAUTH_REDIRECT_URI||`${origin}/api/google-drive/callback`;
   return {clientId,clientSecret,redirectUri};
 }
 
-export function getGoogleOAuthClient(req?:NextRequest){
-  const {clientId,clientSecret,redirectUri}=oauthConfig(req);
+export function getGoogleOAuthClient(){
+  const {clientId,clientSecret,redirectUri}=oauthConfig();
   return new google.auth.OAuth2(clientId,clientSecret,redirectUri);
 }
 
-export function makeGoogleDriveAuthUrl(req:NextRequest,state:string){
-  const client=getGoogleOAuthClient(req);
+export function makeGoogleDriveAuthUrl(_req:NextRequest,state:string){
+  const client=getGoogleOAuthClient();
   return client.generateAuthUrl({
     access_type:'offline',
     prompt:'consent',
@@ -117,7 +117,7 @@ export function hasGoogleDriveOAuth(req:NextRequest){
 async function getOAuthDrive(req:NextRequest){
   const tokens=readGoogleTokens(req);
   if(!tokens?.refresh_token&&!tokens?.access_token)throw new Error('Google Drive is not connected. Connect Google Drive and try again.');
-  const auth=getGoogleOAuthClient(req);
+  const auth=getGoogleOAuthClient();
   auth.setCredentials(tokens);
   return google.drive({version:'v3',auth});
 }

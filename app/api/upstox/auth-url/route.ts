@@ -5,9 +5,9 @@ import {UPSTOX_AUTH_URL,UPSTOX_STATE_COOKIE,upstoxConfig,upstoxCookieOptions} fr
 export const runtime='nodejs';
 export const dynamic='force-dynamic';
 
-export async function GET(req:NextRequest){
+export async function GET(_req:NextRequest){
   try{
-    const {clientId,redirectUri}=upstoxConfig(req.nextUrl.origin);
+    const {clientId,redirectUri}=upstoxConfig();
     const state=crypto.randomBytes(24).toString('base64url');
     const url=new URL(UPSTOX_AUTH_URL);
     url.searchParams.set('response_type','code');

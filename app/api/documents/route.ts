@@ -60,9 +60,37 @@ export async function POST(req:NextRequest){
     const form=await req.formData();
     const file=form.get('file');
     const moduleKey=String(form.get('moduleKey')||'documents');
+    const workspaceId=String(form.get('workspaceId')||'');
     const folderParts=parseFolderParts(form.get('folderParts'));
     if(!(file instanceof File))return jsonError('Document file is required',400);
     const buffer=Buffer.from(await file.arrayBuffer());
+    if(workspaceId){
+      const {data:access,error:accessError}=await auth.supabase.rpc('workspace_access',{target_workspace:workspaceId});
+      if(accessError)throw accessError;
+      if(!access?.can_upload_documents||!access?.can_edit)return jsonError('Document upload permission is required',403);
+      if(!url||!serviceRoleKey)return jsonError('Document service is not configured',500);
+      const storagePath=[
+        workspaceId,
+        cleanPathPart(moduleKey),
+        `${new Date().toISOString().replace(/[:.]/g,'-')} ${cleanPathPart(file.name)}`
+      ].join('/');
+      await ensureDocumentBucket();
+      const serviceClient=createClient(url,serviceRoleKey);
+      const stored=await serviceClient.storage.from(documentBucket).upload(storagePath,buffer,{
+        contentType:file.type||'application/octet-stream',
+        upsert:false
+      });
+      if(stored.error)throw stored.error;
+      return NextResponse.json({
+        document:{
+          file_name:file.name,
+          file_path:storagePath,
+          mime_type:file.type||'application/octet-stream',
+          file_size:file.size,
+          notes:'Shared household document'
+        }
+      });
+    }
     if(hasGoogleDriveOAuth(req)){
       const uploaded=await uploadOAuthAssetDocument(req,{
         userId:auth.user.id,
@@ -109,7 +137,7 @@ export async function POST(req:NextRequest){
       console.warn('Google Drive rejected service-account storage quota; falling back to Supabase Storage.');
     }
     const storagePath=[
-      auth.user.id,
+      workspaceId||auth.user.id,
       cleanPathPart(moduleKey),
       `${new Date().toISOString().replace(/[:.]/g,'-')} ${cleanPathPart(file.name)}`
     ].join('/');
@@ -144,7 +172,9 @@ export async function GET(req:NextRequest){
     if(error)throw error;
     if(!doc)return jsonError('Document not found',404);
     if(!isGoogleDrivePath(doc.file_path)){
-      const {data,error}=await auth.supabase.storage.from(documentBucket).createSignedUrl(doc.file_path,60);
+      if(!url||!serviceRoleKey)return jsonError('Document service is not configured',500);
+      const serviceClient=createClient(url,serviceRoleKey);
+      const {data,error}=await serviceClient.storage.from(documentBucket).createSignedUrl(doc.file_path,60);
       if(error)throw error;
       return NextResponse.redirect(data.signedUrl,307);
     }
@@ -174,16 +204,18 @@ export async function DELETE(req:NextRequest){
     const {data:doc,error}=await auth.supabase.from('asset_documents').select('*').eq('id',id).maybeSingle();
     if(error)throw error;
     if(!doc)return jsonError('Document not found',404);
+    const del=await auth.supabase.from('asset_documents').delete().eq('id',id);
+    if(del.error)throw del.error;
     if(isGoogleDrivePath(doc.file_path)){
       if(hasGoogleDriveOAuth(req))await deleteOAuthAssetDocument(req,doc.file_path);
       else await deleteAssetDocument(doc.file_path);
     }
     else{
-      const rm=await auth.supabase.storage.from(documentBucket).remove([doc.file_path]);
+      if(!url||!serviceRoleKey)return jsonError('Document service is not configured',500);
+      const serviceClient=createClient(url,serviceRoleKey);
+      const rm=await serviceClient.storage.from(documentBucket).remove([doc.file_path]);
       if(rm.error)throw rm.error;
     }
-    const del=await auth.supabase.from('asset_documents').delete().eq('id',id);
-    if(del.error)throw del.error;
     return NextResponse.json({ok:true});
   }catch(e:any){
     console.error('Document delete failed',e);

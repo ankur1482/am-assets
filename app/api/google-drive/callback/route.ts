@@ -17,7 +17,7 @@ export async function GET(req:NextRequest){
   if(!code)return html('Google Drive connection was cancelled.',false);
   if(!state||state!==expected)return html('Google Drive connection state did not match. Try again.',false);
   try{
-    const client=getGoogleOAuthClient(req);
+    const client=getGoogleOAuthClient();
     const {tokens}=await client.getToken(code);
     if(!tokens.refresh_token&&!tokens.access_token)throw new Error('Google did not return a Drive token. Try connecting again.');
     const res=html('Google Drive connected.');

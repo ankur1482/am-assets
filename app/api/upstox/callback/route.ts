@@ -21,7 +21,7 @@ export async function GET(req:NextRequest){
   if(!code)return html('Upstox did not send an authorization code.',false);
   if(expected&&state&&state!==expected)return html('Upstox login state did not match. Try connecting again.',false);
   try{
-    const {clientId,clientSecret,redirectUri}=upstoxConfig(req.nextUrl.origin);
+    const {clientId,clientSecret,redirectUri}=upstoxConfig();
     const body=new URLSearchParams({
       code,
       client_id:clientId,

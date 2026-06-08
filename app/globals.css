@@ -54,12 +54,40 @@ body {
 .desktop-sidebar {
   position: sticky;
   top: 0;
+  align-self: start;
   height: 100vh;
-  overflow: auto;
+  height: 100dvh;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  scrollbar-gutter: stable;
+  scrollbar-color: rgba(121, 15, 70, 0.48) rgba(255, 248, 235, 0.72);
+  scrollbar-width: thin;
+  -webkit-overflow-scrolling: touch;
   border-right: 1px solid #e3dccc;
   background: rgba(255, 253, 248, 0.9);
-  padding: 1rem;
+  padding: 1rem 0.65rem 2rem 1rem;
   backdrop-filter: blur(20px);
+}
+
+.desktop-sidebar::-webkit-scrollbar {
+  display: block;
+  width: 8px;
+}
+
+.desktop-sidebar::-webkit-scrollbar-track {
+  background: rgba(255, 248, 235, 0.72);
+}
+
+.desktop-sidebar::-webkit-scrollbar-thumb {
+  border: 2px solid rgba(255, 248, 235, 0.9);
+  border-radius: 999px;
+  background: linear-gradient(
+    180deg,
+    rgba(121, 15, 70, 0.55),
+    rgba(198, 150, 50, 0.65)
+  );
 }
 
 .desktop-header {
@@ -305,24 +333,24 @@ form,
 
 .stock-holdings-table th,
 .stock-holdings-table td {
-  padding: 0.75rem 1rem;
+  padding: 0.48rem 0.5rem;
   vertical-align: middle;
   border-bottom: 1px solid #e9eadf;
-  min-width: 70px;
+  min-width: 44px;
 }
 
 .stock-holdings-table thead th {
   background: #f5efe3;
   color: #17382b;
   font-weight: 900;
-  font-size: 0.78rem;
+  font-size: 0.66rem;
   letter-spacing: 0.06em;
   text-transform: uppercase;
   white-space: normal;
   word-break: break-word;
-  padding: 0.85rem 1rem;
-  line-height: 1.35;
-  max-width: 120px;
+  padding: 0.52rem 0.5rem;
+  line-height: 1.15;
+  max-width: 92px;
 }
 
 .stock-holdings-table tbody tr {
@@ -336,8 +364,8 @@ form,
 
 .stock-holdings-table tbody td {
   overflow: visible;
-  font-size: 0.94rem;
-  line-height: 1.45;
+  font-size: 0.78rem;
+  line-height: 1.22;
 }
 
 .stock-range-box {
@@ -349,7 +377,7 @@ form,
   font-weight: 900;
   justify-content: flex-end;
   min-height: 1.65rem;
-  padding: 0.2rem 0.36rem;
+  padding: 0.12rem 0.28rem;
   width: 100%;
   white-space: nowrap;
 }
@@ -357,7 +385,8 @@ form,
 .stock-holdings-table .btn,
 .stock-holdings-table .btn-danger {
   min-height: 28px;
-  padding: 0.22rem 0.55rem;
+  padding: 0.16rem 0.42rem;
+  font-size: 0.72rem;
   white-space: nowrap;
 }
 
@@ -1564,7 +1593,7 @@ body {
 
   .mobile-tabbar.mobile-top-nav {
     position: sticky !important;
-    top: calc(env(safe-area-inset-top) + 72px) !important;
+    top: calc(env(safe-area-inset-top) + 8px) !important;
     right: auto !important;
     bottom: auto !important;
     left: auto !important;
@@ -1572,7 +1601,7 @@ body {
     display: flex !important;
     width: calc(100vw - 18px) !important;
     max-width: calc(100vw - 18px) !important;
-    margin: -4px auto 12px !important;
+    margin: 10px auto 12px !important;
     justify-content: flex-start !important;
     gap: 7px !important;
     overflow-x: auto !important;
@@ -1580,6 +1609,10 @@ body {
     border-radius: 22px !important;
     padding: 7px !important;
     white-space: nowrap !important;
+    border: 1px solid rgba(198,150,50,.25) !important;
+    background: rgba(255, 253, 248, 0.86) !important;
+    box-shadow: 0 16px 40px rgba(75, 8, 42, 0.14) !important;
+    backdrop-filter: blur(18px) saturate(140%) !important;
   }
 
   .mobile-tabbar.mobile-top-nav button {
@@ -1612,7 +1645,291 @@ body {
     padding-bottom: 18px !important;
   }
 
+  .phone-bullion-card .phone-stock-prices b {
+    min-height: 13px;
+  }
+
+  .phone-bullion-card .phone-stock-prices b.phone-price-skeleton {
+    width: 78%;
+    margin-left: auto !important;
+    border-radius: 5px;
+    color: transparent !important;
+    background: linear-gradient(
+      90deg,
+      rgba(122, 96, 112, 0.09) 25%,
+      rgba(255, 255, 255, 0.74) 50%,
+      rgba(122, 96, 112, 0.09) 75%
+    );
+    background-size: 200% 100%;
+    animation: bullion-price-loading 1.15s linear infinite;
+  }
+
+  .phone-bullion-card .phone-stock-prices b:not(.phone-price-skeleton) {
+    font-size: clamp(8px, 2.8vw, 12px) !important;
+  }
+
   .phone-bullion-card .phone-stock-prices span b:empty::after {
     content: "—";
+  }
+}
+
+@keyframes bullion-price-loading {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -200% 0;
+  }
+}
+
+.desktop-market-card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 470px), 1fr));
+  gap: 14px;
+}
+
+.desktop-market-card-wrap {
+  min-width: 0;
+}
+
+.desktop-market-card {
+  position: relative;
+  overflow: hidden;
+  padding: 12px;
+  border: 1px solid rgba(198, 150, 50, 0.34);
+  border-radius: 18px;
+  background: linear-gradient(135deg, rgba(255,255,255,.98), rgba(255,248,229,.9));
+  box-shadow: 0 10px 24px rgba(69, 34, 55, 0.08), inset 0 1px 0 #fff;
+}
+
+.desktop-market-card::before {
+  content: "";
+  position: absolute;
+  inset: 12px auto 12px 0;
+  width: 4px;
+  border-radius: 999px;
+  background: linear-gradient(#f2c85f, #d72d36, #00649a);
+}
+
+.desktop-market-card-head {
+  display: block;
+  width: 100%;
+  padding: 0 4px 9px;
+  text-align: left;
+}
+
+.desktop-market-card-head strong,
+.desktop-market-card-head span {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.desktop-market-card-head strong {
+  color: #211521;
+  font-size: 15px;
+  line-height: 1.1;
+  font-weight: 950;
+}
+
+.desktop-market-card-head span {
+  margin-top: 2px;
+  color: #6c596a;
+  font-size: 10px;
+  font-weight: 850;
+}
+
+.desktop-market-pairs {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+}
+
+.desktop-market-pair {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: 6px 10px;
+  min-width: 0;
+  padding: 9px;
+  border: 1px solid rgba(198, 150, 50, 0.22);
+  border-radius: 13px;
+  background: rgba(255,255,255,.68);
+}
+
+.desktop-market-pair.gain-up {
+  background: linear-gradient(180deg, rgba(235,252,244,.9), rgba(216,246,232,.72));
+}
+
+.desktop-market-pair.gain-down {
+  background: linear-gradient(180deg, rgba(255,239,236,.92), rgba(255,221,216,.72));
+}
+
+.desktop-market-pair span,
+.desktop-market-prices span {
+  color: #785f70;
+  font-size: 8px;
+  line-height: 1;
+  font-weight: 950;
+  text-transform: uppercase;
+}
+
+.desktop-market-pair b {
+  color: #211521;
+  font-size: 12px;
+  line-height: 1.1;
+  font-weight: 950;
+  text-align: right;
+}
+
+.desktop-market-prices {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 7px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(122,18,72,.1);
+}
+
+.desktop-market-prices > * {
+  position: relative;
+  min-width: 0;
+  min-height: 58px;
+  padding: 9px;
+  border-radius: 13px;
+  text-align: left;
+}
+
+.desktop-market-prices b {
+  display: block;
+  margin-top: 7px;
+  font-size: 13px;
+  line-height: 1;
+  font-weight: 950;
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+
+.desktop-market-prices small {
+  display: block;
+  margin-top: 3px;
+  font-size: 10px;
+  line-height: 1;
+  font-weight: 900;
+  text-align: right;
+}
+
+.desktop-market-prices .price-down {
+  border: 1px solid rgba(204,44,44,.28);
+  color: #bd2020;
+  background: linear-gradient(180deg, #fff0ed, #ffd5cf);
+}
+
+.desktop-market-prices .price-up {
+  border: 1px solid rgba(0,122,85,.28);
+  color: #006b4a;
+  background: linear-gradient(180deg, #e7fbf2, #c8f0df);
+}
+
+.desktop-market-prices .price-neutral {
+  border: 1px solid rgba(198,150,50,.3);
+  color: #4f354a;
+  background: linear-gradient(180deg, #fffdf8, #fff2d6);
+}
+
+.desktop-market-prices .price-down span,
+.desktop-market-prices .price-up span,
+.desktop-market-prices .price-neutral span {
+  color: currentColor;
+}
+
+.desktop-market-lots {
+  display: grid;
+  gap: 5px;
+  margin: 5px 10px 0;
+  padding: 8px;
+  border: 1px solid rgba(198,150,50,.22);
+  border-top: 0;
+  border-radius: 0 0 12px 12px;
+  background: rgba(255,255,255,.9);
+}
+
+.desktop-market-lot-header,
+.desktop-market-lots button {
+  display: grid;
+  grid-template-columns: minmax(76px, 1.25fr) repeat(4, minmax(62px, 1fr));
+  align-items: center;
+  gap: 8px;
+}
+
+.desktop-market-lot-header {
+  padding: 2px 9px 4px;
+  color: #785f70;
+  font-size: 8px;
+  line-height: 1.1;
+  font-weight: 950;
+  text-transform: uppercase;
+}
+
+.desktop-market-lot-header span:not(:first-child) {
+  text-align: right;
+}
+
+.desktop-market-lots button {
+  padding: 7px 9px;
+  border-radius: 8px;
+  background: #fffaf0;
+  font-size: 11px;
+  text-align: left;
+}
+
+.desktop-market-lots button span,
+.desktop-market-lots button strong,
+.desktop-market-lots button b {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.desktop-market-lots button strong {
+  color: #342633;
+  font-weight: 900;
+}
+
+.desktop-market-lots button b {
+  text-align: right;
+}
+
+.desktop-market-lots button:hover {
+  background: #fff2d8;
+}
+
+@media (max-width: 768px) {
+  .desktop-market-card-grid {
+    display: none;
+  }
+
+  html,
+  body {
+    height: auto;
+    min-height: 100%;
+    overflow-y: auto;
+    overscroll-behavior-y: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .app-shell,
+  main,
+  .phone-content,
+  .phone-screen {
+    height: auto;
+    overflow-y: visible !important;
+    touch-action: pan-y;
+  }
+
+  main,
+  .phone-content,
+  .phone-screen {
+    overflow-x: hidden !important;
   }
 }

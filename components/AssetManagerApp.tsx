@@ -1,17 +1,18 @@
-"use client";
+﻿"use client";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowDown,
+  ArrowLeft,
   ArrowUp,
   BarChart3,
   Bell,
   BriefcaseBusiness,
   CheckCircle2,
-  Download,
   Eye,
   FileText,
   FileUp,
   FolderOpen,
+  GitBranch,
   Home,
   KeyRound,
   LogOut,
@@ -49,6 +50,7 @@ import {
 type Account = {
   id: string;
   user_id: string;
+  workspace_id?: string;
   name: string;
   relation: string;
   type: string;
@@ -58,6 +60,7 @@ type Account = {
 type Rec = {
   id: string;
   user_id: string;
+  workspace_id?: string;
   module_key: string;
   data: Record<string, any>;
   created_at?: string;
@@ -90,6 +93,7 @@ type AdminUser = {
 type AssetDoc = {
   id: string;
   user_id: string;
+  workspace_id?: string;
   record_id: string;
   module_key: string;
   file_name: string;
@@ -122,6 +126,32 @@ type AiReviewMeta = {
   model: string;
   generatedAt: string;
 };
+type WorkspaceAccess = {
+  member_role: "owner" | "editor" | "viewer" | "custom";
+  status: "active" | "suspended";
+  all_modules: boolean;
+  modules: string[];
+  can_edit: boolean;
+  can_delete: boolean;
+  can_manage_members: boolean;
+  can_view_documents: boolean;
+  can_upload_documents: boolean;
+};
+type Workspace = {
+  id: string;
+  owner_user_id: string;
+  name: string;
+  access: WorkspaceAccess;
+};
+type WorkspaceMember = {
+  id: string;
+  workspace_id: string;
+  user_id: string;
+  member_role: WorkspaceAccess["member_role"];
+  status: WorkspaceAccess["status"];
+  permissions: Omit<WorkspaceAccess, "member_role" | "status">;
+  profile?: { email?: string; full_name?: string };
+};
 const views = [
   ["dashboard", "DB", "Dashboard"],
   ["accounts", "AC", "Accounts"],
@@ -137,11 +167,9 @@ const views = [
   ["loans", "LN", "Loans"],
   ["borrowings", "BR", "Borrowings"],
   ["goals", "GO", "Goals"],
-  ["recommendations", "AI", "Recommendations"],
   ["alerts", "AL", "Alerts"],
-  ["documents", "DOC", "Documents"],
-  ["shareList", "WL+", "Add Share List"],
-  ["insights", "INS", "Insights"],
+  ["purchaseCalculator", "CALC", "Purchase Calculator"],
+  ["household", "HH", "Household Access"],
   ["settings", "SET", "Settings"],
 ];
 const groups = [
@@ -161,11 +189,99 @@ const groups = [
     ],
   ],
   ["Liabilities", ["loans", "borrowings"]],
-  ["Planning", ["goals", "recommendations", "insights"]],
-  ["Utility", ["documents", "shareList", "alerts", "settings"]],
+  ["Planning", ["goals"]],
+  ["Utility", ["purchaseCalculator", "alerts", "household", "settings"]],
   ["Admin", ["admin"]],
 ];
 const allViews = [...views, ["admin", "Admin", "Admin Console"]];
+const INVESTMENT_SOURCE_OPTIONS: Record<string, { label: string; value: string; note: string }[]> = {
+  stocks: [
+    { label: "Auto fallback", value: "auto", note: "Configured order, then Yahoo" },
+    { label: "Upstox", value: "upstox", note: "Live NSE/BSE where token is valid" },
+    { label: "Twelve Data", value: "twelvedata", note: "Quote API, often EOD for India" },
+    { label: "Alpha Vantage", value: "alphavantage", note: "Global quote endpoint" },
+    { label: "Polygon", value: "polygon", note: "US markets only" },
+    { label: "Yahoo", value: "yahoo", note: "Fallback quote feed" },
+  ],
+  mutualFunds: [
+    { label: "AMFI NAVAll", value: "amfi", note: "Official India mutual fund NAV text feed" },
+  ],
+  bullion: [
+    {
+      label: "Automatic",
+      value: "auto",
+      note: "Official MCX first, then Moneycontrol MCX backup",
+    },
+    {
+      label: "MCX only",
+      value: "mcx",
+      note: "Official nearest active FUTCOM contract only",
+    },
+    {
+      label: "Moneycontrol MCX",
+      value: "moneycontrol",
+      note: "Active MCX futures contract backup feed",
+    },
+  ],
+  fixedIncome: [
+    { label: "DEA defaults", value: "dea", note: "Small-savings defaults plus manual entries" },
+    { label: "Manual", value: "manual", note: "Use only entered values" },
+  ],
+  ulips: [{ label: "Manual", value: "manual", note: "Policy/provider statement values" }],
+  nsel: [{ label: "Bullion source", value: "bullion", note: "Uses the official MCX market watch feed" }],
+  insurance: [{ label: "Manual", value: "manual", note: "Policy statement and entered bonus values" }],
+  property: [{ label: "Manual", value: "manual", note: "Entered valuation and linked loan data" }],
+  otherAssets: [{ label: "Manual", value: "manual", note: "Entered valuation" }],
+};
+const DEFAULT_SOURCE_PREFS = Object.fromEntries(
+  Object.entries(INVESTMENT_SOURCE_OPTIONS).map(([key, options]) => [
+    key,
+    options[0]?.value || "manual",
+  ]),
+) as Record<string, string>;
+const APP_THEMES = [
+  {
+    id: "classic",
+    name: "Classic Sage",
+    note: "Calm ivory and green",
+    swatches: ["#F8F3EA", "#115C45", "#C89A36"],
+  },
+  {
+    id: "midnight",
+    name: "Midnight Ledger",
+    note: "Dark analytical workspace",
+    swatches: ["#0F172A", "#1D4ED8", "#22C55E"],
+  },
+  {
+    id: "graphite",
+    name: "Graphite Desk",
+    note: "Neutral high-contrast admin",
+    swatches: ["#F3F4F6", "#111827", "#64748B"],
+  },
+  {
+    id: "plum",
+    name: "Plum Reserve",
+    note: "Premium burgundy and champagne",
+    swatches: ["#FFF7ED", "#4B082A", "#C69632"],
+  },
+  {
+    id: "neo",
+    name: "Kotak Neo",
+    note: "Clean broker terminal with blue actions and red brand accent",
+    swatches: ["#FFFFFF", "#004B8D", "#ED1C24"],
+  },
+];
+const APP_FONTS = [
+  { label: "Inter", value: "Inter, ui-sans-serif, system-ui, sans-serif" },
+  { label: "System", value: "ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, sans-serif" },
+  { label: "Serif", value: "Georgia, Cambria, 'Times New Roman', serif" },
+  { label: "Mono", value: "'SFMono-Regular', Consolas, 'Liberation Mono', monospace" },
+];
+const DEFAULT_APPEARANCE = {
+  theme: "classic",
+  font: APP_FONTS[0].value,
+  fontSize: 16,
+};
 const STOCKS = [
   ["Reliance Industries", "RELIANCE", "NSE", "Energy"],
   ["Tata Consultancy Services", "TCS", "NSE", "IT"],
@@ -320,9 +436,8 @@ function bullionDisplayName(metal: any) {
   if (/gold/i.test(name)) return "Gold";
   return !name || /^bullion$/i.test(name) ? "Gold" : name;
 }
-function moneycontrolCommodityHref(metal: any) {
-  const asset = bullionDisplayName(metal);
-  return `/api/moneycontrol-commodity?asset=${encodeURIComponent(asset)}`;
+function mcxCommodityHref() {
+  return "https://www.mcxindia.com/market-data/market-watch";
 }
 const SHARE_LIST_ALIASES: Record<string, { name: string; ticker: string; exchange: string; category: string }> = {
   divislabs: { name: "Divi's Laboratories", ticker: "DIVISLAB", exchange: "NSE", category: "Pharma" },
@@ -394,6 +509,8 @@ const fixedIncomeColWidth = (col: string) =>
 const fieldLabel = (moduleKey: string, field: string) =>
   moduleKey === "property" && field === "broker"
     ? "Community"
+    : moduleKey === "bullion" && field === "current_price"
+      ? "MCX / Moneycontrol Price"
     : moduleKey === "fixedIncome" && FIXED_INCOME_LABELS[field]
       ? FIXED_INCOME_LABELS[field]
     : moduleKey === "fixedIncome" && field === "broker"
@@ -457,6 +574,11 @@ const moneyCols = [
   "interest_paid",
   "premium_amount",
   "purchase_price",
+  "metal_cost",
+  "making_charges",
+  "gst_paid",
+  "other_costs",
+  "local_premium_per_gram",
   "latest_value",
   "investment_amount",
   "initial_investment",
@@ -513,6 +635,13 @@ function assignStockQuoteFields(data: any, quote: any, priceField = "live_price"
     data.fifty_two_week_high = Number(quote.fiftyTwoWeekHigh).toFixed(2);
   if (Number.isFinite(Number(quote.fiftyTwoWeekLow)))
     data.fifty_two_week_low = Number(quote.fiftyTwoWeekLow).toFixed(2);
+  if (priceField === "live_price") {
+    const adjusted = computeRecord("stocks", data);
+    if (adjusted.corporate_action_applied && Number.isFinite(Number(adjusted.day_change))) {
+      data.previous_close = Number(adjusted.previous_close || data.previous_close || 0).toFixed(2);
+      data.day_change = Number(adjusted.day_change).toFixed(2);
+    }
+  }
 }
 const fixedIncomeCategoryLabel = (value: any) => {
   const category = String(value || "").trim();
@@ -521,6 +650,7 @@ const fixedIncomeCategoryLabel = (value: any) => {
 const isCompanyPfType = (value: any) =>
   /^(companypf|pf)$/.test(key(String(value || "")));
 const NET_WORTH_SNAPSHOT_MODULE = "netWorthSnapshot";
+const INVESTMENT_PERIOD_SNAPSHOT_MODULE = "investmentPeriodSnapshot";
 const AUTO_REFRESH_MS = 5 * 1000;
 const LIVE_DISPLAY_REFRESH_MS = AUTO_REFRESH_MS;
 const SAVED_RATE_REFRESH_MS = AUTO_REFRESH_MS;
@@ -539,6 +669,27 @@ function istMarketClock(date = new Date()) {
   return {
     weekday: value("weekday"),
     minutes: hour * 60 + minute,
+  };
+}
+function istCalendar(date = new Date()) {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: IST_TIME_ZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    weekday: "short",
+  }).formatToParts(date);
+  const value = (type: string) => parts.find((p) => p.type === type)?.value || "";
+  const year = Number(value("year")),
+    month = Number(value("month")),
+    day = Number(value("day"));
+  return {
+    iso: `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`,
+    year,
+    month,
+    day,
+    weekday: value("weekday"),
+    lastDay: new Date(Date.UTC(year, month, 0)).getUTCDate(),
   };
 }
 function isAutoRefreshWindow(kind: "stocks" | "bullion", date = new Date()) {
@@ -617,6 +768,8 @@ const numericFieldNames = new Set(
     "tenure_months",
     "emis_left",
     "emiFuture",
+    "latitude",
+    "longitude",
   ]),
 );
 const requiredReferenceDocModules = new Set<string>();
@@ -683,8 +836,37 @@ export default function AssetManagerApp() {
     [records, setRecords] = useState<Rec[]>([]),
     [docs, setDocs] = useState<AssetDoc[]>([]),
     [toast, setToast] = useState("");
+  const [workspaces, setWorkspaces] = useState<Workspace[]>([]),
+    [activeWorkspaceId, setActiveWorkspaceId] = useState(""),
+    [workspaceMembers, setWorkspaceMembers] = useState<WorkspaceMember[]>([]),
+    [householdBusy, setHouseholdBusy] = useState(false),
+    [householdSetupRequired, setHouseholdSetupRequired] = useState(false);
   const [adminUsers, setAdminUsers] = useState<AdminUser[]>([]),
     [adminBusy, setAdminBusy] = useState(false),
+    [sourcePrefs, setSourcePrefs] = useState<Record<string, string>>(() => {
+      if (typeof window === "undefined") return DEFAULT_SOURCE_PREFS;
+      try {
+        return {
+          ...DEFAULT_SOURCE_PREFS,
+          ...(JSON.parse(
+            localStorage.getItem("asset-manager-source-prefs") || "{}",
+          ) || {}),
+        };
+      } catch {
+        return DEFAULT_SOURCE_PREFS;
+      }
+    }),
+    [appearance, setAppearance] = useState(() => {
+      if (typeof window === "undefined") return DEFAULT_APPEARANCE;
+      try {
+        const saved =
+          JSON.parse(localStorage.getItem("asset-manager-appearance") || "{}") ||
+          {};
+        return { ...DEFAULT_APPEARANCE, ...saved };
+      } catch {
+        return DEFAULT_APPEARANCE;
+      }
+    }),
     [resetLink, setResetLink] = useState(""),
     [autoRefresh, setAutoRefresh] = useState(true),
     [docUploadRecordId, setDocUploadRecordId] = useState(""),
@@ -693,6 +875,36 @@ export default function AssetManagerApp() {
     [docUploading, setDocUploading] = useState(false),
     [googleDriveConnected, setGoogleDriveConnected] = useState(false),
     [bullionMarket, setBullionMarket] = useState<any>(null),
+    [localBullionRate, setLocalBullionRate] = useState<any>(null),
+    [bullionPriceStatus, setBullionPriceStatus] = useState<
+      "idle" | "loading" | "ready" | "error"
+    >("idle"),
+    [bullionLocating, setBullionLocating] = useState(false),
+    [performanceFrom, setPerformanceFrom] = useState(() =>
+      `${new Date().getFullYear()}-01-01`,
+    ),
+    [performanceTo, setPerformanceTo] = useState(() => isoDate()),
+    [performanceView, setPerformanceView] = useState<
+      "weekly" | "monthly" | "ytd"
+    >("weekly"),
+    [historicalPerformance, setHistoricalPerformance] = useState<
+      { date: string; invested: number; current: number; type: string }[]
+    >([]),
+    [historyBusy, setHistoryBusy] = useState(false),
+    [calculatorMetal, setCalculatorMetal] = useState<"gold" | "silver">("gold"),
+    [calculatorRateOverrides, setCalculatorRateOverrides] = useState<
+      Record<"gold" | "silver", string>
+    >({ gold: "", silver: "" }),
+    [calculatorWeight, setCalculatorWeight] = useState(10),
+    [calculatorWastage, setCalculatorWastage] = useState(2),
+    [calculatorGst, setCalculatorGst] = useState(3),
+    [calculatorPurchaseDate, setCalculatorPurchaseDate] = useState(() =>
+      isoDate(),
+    ),
+    [calculatorVendor, setCalculatorVendor] = useState(""),
+    [calculatorInvoice, setCalculatorInvoice] = useState(""),
+    [calculatorRecords, setCalculatorRecords] = useState<any[]>([]),
+    [invoiceFolderHandle, setInvoiceFolderHandle] = useState<any>(null),
     [marketToday, setMarketToday] = useState<any[]>([]),
     [marketTodayUpdatedAt, setMarketTodayUpdatedAt] = useState("");
   const [aiQuestion, setAiQuestion] = useState(
@@ -714,6 +926,7 @@ export default function AssetManagerApp() {
       cols: string[];
       linkedProperty?: boolean;
     } | null>(null),
+    [corporateAction, setCorporateAction] = useState<Rec | null>(null),
     [accModal, setAccModal] = useState<Account | null | "new">(null),
     [importPreview, setImportPreview] = useState<any[]>([]),
     [pasteTable, setPasteTable] = useState(""),
@@ -746,11 +959,7 @@ export default function AssetManagerApp() {
       }
     }),
     [detailTabs, setDetailTabs] = useState<Record<string, string>>(() => {
-      const fallback = {
-        dashboard: "summary",
-        stocks: "holdings",
-        bullion: "holdings",
-      };
+      const fallback = { dashboard: "summary" };
       if (typeof window === "undefined") return fallback;
       try {
         return {
@@ -766,9 +975,23 @@ export default function AssetManagerApp() {
   const fileRef = useRef<HTMLInputElement | null>(null),
     docFilesRef = useRef<File[]>([]),
     snapshotRef = useRef(""),
+    foregroundRefreshRef = useRef(0),
     recordsRef = useRef<Rec[]>([]),
     user = session?.user,
-    isAdmin = role === "admin";
+    isAdmin = role === "admin",
+    activeWorkspace = workspaces.find((workspace) => workspace.id === activeWorkspaceId),
+    workspaceAccess: WorkspaceAccess =
+      activeWorkspace?.access || {
+        member_role: "owner",
+        status: "active",
+        all_modules: true,
+        modules: [],
+        can_edit: true,
+        can_delete: true,
+        can_manage_members: true,
+        can_view_documents: true,
+        can_upload_documents: true,
+      };
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
       setSession(data.session);
@@ -788,8 +1011,39 @@ export default function AssetManagerApp() {
     return () => mq.removeEventListener?.("change", sync);
   }, []);
   useEffect(() => {
-    if (user?.id) loadAll();
+    if (user?.id) loadHousehold();
+    else {
+      setWorkspaces([]);
+      setActiveWorkspaceId("");
+      setWorkspaceMembers([]);
+    }
   }, [user?.id]);
+  useEffect(() => {
+    if (user?.id && (activeWorkspaceId || householdSetupRequired)) loadAll();
+  }, [user?.id, activeWorkspaceId, householdSetupRequired]);
+  useEffect(() => {
+    if (!user?.id || (!activeWorkspaceId && !householdSetupRequired)) return;
+    const refreshForegroundData = () => {
+      if (document.visibilityState === "hidden") return;
+      const now = Date.now();
+      if (now - foregroundRefreshRef.current < 1500) return;
+      foregroundRefreshRef.current = now;
+      void loadAll(true);
+    };
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") refreshForegroundData();
+    };
+    window.addEventListener("focus", refreshForegroundData);
+    window.addEventListener("online", refreshForegroundData);
+    window.addEventListener("pageshow", refreshForegroundData);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => {
+      window.removeEventListener("focus", refreshForegroundData);
+      window.removeEventListener("online", refreshForegroundData);
+      window.removeEventListener("pageshow", refreshForegroundData);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [user?.id, activeWorkspaceId, householdSetupRequired]);
   useEffect(() => {
     setAiReview(null);
     setAiReviewMeta(null);
@@ -977,6 +1231,22 @@ export default function AssetManagerApp() {
     } catch {}
   }, [detailTabs]);
   useEffect(() => {
+    try {
+      localStorage.setItem(
+        "asset-manager-source-prefs",
+        JSON.stringify(sourcePrefs),
+      );
+    } catch {}
+  }, [sourcePrefs]);
+  useEffect(() => {
+    try {
+      localStorage.setItem(
+        "asset-manager-appearance",
+        JSON.stringify(appearance),
+      );
+    } catch {}
+  }, [appearance]);
+  useEffect(() => {
     if (view === "admin" && isAdmin) loadAdminUsers();
   }, [view, isAdmin]);
   useEffect(() => {
@@ -985,9 +1255,9 @@ export default function AssetManagerApp() {
     }
   }, [user?.id]);
   useEffect(() => {
-    if (view !== "bullion") return;
+    if (!["bullion", "purchaseCalculator"].includes(view)) return;
     refreshBullionMarket();
-  }, [view]);
+  }, [view, sourcePrefs.bullion]);
   useEffect(() => {
     if (view !== "stocks") return;
     refreshMarketToday();
@@ -1018,6 +1288,49 @@ export default function AssetManagerApp() {
           : "Signed in.",
       );
   }
+  async function householdRequest(body?: Record<string, any>, workspaceId = activeWorkspaceId) {
+    if (!session?.access_token) throw new Error("Missing session");
+    const endpoint = body
+      ? "/api/household"
+      : `/api/household${workspaceId ? `?workspaceId=${encodeURIComponent(workspaceId)}` : ""}`;
+    const response = await fetch(endpoint, {
+      method: body ? "POST" : "GET",
+      headers: {
+        Authorization: `Bearer ${session.access_token}`,
+        ...(body ? { "Content-Type": "application/json" } : {}),
+      },
+      body: body ? JSON.stringify({ ...body, workspaceId }) : undefined,
+      cache: "no-store",
+    });
+    const json = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      const failure: any = new Error(json.error || "Household request failed");
+      failure.code = json.code;
+      throw failure;
+    }
+    return json;
+  }
+  async function loadHousehold(preferredId = activeWorkspaceId) {
+    if (!user?.id) return;
+    try {
+      const json = await householdRequest(undefined, preferredId);
+      const available = (json.workspaces || []) as Workspace[];
+      setHouseholdSetupRequired(false);
+      setWorkspaces(available);
+      setActiveWorkspaceId(json.active?.id || available[0]?.id || "");
+      setWorkspaceMembers((json.members || []) as WorkspaceMember[]);
+    } catch (caught: any) {
+      if (caught?.code === "HOUSEHOLD_SCHEMA_REQUIRED") {
+        setHouseholdSetupRequired(true);
+        setActiveWorkspaceId("");
+        setWorkspaces([]);
+        setWorkspaceMembers([]);
+      } else {
+        setToast(caught?.message || "Could not load household access");
+        setLoading(false);
+      }
+    }
+  }
   async function loadAll(quiet = false) {
     if (!user) return;
     const sx = typeof window !== "undefined" ? window.scrollX : 0,
@@ -1027,6 +1340,11 @@ export default function AssetManagerApp() {
           ? (document.activeElement as HTMLElement | null)
           : null;
     if (!quiet) setLoading(true);
+    const accountQuery = supabase.from("accounts").select("*"),
+      recordQuery = supabase.from("records").select("*"),
+      documentQuery = supabase.from("asset_documents").select("*"),
+      scopeColumn = activeWorkspaceId ? "workspace_id" : "user_id",
+      scopeValue = activeWorkspaceId || user.id;
     const [p, r, a, rec, doc] = await Promise.all([
       supabase.from("profiles").select("*").eq("id", user.id).maybeSingle(),
       supabase
@@ -1034,21 +1352,9 @@ export default function AssetManagerApp() {
         .select("*")
         .eq("user_id", user.id)
         .maybeSingle(),
-      supabase
-        .from("accounts")
-        .select("*")
-        .eq("user_id", user.id)
-        .order("created_at", { ascending: false }),
-      supabase
-        .from("records")
-        .select("*")
-        .eq("user_id", user.id)
-        .order("created_at", { ascending: false }),
-      supabase
-        .from("asset_documents")
-        .select("*")
-        .eq("user_id", user.id)
-        .order("created_at", { ascending: false }),
+      accountQuery.eq(scopeColumn, scopeValue).order("created_at", { ascending: false }),
+      recordQuery.eq(scopeColumn, scopeValue).order("created_at", { ascending: false }),
+      documentQuery.eq(scopeColumn, scopeValue).order("created_at", { ascending: false }),
     ]);
     if (p.data) setProfile(p.data as any);
     if (r.data) setRole((r.data as any).access_role);
@@ -1068,61 +1374,147 @@ export default function AssetManagerApp() {
     const { error } = await supabase
       .from("records")
       .update({ data })
-      .eq("id", recordId)
-      .eq("user_id", user.id);
+      .eq("id", recordId);
     if (error) throw error;
     const apply = (r: Rec) => (r.id === recordId ? { ...r, data } : r);
     recordsRef.current = recordsRef.current.map(apply);
     setRecords((prev) => prev.map(apply));
   }
-  async function captureDailyNetWorthSnapshot() {
+  async function saveCorporateAction(record: Rec, payload: Record<string, any>) {
+    if (!editChallenge("save corporate action")) return;
+    const actionType = String(payload.corporate_action_type || ""),
+      data = withSystemDates(
+        {
+          ...record.data,
+          corporate_action_type: actionType,
+          corporate_action_ratio: payload.corporate_action_ratio || "",
+          corporate_action_ex_date: payload.corporate_action_ex_date || "",
+          ex_base_price: payload.ex_base_price || "",
+        },
+        record,
+      );
+    if (!actionType) {
+      data.corporate_action_ratio = "";
+      data.corporate_action_ex_date = "";
+      data.ex_base_price = "";
+    }
+    try {
+      await saveRecordData(record.id, data);
+      setCorporateAction(null);
+      setToast(actionType ? "Corporate action saved" : "Corporate action cleared");
+      await loadAll(true);
+    } catch (error: any) {
+      setToast(error?.message || "Could not save corporate action");
+    }
+  }
+  async function captureInvestmentPeriodSnapshots() {
     if (
       !user?.id ||
+      !canEditModule("dashboard") ||
       loading ||
-      snapshotRef.current === isoDate() ||
       (!records.some((r) => MODULES[r.module_key]) &&
         !totals.assets &&
         !totals.liabilities)
     )
       return;
-    const today = isoDate(),
-      exists = records.some(
-        (r) =>
-          r.module_key === NET_WORTH_SNAPSHOT_MODULE &&
-          r.data?.snapshot_date === today,
-      );
-    if (exists) {
-      snapshotRef.current = today;
-      return;
-    }
-    snapshotRef.current = today;
-    const data = withSystemDates({
-      snapshot_date: today,
-      assets: totals.assets,
-      liabilities: totals.liabilities,
-      net: totals.net,
-      invested: totals.invested,
-      gain: totals.gain,
-      record_count: records.filter((r) => MODULES[r.module_key]).length,
-      notes: "Automatic daily net worth snapshot",
+    const calendar = istCalendar(),
+      assetRecords = records.filter(
+        (r) => MODULES[r.module_key]?.kind === "asset",
+      ),
+      accountMap = new Map<
+        string,
+        { account_name: string; invested: number; current: number }
+      >();
+    assetRecords.forEach((record) => {
+      const computed = computeLiveRecord(record.module_key, record.data),
+        accountName = String(record.data?.account_name || "Unassigned"),
+        current = accountMap.get(accountName) || {
+          account_name: accountName,
+          invested: 0,
+          current: 0,
+        };
+      current.invested += num(computed.invested);
+      current.current += num(computed.latest);
+      accountMap.set(accountName, current);
     });
-    const { error } = await supabase
-      .from("records")
-      .insert({
-        user_id: user.id,
-        module_key: NET_WORTH_SNAPSHOT_MODULE,
-        data,
+    const accountTotals = [...accountMap.values()].sort((a, b) =>
+        a.account_name.localeCompare(b.account_name),
+      ),
+      invested = accountTotals.reduce((sum, item) => sum + item.invested, 0),
+      current = accountTotals.reduce((sum, item) => sum + item.current, 0),
+      periods: { type: "weekly" | "monthly"; key: string; date: string }[] = [];
+    if (["Fri", "Sat", "Sun"].includes(calendar.weekday)) {
+      const daysUntilSunday =
+        calendar.weekday === "Fri" ? 2 : calendar.weekday === "Sat" ? 1 : 0;
+      periods.push({
+        type: "weekly",
+        key: addDaysIso(calendar.iso, daysUntilSunday),
+        date: calendar.iso,
       });
-    if (!error) await loadAll(true);
+    }
+    if (calendar.day === calendar.lastDay)
+      periods.push({
+        type: "monthly",
+        key: `${calendar.year}-${String(calendar.month).padStart(2, "0")}`,
+        date: calendar.iso,
+      });
+    if (!periods.length) return;
+    let changed = false;
+    for (const period of periods) {
+      const snapshotKey = `${activeWorkspaceId || user.id}:${period.type}:${period.key}`,
+        existing = records.find(
+          (record) =>
+            record.module_key === INVESTMENT_PERIOD_SNAPSHOT_MODULE &&
+            record.data?.snapshot_type === period.type &&
+            record.data?.period_key === period.key,
+        );
+      if (
+        snapshotRef.current === snapshotKey &&
+        existing?.data?.account_totals?.length === accountTotals.length &&
+        num(existing?.data?.current) === current &&
+        num(existing?.data?.invested) === invested
+      )
+        continue;
+      snapshotRef.current = snapshotKey;
+      const data = withSystemDates(
+        {
+          ...(existing?.data || {}),
+          snapshot_type: period.type,
+          period_key: period.key,
+          snapshot_date: period.date,
+          invested,
+          current,
+          gain: current - invested,
+          account_totals: accountTotals,
+          record_count: assetRecords.length,
+          notes:
+            period.type === "weekly"
+              ? "Automatic weekly investment close captured Friday-Sunday"
+              : "Automatic month-end investment close",
+        },
+        existing,
+      );
+      const { error } = existing
+        ? await supabase.from("records").update({ data }).eq("id", existing.id)
+        : await supabase.from("records").insert({
+            user_id: user.id,
+            ...(activeWorkspaceId ? { workspace_id: activeWorkspaceId } : {}),
+            module_key: INVESTMENT_PERIOD_SNAPSHOT_MODULE,
+            data,
+          });
+      if (!error) changed = true;
+    }
+    if (changed) await loadAll(true);
   }
   const totals = useMemo(
     () => computeLiveTotals(records),
     [records, bullionMarket],
   );
   useEffect(() => {
-    captureDailyNetWorthSnapshot();
+    captureInvestmentPeriodSnapshots();
   }, [
     user?.id,
+    activeWorkspaceId,
     records.length,
     totals.assets,
     totals.liabilities,
@@ -1143,7 +1535,20 @@ export default function AssetManagerApp() {
   const inAccountTab = (k: string, r: Rec) =>
     accountTab(k) === "All" ||
     String(r.data?.account_name || "Unassigned") === accountTab(k);
+  const canViewModule = (moduleKey: string) =>
+    ["dashboard", "purchaseCalculator", "household", "settings"].includes(
+      moduleKey,
+    ) ||
+    workspaceAccess.all_modules ||
+    workspaceAccess.modules.includes(moduleKey);
+  const canEditModule = (moduleKey: string) =>
+    workspaceAccess.can_edit && canViewModule(moduleKey);
   function editChallenge(action = "change data") {
+    const moduleKey = editing?.moduleKey || detail?.moduleKey || "";
+    if (moduleKey && !canEditModule(moduleKey)) {
+      setToast("This household access is read-only for the selected module");
+      return false;
+    }
     const token = String(Math.floor(1000 + Math.random() * 9000));
     const entered = prompt(
       `Security check: type this 4-digit code to ${action}.\n\n${token}`,
@@ -1153,10 +1558,24 @@ export default function AssetManagerApp() {
     return ok;
   }
   const requireAdmin = (a: string) => {
-    if (isAdmin) return true;
-    setToast(`Admin access required for ${a}`);
+    if (isAdmin || workspaceAccess.can_delete) return true;
+    setToast(`Delete permission required for ${a}`);
     return false;
   };
+  const sourceFor = (moduleKey: string) =>
+    sourcePrefs[moduleKey] || DEFAULT_SOURCE_PREFS[moduleKey] || "manual";
+  const quoteProviderParam = () => {
+    const provider = sourceFor("stocks");
+    return provider && provider !== "auto"
+      ? `&provider=${encodeURIComponent(provider)}`
+      : "";
+  };
+  const bullionSourceParam = () =>
+    `&source=${encodeURIComponent(sourceFor("bullion"))}`;
+  const setSourcePref = (moduleKey: string, source: string) =>
+    setSourcePrefs((prev) => ({ ...prev, [moduleKey]: source }));
+  const setAppearancePref = (patch: Partial<typeof DEFAULT_APPEARANCE>) =>
+    setAppearance((prev) => ({ ...prev, ...patch }));
   const code = (a: string) => {
     const c = String(Math.floor(10000000 + Math.random() * 90000000));
     return prompt(`${a}\n\nType this 8-digit code:\n\n${c}`) === c;
@@ -1173,6 +1592,7 @@ export default function AssetManagerApp() {
       .from("accounts")
       .insert({
         user_id: user.id,
+        ...(activeWorkspaceId ? { workspace_id: activeWorkspaceId } : {}),
         name: name.trim(),
         relation: "Other",
         type: "Imported",
@@ -1193,6 +1613,66 @@ export default function AssetManagerApp() {
       price = get("live_price");
     set("investment_amount", qty && buy ? qty * buy : 0);
     set("latest_value", qty && price ? qty * price : 0);
+  }
+  function fillBullionCosts(form: HTMLFormElement | null) {
+    if (!form) return;
+    const get = (name: string) =>
+        num(form.querySelector<HTMLInputElement>(`[name="${name}"]`)?.value),
+      total =
+        get("metal_cost") +
+        get("making_charges") +
+        get("gst_paid") +
+        get("other_costs"),
+      target = form.querySelector<HTMLInputElement>('[name="purchase_price"]');
+    if (target && total) target.value = total.toFixed(2);
+  }
+  async function detectCurrentBullionCity(form: HTMLFormElement | null) {
+    if (!form || !navigator.geolocation) {
+      setToast("Location is not available in this browser.");
+      return;
+    }
+    setBullionLocating(true);
+    navigator.geolocation.getCurrentPosition(
+      async ({ coords }) => {
+        const set = (name: string, value: string) => {
+          const input = form.querySelector<HTMLInputElement>(
+            `[name="${name}"]`,
+          );
+          if (input) input.value = value;
+        };
+        set("latitude", coords.latitude.toFixed(6));
+        set("longitude", coords.longitude.toFixed(6));
+        try {
+          const response = await fetch(
+            `https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${encodeURIComponent(coords.latitude)}&longitude=${encodeURIComponent(coords.longitude)}&localityLanguage=en`,
+          );
+          const location = await response.json();
+          const city = String(
+            location.city ||
+              location.locality ||
+              location.principalSubdivision ||
+              profile?.city ||
+              "",
+          );
+          set("city", city);
+          setToast(city ? `Current city set to ${city}.` : "Coordinates saved.");
+        } catch {
+          set("city", profile?.city || "");
+          setToast("Coordinates saved. Enter the city if it was not detected.");
+        } finally {
+          setBullionLocating(false);
+        }
+      },
+      (error) => {
+        setBullionLocating(false);
+        setToast(
+          error.code === error.PERMISSION_DENIED
+            ? "Location permission was denied."
+            : "Could not detect the current location.",
+        );
+      },
+      { enableHighAccuracy: false, timeout: 10000, maximumAge: 300000 },
+    );
   }
   function withSystemDates(data: any, existing?: Rec) {
     const now = new Date(),
@@ -1271,7 +1751,7 @@ export default function AssetManagerApp() {
     if (!price && d.ticker_symbol) {
       try {
           const res = await fetch(
-            `/api/quote?symbol=${encodeURIComponent(d.ticker_symbol)}&exchange=${encodeURIComponent(d.exchange || "NSE")}&name=${encodeURIComponent(d.security_name || "")}`,
+            `/api/quote?symbol=${encodeURIComponent(d.ticker_symbol)}&exchange=${encodeURIComponent(d.exchange || "NSE")}&name=${encodeURIComponent(d.security_name || "")}${quoteProviderParam()}`,
           ),
           q = await res.json();
         if (res.ok && Number.isFinite(Number(q.price))) {
@@ -1333,34 +1813,55 @@ export default function AssetManagerApp() {
     }
   }
   async function refreshBullionMarket() {
+    setBullionPriceStatus("loading");
+    const city =
+      recordsRef.current
+        .filter((record) => record.module_key === "bullion")
+        .map((record) => String(record.data?.city || "").trim())
+        .find(Boolean) ||
+      profile?.city ||
+      "";
     try {
-      const [goldRes, silverRes] = await Promise.all([
-          fetch(`/api/market-rate?asset=gold&t=${Date.now()}`, {
+      const [goldRes, silverRes, localRes] = await Promise.all([
+          fetch(`/api/market-rate?asset=gold&t=${Date.now()}${bullionSourceParam()}`, {
             cache: "no-store",
           }),
-          fetch(`/api/market-rate?asset=silver&t=${Date.now()}`, {
+          fetch(`/api/market-rate?asset=silver&t=${Date.now()}${bullionSourceParam()}`, {
             cache: "no-store",
           }),
+          city
+            ? fetch(
+                `/api/local-bullion-rate?city=${encodeURIComponent(city)}&t=${Date.now()}`,
+                { cache: "no-store" },
+              )
+            : Promise.resolve(null),
         ]),
-        [gold, silver] = await Promise.all([goldRes.json(), silverRes.json()]);
+        [gold, silver, local] = await Promise.all([
+          goldRes.json(),
+          silverRes.json(),
+          localRes?.json().catch(() => null) ?? null,
+        ]);
       setBullionMarket({
         gold: goldRes.ok ? gold : null,
         silver: silverRes.ok ? silver : null,
         time: new Date().toLocaleTimeString(),
       });
+      setLocalBullionRate(localRes?.ok ? local : null);
+      setBullionPriceStatus(goldRes.ok || silverRes.ok ? "ready" : "error");
     } catch {
       setBullionMarket({
         gold: null,
         silver: null,
         time: new Date().toLocaleTimeString(),
       });
+      setLocalBullionRate(null);
+      setBullionPriceStatus("error");
     }
   }
   async function refreshMarketToday() {
     const indices = [
       ["SENSEX", "^BSESN"],
       ["NIFTY", "^NSEI"],
-      ["CNX Midcap", "NIFTY_MIDCAP_100.NS"],
       ["NIFTY BANK", "^NSEBANK"],
       ["NASDAQ", "^IXIC"],
     ];
@@ -1369,7 +1870,7 @@ export default function AssetManagerApp() {
       for (const [name, symbol] of indices) {
         try {
           const res = await fetch(
-              `/api/quote?symbol=${encodeURIComponent(symbol)}&exchange=INDEX&t=${Date.now()}`,
+              `/api/quote?symbol=${encodeURIComponent(symbol)}&exchange=INDEX&t=${Date.now()}${quoteProviderParam()}`,
               { cache: "no-store" },
             ),
             q = await res.json();
@@ -1395,17 +1896,17 @@ export default function AssetManagerApp() {
         }
       }
       const [goldRes, silverRes, crudeRes, usdRes] = await Promise.all([
-        fetch(`/api/market-rate?asset=gold&t=${Date.now()}`, {
+        fetch(`/api/market-rate?asset=gold&t=${Date.now()}${bullionSourceParam()}`, {
           cache: "no-store",
         }),
-        fetch(`/api/market-rate?asset=silver&t=${Date.now()}`, {
+        fetch(`/api/market-rate?asset=silver&t=${Date.now()}${bullionSourceParam()}`, {
           cache: "no-store",
         }),
         fetch(`/api/market-rate?asset=crude&t=${Date.now()}`, {
           cache: "no-store",
         }),
         fetch(
-          `/api/quote?symbol=${encodeURIComponent("USDINR=X")}&exchange=INDEX&t=${Date.now()}`,
+          `/api/quote?symbol=${encodeURIComponent("USDINR=X")}&exchange=INDEX&t=${Date.now()}${quoteProviderParam()}`,
           { cache: "no-store" },
         ),
       ]);
@@ -1548,12 +2049,18 @@ export default function AssetManagerApp() {
     folderParts: string[] = driveFolderParts(moduleKey),
   ) {
     if (!user || !files.length) return [] as PendingDoc[];
-    if (!(await connectGoogleDrive())) return [] as PendingDoc[];
+    if (!workspaceAccess.can_upload_documents || !canEditModule(moduleKey)) {
+      setToast("Document upload permission is required");
+      return [] as PendingDoc[];
+    }
+    if (!activeWorkspaceId && !(await connectGoogleDrive()))
+      return [] as PendingDoc[];
     const pending: PendingDoc[] = [];
     for (const file of files) {
       try {
         const fd = new FormData();
         fd.append("moduleKey", moduleKey);
+        if (activeWorkspaceId) fd.append("workspaceId", activeWorkspaceId);
         fd.append("folderParts", JSON.stringify(folderParts));
         fd.append("file", file);
         const res = await fetch("/api/documents", {
@@ -1586,6 +2093,7 @@ export default function AssetManagerApp() {
     if (!user || !pending.length) return 0;
     const rows = pending.map((d) => ({
       user_id: user.id,
+      ...(activeWorkspaceId ? { workspace_id: activeWorkspaceId } : {}),
       record_id: recordId,
       module_key: moduleKey,
       file_name: d.file_name,
@@ -1608,6 +2116,8 @@ export default function AssetManagerApp() {
     files: File[] = docFilesRef.current,
   ) {
     if (!user) return;
+    if (!canEditModule(moduleKey))
+      return setToast("This household access is read-only for this module");
     if (!editChallenge(record ? "save edits" : "add this record")) return;
     if (moduleKey === "watchlist")
       data = await captureWatchlistBasePrice(data, record);
@@ -1639,12 +2149,16 @@ export default function AssetManagerApp() {
           .from("records")
           .update({ data })
           .eq("id", record.id)
-          .eq("user_id", user.id)
           .select("id")
           .single()
       : await supabase
           .from("records")
-          .insert({ user_id: user.id, module_key: moduleKey, data })
+          .insert({
+            user_id: user.id,
+            ...(activeWorkspaceId ? { workspace_id: activeWorkspaceId } : {}),
+            module_key: moduleKey,
+            data,
+          })
           .select("id")
           .single();
     if (res.error) setToast(res.error.message);
@@ -1675,8 +2189,7 @@ export default function AssetManagerApp() {
     const { error } = await supabase
       .from("records")
       .update({ data })
-      .eq("id", r.id)
-      .eq("user_id", user.id);
+      .eq("id", r.id);
     if (error) setToast(error.message);
     else {
       setToast(
@@ -1697,8 +2210,7 @@ export default function AssetManagerApp() {
     const { error } = await supabase
       .from("records")
       .update({ data })
-      .eq("id", r.id)
-      .eq("user_id", user.id);
+      .eq("id", r.id);
     if (error) setToast(error.message);
     else {
       setToast("Maturity reminder moved ahead 1 month");
@@ -1715,8 +2227,7 @@ export default function AssetManagerApp() {
     const { error } = await supabase
       .from("records")
       .update({ data })
-      .eq("id", r.id)
-      .eq("user_id", user.id);
+      .eq("id", r.id);
     if (error) setToast(error.message);
     else {
       setToast("Maturity reminder resolved");
@@ -1731,8 +2242,7 @@ export default function AssetManagerApp() {
     const { error } = await supabase
       .from("records")
       .delete()
-      .eq("id", r.id)
-      .eq("user_id", user.id);
+      .eq("id", r.id);
     if (error) setToast(error.message);
     else {
       setToast("Deleted");
@@ -1741,6 +2251,8 @@ export default function AssetManagerApp() {
   }
   async function saveAccount(payload: any, existing?: Account | null) {
     if (!user) return;
+    if (!canEditModule("accounts"))
+      return setToast("This household access cannot change accounts");
     if (!editChallenge(existing ? "save account edits" : "add account")) return;
     if (!payload.name?.trim()) return setToast("Account name required");
     if (existing) {
@@ -1748,8 +2260,7 @@ export default function AssetManagerApp() {
       const { error } = await supabase
         .from("accounts")
         .update(payload)
-        .eq("id", existing.id)
-        .eq("user_id", user.id);
+        .eq("id", existing.id);
       if (error) return setToast(error.message);
       if (old !== payload.name) {
         const linked = records.filter((r) => r.data?.account_name === old);
@@ -1758,15 +2269,18 @@ export default function AssetManagerApp() {
             supabase
               .from("records")
               .update({ data: { ...r.data, account_name: payload.name } })
-              .eq("id", r.id)
-              .eq("user_id", user.id),
+              .eq("id", r.id),
           ),
         );
       }
     } else {
       const { error } = await supabase
         .from("accounts")
-        .insert({ ...payload, user_id: user.id });
+        .insert({
+          ...payload,
+          user_id: user.id,
+          ...(activeWorkspaceId ? { workspace_id: activeWorkspaceId } : {}),
+        });
       if (error) return setToast(error.message);
     }
     setAccModal(null);
@@ -1789,8 +2303,7 @@ export default function AssetManagerApp() {
         supabase
           .from("records")
           .update({ data: { ...r.data, account_name: "" } })
-          .eq("id", r.id)
-          .eq("user_id", user.id),
+          .eq("id", r.id),
       ),
     );
     const updateError = updates.find((res) => res.error)?.error;
@@ -1798,8 +2311,7 @@ export default function AssetManagerApp() {
     const { error } = await supabase
       .from("accounts")
       .delete()
-      .eq("id", a.id)
-      .eq("user_id", user.id);
+      .eq("id", a.id);
     if (error) return setToast(error.message);
     setAccounts((prev) => prev.filter((x) => x.id !== a.id));
     setRecords((prev) =>
@@ -1835,7 +2347,7 @@ export default function AssetManagerApp() {
       }
       try {
         const res = await fetch(
-          `/api/quote?symbol=${encodeURIComponent(d.ticker_symbol)}&exchange=${encodeURIComponent(d.exchange || "NSE")}&name=${encodeURIComponent(d.security_name || "")}`,
+          `/api/quote?symbol=${encodeURIComponent(d.ticker_symbol)}&exchange=${encodeURIComponent(d.exchange || "NSE")}&name=${encodeURIComponent(d.security_name || "")}${quoteProviderParam()}`,
         );
         const q = await res.json();
         if (!res.ok || !Number.isFinite(Number(q.price)))
@@ -1873,7 +2385,7 @@ export default function AssetManagerApp() {
         quotes.set(
           quoteKey,
           fetch(
-            `/api/quote?symbol=${encodeURIComponent(symbol)}&exchange=${encodeURIComponent(exchange)}&name=${encodeURIComponent(name)}&t=${Date.now()}`,
+            `/api/quote?symbol=${encodeURIComponent(symbol)}&exchange=${encodeURIComponent(exchange)}&name=${encodeURIComponent(name)}&t=${Date.now()}${quoteProviderParam()}`,
             { cache: "no-store" },
           ).then(async (res) => {
             const q = await res.json();
@@ -1935,7 +2447,7 @@ export default function AssetManagerApp() {
       }
       try {
         const res = await fetch(
-          `/api/quote?symbol=${encodeURIComponent(d.ticker_symbol)}&exchange=${encodeURIComponent(d.exchange || "NSE")}&name=${encodeURIComponent(d.security_name || "")}`,
+          `/api/quote?symbol=${encodeURIComponent(d.ticker_symbol)}&exchange=${encodeURIComponent(d.exchange || "NSE")}&name=${encodeURIComponent(d.security_name || "")}${quoteProviderParam()}`,
         );
         const q = await res.json();
         if (!res.ok || !Number.isFinite(Number(q.price)))
@@ -2022,7 +2534,7 @@ export default function AssetManagerApp() {
         quotes.set(
           asset,
           fetch(
-            `/api/market-rate?asset=${encodeURIComponent(asset)}&t=${Date.now()}`,
+            `/api/market-rate?asset=${encodeURIComponent(asset)}&t=${Date.now()}${bullionSourceParam()}`,
             { cache: "no-store" },
           ).then(async (res) => {
             const q = await res.json();
@@ -2038,13 +2550,16 @@ export default function AssetManagerApp() {
       try {
         const q = await quoteFor(metalAsset(d));
         const grams = num(d.quantity) * metalUnitFactor(d.unit),
-          rate = Number(q.ratePerGramInr),
+          benchmarkRate = Number(q.ratePerGramInr),
+          localPremium = num(d.local_premium_per_gram),
+          localRate = benchmarkRate + localPremium,
+          rate = benchmarkRate,
           asset = metalAsset(d),
           displayPrice =
             asset === "silver"
-              ? Number(q.ratePerKgInr)
+              ? rate * 1000
               : asset === "gold"
-                ? Number(q.ratePer10GramInr)
+                ? rate * 10
                 : rate,
           displayChange =
             asset === "silver"
@@ -2053,7 +2568,11 @@ export default function AssetManagerApp() {
                 ? Number(q.changePer10GramInr)
                 : Number(q.changePerGramInr),
           value = grams * rate,
-          storedRate = num(d.live_rate_per_gram || d.previous_rate_per_gram),
+          storedRate = num(
+            d.benchmark_rate_per_gram ||
+              d.live_rate_per_gram ||
+              d.previous_rate_per_gram,
+          ),
           apiChange = Number(q.changePerGramInr),
           changePerGram =
             Number.isFinite(apiChange) && apiChange !== 0
@@ -2070,6 +2589,19 @@ export default function AssetManagerApp() {
         d.day_change = Number.isFinite(displayChange)
           ? displayChange.toFixed(2)
           : "";
+        d.day_low = Number.isFinite(Number(q.dayLow))
+          ? Number(q.dayLow).toFixed(2)
+          : d.day_low || "";
+        d.day_high = Number.isFinite(Number(q.dayHigh))
+          ? Number(q.dayHigh).toFixed(2)
+          : d.day_high || "";
+        d.fifty_two_week_low = Number.isFinite(Number(q.fiftyTwoWeekLow))
+          ? Number(q.fiftyTwoWeekLow).toFixed(2)
+          : d.fifty_two_week_low || "";
+        d.fifty_two_week_high = Number.isFinite(Number(q.fiftyTwoWeekHigh))
+          ? Number(q.fiftyTwoWeekHigh).toFixed(2)
+          : d.fifty_two_week_high || "";
+        d.contract_expiry = q.contractExpiry || q.expiry || d.contract_expiry || "";
         d.previous_rate_per_gram =
           Number.isFinite(Number(q.previousPerGramInr)) &&
           Number(q.previousPerGramInr) !== 0
@@ -2078,6 +2610,9 @@ export default function AssetManagerApp() {
               ? storedRate.toFixed(2)
               : "";
         d.live_rate_per_gram = rate.toFixed(2);
+        d.benchmark_rate_per_gram = benchmarkRate.toFixed(2);
+        d.local_rate_per_gram = localRate.toFixed(2);
+        d.pricing_city = d.city || profile?.city || "";
         d.rate_provider = q.provider || "";
         d.rate_source_url = q.sourceUrl || "";
         d.last_synced = new Date().toLocaleString();
@@ -2336,6 +2871,8 @@ export default function AssetManagerApp() {
   }
   async function importRows() {
     if (!user || !importPreview.length) return;
+    if (!canEditModule("shareList"))
+      return setToast("This household access cannot import shares");
     const data = [];
     for (const r of importPreview) {
       const captured = await captureWatchlistBasePrice(r.data);
@@ -2346,6 +2883,7 @@ export default function AssetManagerApp() {
       .insert(
         data.map((row) => ({
           user_id: user.id,
+          ...(activeWorkspaceId ? { workspace_id: activeWorkspaceId } : {}),
           module_key: "watchlist",
           data: row,
         })),
@@ -2358,12 +2896,6 @@ export default function AssetManagerApp() {
       setToast(`${added} share${added === 1 ? "" : "s"} added to watchlist`);
       await loadAll(true);
     }
-  }
-  function exportBackup() {
-    download(
-      "asset-manager-cloud-backup.json",
-      JSON.stringify({ profile, role, accounts, records, docs }, null, 2),
-    );
   }
   function exportModuleCsv(k: string) {
     const def = MODULES[k],
@@ -2394,6 +2926,197 @@ export default function AssetManagerApp() {
         ...rows.map((r) => heads.map((h) => csvEscape(r[h])).join(",")),
       ].join("\n");
     download(`${k}-export.csv`, csv, "text/csv");
+  }
+  function createRestorePoint() {
+    if (!user) return;
+    const payload = {
+      format: "asset-manager-restore-point",
+      version: 1,
+      created_at: new Date().toISOString(),
+      workspace: activeWorkspace
+        ? { id: activeWorkspace.id, name: activeWorkspace.name }
+        : null,
+      profile,
+      accounts,
+      records,
+      documents: docs,
+    };
+    download(
+      `asset-manager-restore-${isoDate()}-${Date.now()}.json`,
+      JSON.stringify(payload, null, 2),
+    );
+    setToast("Restore point downloaded");
+  }
+  async function reinstateRestorePoint(file: File | null) {
+    if (!file || !user) return;
+    if (!canEditModule("dashboard"))
+      return setToast("Edit access is required to reinstate data");
+    try {
+      const backup = JSON.parse(await file.text());
+      if (
+        backup?.format !== "asset-manager-restore-point" ||
+        backup?.version !== 1
+      )
+        throw new Error("This is not a supported Asset Manager restore point");
+      const backupAccounts = Array.isArray(backup.accounts)
+          ? backup.accounts
+          : [],
+        backupRecords = Array.isArray(backup.records) ? backup.records : [],
+        backupDocuments = Array.isArray(backup.documents)
+          ? backup.documents
+          : [];
+      if (
+        !confirm(
+          `Reinstate ${backupAccounts.length} accounts and ${backupRecords.length} records into the current workspace?\n\nMatching IDs will be updated. Other current data will remain.`,
+        )
+      )
+        return;
+      const workspaceFields = activeWorkspaceId
+        ? { workspace_id: activeWorkspaceId }
+        : {};
+      if (backup.profile) {
+        const { error } = await supabase.from("profiles").upsert({
+          id: user.id,
+          email: user.email || backup.profile.email || "",
+          full_name: backup.profile.full_name || "",
+          city: backup.profile.city || "",
+          phone: backup.profile.phone || "",
+        });
+        if (error) throw error;
+      }
+      if (backupAccounts.length) {
+        const { error } = await supabase.from("accounts").upsert(
+          backupAccounts.map((account: any) => ({
+            id: account.id,
+            user_id: user.id,
+            ...workspaceFields,
+            name: account.name || "Restored Account",
+            relation: account.relation || "Other",
+            type: account.type || "Other",
+            institution: account.institution || "",
+            notes: account.notes || "",
+          })),
+        );
+        if (error) throw error;
+      }
+      if (backupRecords.length) {
+        const { error } = await supabase.from("records").upsert(
+          backupRecords.map((record: any) => ({
+            id: record.id,
+            user_id: user.id,
+            ...workspaceFields,
+            module_key: record.module_key,
+            data: record.data || {},
+          })),
+        );
+        if (error) throw error;
+      }
+      if (backupDocuments.length) {
+        const restoredRecordIds = new Set(
+          backupRecords.map((record: any) => String(record.id)),
+        );
+        const restorable = backupDocuments.filter((document: any) =>
+          restoredRecordIds.has(String(document.record_id)),
+        );
+        if (restorable.length) {
+          const { error } = await supabase.from("asset_documents").upsert(
+            restorable.map((document: any) => ({
+              id: document.id,
+              user_id: user.id,
+              ...workspaceFields,
+              record_id: document.record_id,
+              module_key: document.module_key,
+              file_name: document.file_name,
+              file_path: document.file_path,
+              mime_type: document.mime_type || "",
+              file_size: document.file_size || 0,
+              notes: document.notes || "Restored reference",
+            })),
+          );
+          if (error) throw error;
+        }
+      }
+      setToast("Restore point reinstated");
+      await loadAll(true);
+    } catch (error: any) {
+      setToast(error?.message || "Could not reinstate restore point");
+    }
+  }
+  async function backtrackInvestmentPrices() {
+    if (!performanceFrom || !performanceTo || performanceFrom > performanceTo)
+      return setToast("Choose a valid From and To date");
+    setHistoryBusy(true);
+    try {
+      const assetRecords = records.filter(
+          (record) => MODULES[record.module_key]?.kind === "asset",
+        ),
+        marketHoldings: any[] = [],
+        manualValue = assetRecords.reduce((sum, record) => {
+          const computed = computeLiveRecord(record.module_key, record.data);
+          if (record.module_key === "stocks" && record.data?.ticker_symbol) {
+            marketHoldings.push({
+              id: record.id,
+              kind: "stock",
+              ticker: record.data.ticker_symbol,
+              exchange: record.data.exchange || "NSE",
+              quantity: num(computed.quantity || record.data.quantity),
+            });
+            return sum;
+          }
+          if (record.module_key === "bullion") return sum + num(computed.latest);
+          return sum + num(computed.latest);
+        }, 0),
+        invested = assetRecords.reduce(
+          (sum, record) =>
+            sum + num(computeLiveRecord(record.module_key, record.data).invested),
+          0,
+        );
+      const response = await fetch("/api/investment-history", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          from: performanceFrom,
+          to: performanceTo,
+          holdings: marketHoldings,
+        }),
+      });
+      const json = await response.json();
+      if (!response.ok) throw new Error(json.error || "History unavailable");
+      const totalsByDate = new Map<string, number>();
+      (json.series || []).forEach((series: any) =>
+        (series.points || []).forEach((point: any) =>
+          totalsByDate.set(
+            point.date,
+            num(totalsByDate.get(point.date)) + num(point.value),
+          ),
+        ),
+      );
+      const daily = [...totalsByDate.entries()]
+        .map(([date, value]) => ({
+          date,
+          invested,
+          current: value + manualValue,
+          type: "historical",
+        }))
+        .sort((a, b) => a.date.localeCompare(b.date));
+      const grouped = new Map<string, (typeof daily)[number]>();
+      daily.forEach((point) => {
+        const date = new Date(`${point.date}T00:00:00`),
+          key =
+            performanceView === "weekly"
+              ? addDaysIso(point.date, (7 - date.getDay()) % 7)
+              : point.date.slice(0, 7);
+        grouped.set(key, point);
+      });
+      setHistoricalPerformance([...grouped.values()]);
+      setToast(
+        `Backtracked ${daily.length} market days. Manual and unavailable assets use their recorded value.`,
+      );
+    } catch (error: any) {
+      setToast(error?.message || "Could not backtrack prices");
+    } finally {
+      setHistoryBusy(false);
+    }
   }
   async function saveProfile(fd: FormData) {
     if (!user) return;
@@ -2449,9 +3172,9 @@ export default function AssetManagerApp() {
       setToast(e?.message || "Could not open document");
     }
   }
-  function openMoneycontrolCommodity(metal: any) {
+  function openMcxCommodity() {
     window.open(
-      moneycontrolCommodityHref(metal),
+      mcxCommodityHref(),
       "_blank",
       "noopener,noreferrer",
     );
@@ -2480,15 +3203,15 @@ export default function AssetManagerApp() {
     if (!user || !files.length) return;
     setDocUploading(true);
     try {
-      let record = records.find((r) => r.id === docUploadRecordId),
-        recordId = record?.id || "",
-        moduleKey = record?.module_key || docUploadModule,
+      const record = records.find((r) => r.id === docUploadRecordId),
         folderParts = record
           ? driveFolderParts(record.module_key, record.data)
           : driveFolderParts(docUploadModule, {
               security_name: files.length === 1 ? files[0].name : "Repository",
               broker: docUploadNotes || "General",
             });
+      let recordId = record?.id || "",
+        moduleKey = record?.module_key || docUploadModule;
       if (!recordId) {
         const title =
           files.length === 1
@@ -2498,6 +3221,7 @@ export default function AssetManagerApp() {
           .from("records")
           .insert({
             user_id: user.id,
+            ...(activeWorkspaceId ? { workspace_id: activeWorkspaceId } : {}),
             module_key: "documents",
             data: withSystemDates({
               security_name: title,
@@ -2533,7 +3257,11 @@ export default function AssetManagerApp() {
   const visibleGroups = groups
     .map(([g, ids]: any) => [
       g,
-      ids.filter((id: string) => id !== "admin" || isAdmin),
+      ids.filter(
+        (id: string) =>
+          (id !== "admin" || isAdmin) &&
+          (id === "admin" || canViewModule(id)),
+      ),
     ])
     .filter(([, ids]: any) => ids.length);
   const navButton = (id: string, compact = false) => {
@@ -2556,7 +3284,6 @@ export default function AssetManagerApp() {
     ["dashboard", "Summary", Home],
     ["investments", "Investments", BriefcaseBusiness],
     ["goals", "Goals", CheckCircle2],
-    ["insights", "Insights", BarChart3],
     ["settings", "Settings", KeyRound],
   ] as const;
   const mobileInvestmentTabs = [
@@ -2594,6 +3321,7 @@ export default function AssetManagerApp() {
                   .filter(Boolean),
               ),
             ),
+            ...(mobileAccountMenu === "stocks" ? ["Watchlist"] : []),
           ]
         : [];
   function selectMobileTab(id: string) {
@@ -2718,7 +3446,26 @@ export default function AssetManagerApp() {
     onClick?: () => void,
     rowKey?: string,
   ) {
-    const visibleItems = items.filter(Boolean);
+    const visibleItems = [["Total", value], ...items.filter(Boolean)],
+      byLabel = new Map(
+        visibleItems.map(([k, v, cls]: any) => [
+          String(k || "").toLowerCase(),
+          { label: k, value: v, cls },
+        ]),
+      ),
+      investedItem = byLabel.get("invested") || byLabel.get("amount"),
+      totalItem = byLabel.get("total"),
+      gainItem = byLabel.get("gain") || byLabel.get("overall gain"),
+      todayItem =
+        byLabel.get("today") ||
+        byLabel.get("today gain") ||
+        byLabel.get("total gain"),
+      gainTone =
+        String(gainItem?.cls || todayItem?.cls || "").includes("red")
+          ? "phone-gain-down"
+          : String(gainItem?.cls || todayItem?.cls || "").includes("green")
+            ? "phone-gain-up"
+            : "";
     return (
       <button
         key={rowKey || `${title}|${meta}`}
@@ -2734,10 +3481,10 @@ export default function AssetManagerApp() {
         onClick={onClick}
       >
         <div
-          className="phone-row-main !grid !w-full !max-w-full !grid-cols-[minmax(0,1fr)_auto] !items-start !gap-x-3 !gap-y-2"
+          className="phone-row-main !grid !w-full !max-w-full !grid-cols-1 !items-start !gap-x-3 !gap-y-2"
           style={{
             display: "grid",
-            gridTemplateColumns: "minmax(0, 1fr) auto",
+            gridTemplateColumns: "minmax(0, 1fr)",
             width: "100%",
             maxWidth: "100%",
             overflow: "hidden",
@@ -2754,22 +3501,45 @@ export default function AssetManagerApp() {
               {meta}
             </div>
           </div>
-          <div className="phone-row-value shrink-0 whitespace-nowrap text-right tabular-nums">
-            {value}
-          </div>
           {visibleItems.length > 0 && (
             <div
-              className="col-span-2 grid min-w-0 grid-cols-3 gap-2 overflow-hidden pt-1"
-              style={{ gridTemplateColumns: `repeat(${Math.min(visibleItems.length, 3)}, minmax(0, 1fr))` }}
+              className="phone-row-metrics phone-pair-row grid min-w-0 gap-2 overflow-hidden pt-1"
+              style={{ gridTemplateColumns: "repeat(2, minmax(0, 1fr))" }}
             >
-              {visibleItems.map(([k, v, cls]: any) => (
-                <div className="phone-row-metric min-w-0 text-left" key={k}>
-                  <div className="phone-mini-label truncate">{k}</div>
-                  <div className={`phone-mini-value truncate tabular-nums ${cls || ""}`}>
-                    {v}
+              <div className="phone-row-metric phone-pair-cell min-w-0 text-left">
+                {investedItem && (
+                  <div className="phone-pair-line">
+                    <span>{investedItem.label}</span>
+                    <b>{investedItem.value}</b>
                   </div>
-                </div>
-              ))}
+                )}
+                {totalItem && (
+                  <div className="phone-pair-line">
+                    <span>{totalItem.label}</span>
+                    <b>{totalItem.value}</b>
+                  </div>
+                )}
+              </div>
+              <div className={`phone-row-metric phone-pair-cell phone-gain-cell min-w-0 text-left ${gainTone}`}>
+                {gainItem && (
+                  <div className="phone-pair-line">
+                    <span>Overall Gain</span>
+                    <b className={gainItem.cls || ""}>{gainItem.value}</b>
+                  </div>
+                )}
+                {todayItem && (
+                  <div className="phone-pair-line">
+                    <span>Today Gain</span>
+                    <b className={todayItem.cls || ""}>{todayItem.value}</b>
+                  </div>
+                )}
+                {!gainItem && !todayItem && (
+                  <div className="phone-pair-line">
+                    <span>Rows</span>
+                    <b>{visibleItems.find(([k]: any) => !["Total", "Invested", "Amount"].includes(String(k)))?.[1] || "-"}</b>
+                  </div>
+                )}
+              </div>
             </div>
           )}
         </div>
@@ -2778,17 +3548,22 @@ export default function AssetManagerApp() {
   }
   function phoneStockHoldingCard(x: any) {
     const c = x.c || {},
+      moduleKey = x.moduleKey || "stocks",
       shortName = compactName(String(c.security_name || x.title || "Stock")),
       broker = String(c.broker || c.account_name || "Stocks"),
-      quantity = x.records.reduce((s: number, r: Rec) => s + num(r.data?.quantity), 0),
+      quantity = num(c.adjusted_quantity) || x.records.reduce(
+        (s: number, r: Rec) =>
+          s + (num(computeLiveRecord("stocks", r.data).adjusted_quantity) || num(r.data?.quantity)),
+        0,
+      ),
       quantityText = quantity.toLocaleString("en-IN", {
         maximumFractionDigits: 3,
       }),
       currentPrice = num(c.live_price || c.current_price),
       dayLow = num(c.day_low),
       dayHigh = num(c.day_high),
-      gainClass = x.gain >= 0 ? "phone-green" : "phone-red",
-      todayClass = x.today >= 0 ? "phone-green" : "phone-red",
+      weekLow = num(c.fifty_two_week_low),
+      weekHigh = num(c.fifty_two_week_high),
       openHolding = () => {
         if (x.lots > 1) {
           setExpandedLots((prev) => ({
@@ -2798,58 +3573,68 @@ export default function AssetManagerApp() {
           return;
         }
         setDetail({
-          moduleKey: "stocks",
+          moduleKey,
           record: x.records[0],
           computed: c,
-          cols: MODULES.stocks.cols || [],
+          cols: MODULES[moduleKey]?.cols || MODULES.stocks.cols || [],
           linkedProperty: false,
         });
       };
     return (
       <article className="phone-stock-card">
-        <button
-          type="button"
-          className="phone-stock-card-top"
-          onClick={openHolding}
-        >
+        <button type="button" className="phone-stock-card-top" onClick={openHolding}>
           <div className="min-w-0">
             <div className="phone-stock-name">{shortName}</div>
             <div className="phone-stock-meta">
               {broker} | {x.lots} lot{x.lots > 1 ? "s" : ""} | Qty {quantityText}
+              {c.corporate_action_applied
+                ? ` | ${String(c.corporate_action_type || "Action").toUpperCase()} ${c.corporate_action_ratio}`
+                : ""}
             </div>
           </div>
-          <div className="phone-stock-total">{fmt(x.latest)}</div>
         </button>
-        <div className="phone-stock-metrics">
-          <div>
-            <span>Invested</span>
-            <b>{fmt(x.invested)}</b>
-            <small>Qty {quantityText}</small>
+        <div className="phone-stock-top-stats phone-pair-row">
+          <div className="phone-pair-cell">
+            <div className="phone-pair-line">
+              <span>Invested</span>
+              <b>{fmt(x.invested)}</b>
+            </div>
+            <div className="phone-pair-line">
+              <span>Total</span>
+              <b>{fmt(x.latest)}</b>
+            </div>
           </div>
-          <div>
-            <span>Gain</span>
-            <b className={gainClass}>{fmt(x.gain)}</b>
-            <small className={todayClass}>Today {fmt(x.today)}</small>
+          <div className={`phone-pair-cell phone-gain-cell ${x.gain >= 0 ? "phone-gain-up" : "phone-gain-down"}`}>
+            <div className="phone-pair-line">
+              <span>Overall Gain</span>
+              <b className={x.gain >= 0 ? "phone-green" : "phone-red"}>{fmt(x.gain)}</b>
+            </div>
+            <div className="phone-pair-line">
+              <span>Today Gain</span>
+              <b className={x.today >= 0 ? "phone-green" : "phone-red"}>{fmt(x.today)}</b>
+            </div>
           </div>
         </div>
         <a
-          className="phone-stock-prices"
+          className="phone-stock-prices phone-stock-signal-row"
           href={moneycontrolHref(c)}
           target="_blank"
           rel="noreferrer"
           onClick={(event) => event.stopPropagation()}
         >
-          <span>
-            <em>Curr</em>
-            <b>{fmt(currentPrice)}</b>
+          <span className={x.today > 0 ? "phone-box-up" : x.today < 0 ? "phone-box-down" : "phone-box-neutral"}>
+            <em>Current</em>
+            <b>{currentPrice ? fmt(currentPrice) : "-"}</b>
           </span>
-          <span>
+          <span className="phone-box-down">
             <em>Low</em>
-            <b>{fmt(dayLow)}</b>
+            <b>{dayLow ? fmt(dayLow) : "-"}</b>
+            <small>{weekLow ? `52W ${fmt(weekLow)}` : "52W -"}</small>
           </span>
-          <span>
+          <span className="phone-box-up">
             <em>High</em>
-            <b>{fmt(dayHigh)}</b>
+            <b>{dayHigh ? fmt(dayHigh) : "-"}</b>
+            <small>{weekHigh ? `52W ${fmt(weekHigh)}` : "52W -"}</small>
           </span>
         </a>
       </article>
@@ -2857,6 +3642,7 @@ export default function AssetManagerApp() {
   }
   function phoneBullionHoldingCard(x: any) {
     const c = x.c || {},
+      quote = liveMetalQuote(c),
       title = bullionDisplayName(c) || compactName(String(c.security_name || x.title || "Bullion")),
       broker = String(c.broker || c.account_name || "MCX"),
       quantity = x.records.reduce(
@@ -2866,13 +3652,19 @@ export default function AssetManagerApp() {
       quantityText = quantity
         ? quantity.toLocaleString("en-IN", { maximumFractionDigits: 3 })
         : String(x.lots),
-      currentPrice = num(c.live_price || c.current_price || c.rate || c.price),
-      fallbackUnitPrice = quantity ? num(x.latest) / quantity : 0,
-      displayCurrent = currentPrice || fallbackUnitPrice,
+      displayCurrent = num(c.current_price || c.live_price || c.rate || c.price),
+      localCurrent =
+        metalAsset(c) === "silver"
+          ? num(localBullionRate?.silverPerKgInr)
+          : num(localBullionRate?.gold24kPer10GramInr),
       dayLow = num(c.day_low || c.low || c.today_low),
       dayHigh = num(c.day_high || c.high || c.today_high),
-      gainClass = x.gain >= 0 ? "phone-green" : "phone-red",
-      todayClass = x.today >= 0 ? "phone-green" : "phone-red",
+      weekLow = num(c.fifty_two_week_low),
+      weekHigh = num(c.fifty_two_week_high),
+      priceLoading = bullionPriceStatus === "loading" && !displayCurrent,
+      priceUnavailable = bullionPriceStatus === "error" && !displayCurrent,
+      priceText = (value: number) =>
+        priceLoading ? "Loading" : priceUnavailable || !value ? "Price unavailable" : fmt(value),
       openHolding = () => {
         if (x.lots > 1) {
           setExpandedLots((prev) => ({
@@ -2891,52 +3683,213 @@ export default function AssetManagerApp() {
       };
     return (
       <article className="phone-stock-card phone-bullion-card">
-        <button
-          type="button"
-          className="phone-stock-card-top"
-          onClick={openHolding}
-        >
+        <button type="button" className="phone-stock-card-top" onClick={openHolding}>
           <div className="min-w-0">
             <div className="phone-stock-name">{title}</div>
             <div className="phone-stock-meta">
               {broker} | {x.lots} lot{x.lots > 1 ? "s" : ""} | Qty {quantityText}
             </div>
           </div>
-          <div className="phone-stock-total">{fmt(x.latest)}</div>
         </button>
-        <div className="phone-stock-metrics">
-          <div>
-            <span>Invested</span>
-            <b>{fmt(x.invested)}</b>
-            <small>{quantity ? `Qty ${quantityText}` : `${x.lots} lot${x.lots > 1 ? "s" : ""}`}</small>
+        <div className="phone-stock-top-stats phone-pair-row">
+          <div className="phone-pair-cell">
+            <div className="phone-pair-line">
+              <span>Invested</span>
+              <b>{fmt(x.invested)}</b>
+            </div>
+            <div className="phone-pair-line">
+              <span>Total</span>
+              <b>{fmt(x.latest)}</b>
+            </div>
           </div>
-          <div>
-            <span>Gain</span>
-            <b className={gainClass}>{fmt(x.gain)}</b>
-            <small className={todayClass}>Today {fmt(x.today)}</small>
+          <div className={`phone-pair-cell phone-gain-cell ${x.gain >= 0 ? "phone-gain-up" : "phone-gain-down"}`}>
+            <div className="phone-pair-line">
+              <span>Overall Gain</span>
+              <b className={x.gain >= 0 ? "phone-green" : "phone-red"}>{fmt(x.gain)}</b>
+            </div>
+            <div className="phone-pair-line">
+              <span>Today Gain</span>
+              <b className={x.today >= 0 ? "phone-green" : "phone-red"}>{fmt(x.today)}</b>
+            </div>
           </div>
         </div>
         <a
-          className="phone-stock-prices"
-          href={moneycontrolCommodityHref(c)}
+          className="phone-stock-prices phone-stock-signal-row"
+          href={String(quote?.sourceUrl || mcxCommodityHref())}
           target="_blank"
           rel="noreferrer"
           onClick={(event) => event.stopPropagation()}
         >
-          <span>
-            <em>Curr</em>
-            <b>{displayCurrent ? fmt(displayCurrent) : "—"}</b>
+          <span className={x.today > 0 ? "phone-box-up" : x.today < 0 ? "phone-box-down" : "phone-box-neutral"}>
+            <em>MCX / MC</em>
+            <b className={priceLoading ? "phone-price-skeleton" : ""}>{priceText(displayCurrent)}</b>
+            <small>{localCurrent ? `Local ${fmt(localCurrent)}` : "Local -"}</small>
           </span>
-          <span>
+          <span className="phone-box-down">
             <em>Low</em>
-            <b>{dayLow ? fmt(dayLow) : "—"}</b>
+            <b className={priceLoading ? "phone-price-skeleton" : ""}>{priceText(dayLow)}</b>
+            <small>{priceLoading ? "52W loading" : weekLow ? `52W ${fmt(weekLow)}` : "52W -"}</small>
           </span>
-          <span>
+          <span className="phone-box-up">
             <em>High</em>
-            <b>{dayHigh ? fmt(dayHigh) : "—"}</b>
+            <b className={priceLoading ? "phone-price-skeleton" : ""}>{priceText(dayHigh)}</b>
+            <small>{priceLoading ? "52W loading" : weekHigh ? `52W ${fmt(weekHigh)}` : "52W -"}</small>
           </span>
         </a>
       </article>
+    );
+  }
+  function desktopMarketHoldingCard(k: string, x: any, visibleCols: string[]) {
+    const c = x.c || {},
+      isBullion = k === "bullion",
+      title = isBullion
+        ? bullionDisplayName(c)
+        : compactName(String(c.security_name || "Investment")),
+      broker = String(c.broker || c.account_name || (isBullion ? "MCX" : "Stocks")),
+      quantity = isBullion
+        ? x.records.reduce(
+            (sum: number, record: Rec) =>
+              sum + num(record.data?.quantity || record.data?.qty || record.data?.units),
+            0,
+          )
+        : num(c.adjusted_quantity) ||
+          x.records.reduce(
+            (sum: number, record: Rec) =>
+              sum +
+              (num(computeLiveRecord("stocks", record.data).adjusted_quantity) ||
+                num(record.data?.quantity)),
+            0,
+          ),
+      invested = num(c.invested),
+      total = num(c.latest),
+      overallGain = num(c.gain) || total - invested,
+      todayGain = num(c.today_gain),
+      current = num(
+        isBullion
+          ? c.current_price || c.live_price
+          : c.live_price || c.current_price,
+      ),
+      low = num(c.day_low || c.today_low || c.low),
+      high = num(c.day_high || c.today_high || c.high),
+      weekLow = num(c.fifty_two_week_low),
+      weekHigh = num(c.fifty_two_week_high),
+      move = marketMove(k, c),
+      openHolding = () => {
+        if (x.records.length > 1) {
+          setExpandedLots((previous) => ({
+            ...previous,
+            [x.key]: !previous[x.key],
+          }));
+          return;
+        }
+        setDetail({
+          moduleKey: k,
+          record: x.r,
+          computed: c,
+          cols: visibleCols,
+          linkedProperty: x.r.data?.source_module === "property",
+        });
+      };
+    return (
+      <div className="desktop-market-card-wrap" key={x.key}>
+        <article className="desktop-market-card">
+          <button type="button" className="desktop-market-card-head" onClick={openHolding}>
+            <strong>{title}</strong>
+            <span>
+              {broker} | {x.records.length} lot{x.records.length > 1 ? "s" : ""}
+              {quantity
+                ? ` | Qty ${quantity.toLocaleString("en-IN", {
+                    maximumFractionDigits: 3,
+                  })}`
+                : ""}
+            </span>
+          </button>
+          <div className="desktop-market-pairs">
+            <div className="desktop-market-pair">
+              <span>Invested</span><b>{fmt(invested)}</b>
+              <span>Total</span><b>{fmt(total)}</b>
+            </div>
+            <div className={`desktop-market-pair ${overallGain >= 0 ? "gain-up" : "gain-down"}`}>
+              <span>Overall Gain</span>
+              <b className={overallGain >= 0 ? "text-emerald-700" : "text-red-700"}>
+                {fmt(overallGain)}
+              </b>
+              <span>Today Gain</span>
+              <b className={todayGain >= 0 ? "text-emerald-700" : "text-red-700"}>
+                {fmt(todayGain)}
+              </b>
+            </div>
+          </div>
+          <div className="desktop-market-prices">
+            <button
+              type="button"
+              className={move > 0 ? "price-up" : move < 0 ? "price-down" : "price-neutral"}
+              onClick={openHolding}
+            >
+              <span>Current</span><b>{current ? fmt(current) : "-"}</b>
+            </button>
+            <div className="price-down">
+              <span>Low</span><b>{low ? fmt(low) : "-"}</b>
+              <small>{weekLow ? `52W ${fmt(weekLow)}` : "52W -"}</small>
+            </div>
+            <div className="price-up">
+              <span>High</span><b>{high ? fmt(high) : "-"}</b>
+              <small>{weekHigh ? `52W ${fmt(weekHigh)}` : "52W -"}</small>
+            </div>
+          </div>
+        </article>
+        {x.records.length > 1 && expandedLots[x.key] && (
+          <div className="desktop-market-lots">
+            <div className="desktop-market-lot-header" aria-hidden="true">
+              <span>Account Name</span>
+              <span>Quantity</span>
+              <span>Purchase Price</span>
+              <span>Purchase Value</span>
+              <span>Current Value</span>
+            </div>
+            {x.records.map((record: Rec, index: number) => {
+              const lot = computeLiveRecord(k, record.data),
+                lotQuantity =
+                  num(lot.adjusted_quantity) ||
+                  num(lot.quantity) ||
+                  num(record.data?.quantity),
+                purchaseValue = num(lot.invested),
+                purchasePrice =
+                  num(lot.inv_price) ||
+                  num(lot.nav) ||
+                  num(record.data?.purchase_unit_price) ||
+                  (lotQuantity ? purchaseValue / lotQuantity : purchaseValue),
+                currentValue = num(lot.latest);
+              return (
+                <button
+                  type="button"
+                  key={record.id}
+                  onClick={() =>
+                    setDetail({
+                      moduleKey: k,
+                      record,
+                      computed: lot,
+                      cols: visibleCols,
+                      linkedProperty: record.data?.source_module === "property",
+                    })
+                  }
+                  aria-label={`Open lot ${index + 1} details`}
+                >
+                  <strong>{String(record.data?.account_name || "Unassigned")}</strong>
+                  <span>
+                    {lotQuantity.toLocaleString("en-IN", {
+                      maximumFractionDigits: 3,
+                    })}
+                  </span>
+                  <b>{purchasePrice ? fmt(purchasePrice) : "-"}</b>
+                  <b>{purchaseValue ? fmt(purchaseValue) : "-"}</b>
+                  <b>{currentValue ? fmt(currentValue) : "-"}</b>
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </div>
     );
   }
   function phoneMarketValue(x: any) {
@@ -3034,9 +3987,14 @@ export default function AssetManagerApp() {
     );
   }
   function phoneView() {
+    if (view === "household") return householdView();
+    if (view === "purchaseCalculator")
+      return <div className="phone-screen">{bullionCalculatorPanel()}</div>;
+
     const selectedAccount = accountTab("__phone"),
+      isPhoneStockWatchlist = view === "stocks" && selectedAccount === "Watchlist",
       accountFiltered = (rs: Rec[]) =>
-        selectedAccount === "All"
+        selectedAccount === "All" || selectedAccount === "Watchlist" || isPhoneStockWatchlist
           ? rs
           : rs.filter(
               (r) =>
@@ -3044,6 +4002,7 @@ export default function AssetManagerApp() {
                 selectedAccount,
             ),
       moduleDef = MODULES[view],
+      phoneModuleKey = isPhoneStockWatchlist ? "watchlist" : view,
       phoneRecords = accountFiltered(records),
       assetRows = Object.entries(MODULES)
         .filter(([k, d]) => d.kind === "asset" || k === "insurance")
@@ -3089,9 +4048,9 @@ export default function AssetManagerApp() {
         .filter((x) => x.latest || x.invested || x.rs.length),
       rawModuleRows = moduleDef
         ? phoneRecords
-            .filter((r) => r.module_key === view)
+            .filter((r) => r.module_key === phoneModuleKey)
             .map((r) => {
-              const c = computeLiveRecord(view, r.data),
+              const c = computeLiveRecord(phoneModuleKey, r.data),
                 title = String(
                   c.security_name ||
                     c.category ||
@@ -3113,8 +4072,10 @@ export default function AssetManagerApp() {
                     c.loan_amount,
                 ),
                 gain = num(c.gain),
-                today = showsDailyChange(view) ? todayGainFor(view, r) : 0;
-              return { r, c, title, latest, invested, gain, today };
+                today = showsDailyChange(phoneModuleKey)
+                  ? todayGainFor(phoneModuleKey, r)
+                  : 0;
+              return { r, c, title, latest, invested, gain, today, moduleKey: phoneModuleKey };
             })
             .filter((x) =>
               JSON.stringify(x.c).toLowerCase().includes(query.toLowerCase()),
@@ -3123,10 +4084,10 @@ export default function AssetManagerApp() {
       moduleRows = Array.from(
         rawModuleRows
           .reduce((m, x) => {
-            const id = key(
-                `${x.title}|${x.c.ticker_symbol || x.c.scheme_code || x.c.category || ""}`,
-              ),
-              g = m.get(id) || { ...x, key: `${view}|${id}`, records: [] as Rec[], lots: 0 };
+              const id = key(
+                  `${x.title}|${x.c.ticker_symbol || x.c.scheme_code || x.c.category || ""}`,
+                ),
+              g = m.get(id) || { ...x, key: `${phoneModuleKey}|${id}`, records: [] as Rec[], lots: 0 };
             g.records.push(x.r);
             g.lots += 1;
             g.latest += g.lots === 1 ? 0 : x.latest;
@@ -3300,7 +4261,7 @@ export default function AssetManagerApp() {
                       )}
                   {x.lots > 1 &&
                     expandedLots[x.key] &&
-                    phoneLotRows(view, x.records, x.key)}
+                    phoneLotRows(x.moduleKey || view, x.records, x.key)}
                 </div>,
               )
             ) : (
@@ -3467,7 +4428,15 @@ export default function AssetManagerApp() {
       </main>
     );
   return (
-    <div className="app-shell grid min-h-screen grid-cols-[280px_1fr] max-lg:grid-cols-1">
+    <div
+      className={`app-shell app-theme-${appearance.theme} grid min-h-screen grid-cols-[280px_1fr] max-lg:grid-cols-1`}
+      style={
+        {
+          fontFamily: appearance.font,
+          fontSize: `${appearance.fontSize}px`,
+        } as any
+      }
+    >
       <style>{`
         :root {
           --am-bg: #F8F3EA;
@@ -3511,6 +4480,226 @@ export default function AssetManagerApp() {
             radial-gradient(circle at 14% 4%, rgba(255, 226, 148, .35), transparent 28rem),
             radial-gradient(circle at 94% 0%, rgba(122, 18, 72, .13), transparent 26rem),
             linear-gradient(180deg, #FFFFFF 0%, var(--am-bg) 100%) !important;
+        }
+        .app-theme-midnight {
+          --am-bg: #0F172A;
+          --am-bg-2: #111827;
+          --am-surface: #172033;
+          --am-surface-2: #1E293B;
+          --am-ink: #E5E7EB;
+          --am-muted: #AAB6C7;
+          --am-line: rgba(148, 163, 184, .22);
+          --am-plum: #2563EB;
+          --am-plum-2: #1D4ED8;
+          --am-plum-3: #38BDF8;
+          --am-gold: #22C55E;
+        }
+        .app-theme-graphite {
+          --am-bg: #F3F4F6;
+          --am-bg-2: #FFFFFF;
+          --am-surface: #FFFFFF;
+          --am-surface-2: #E5E7EB;
+          --am-ink: #111827;
+          --am-muted: #4B5563;
+          --am-line: rgba(17, 24, 39, .14);
+          --am-plum: #111827;
+          --am-plum-2: #374151;
+          --am-plum-3: #64748B;
+          --am-gold: #0F766E;
+        }
+        .app-theme-plum {
+          --am-bg: #FFF7ED;
+          --am-bg-2: #FFF1E4;
+          --am-surface: #FFFFFF;
+          --am-surface-2: #F7DFA8;
+          --am-ink: #2B0F1F;
+          --am-muted: #7C5369;
+          --am-line: rgba(75, 8, 42, .18);
+          --am-plum: #4B082A;
+          --am-plum-2: #7A1248;
+          --am-plum-3: #9A1F5E;
+          --am-gold: #C69632;
+        }
+        .app-theme-neo {
+          --am-bg: #F6F8FA;
+          --am-bg-2: #FFFFFF;
+          --am-surface: #FFFFFF;
+          --am-surface-2: #F1F5F9;
+          --am-ink: #2F3A45;
+          --am-ink-2: #111827;
+          --am-muted: #6D747C;
+          --am-muted-2: #8A929A;
+          --am-line: #E7EBF0;
+          --am-line-strong: #D7DEE8;
+          --am-plum: #004B8D;
+          --am-plum-2: #0B4F93;
+          --am-plum-3: #0A6FC2;
+          --am-gold: #ED1C24;
+          --am-green: #00A878;
+          --am-red: #FF3030;
+          --am-shadow: 0 1px 2px rgba(15,23,42,.06);
+          --am-soft-shadow: 0 1px 2px rgba(15,23,42,.05);
+        }
+        .app-theme-midnight,
+        .app-theme-midnight main {
+          color: var(--am-ink) !important;
+          background:
+            radial-gradient(circle at 12% 0%, rgba(37,99,235,.22), transparent 27rem),
+            linear-gradient(180deg, #0F172A, #111827) !important;
+        }
+        .app-theme-midnight .card,
+        .app-theme-midnight section,
+        .app-theme-midnight .investment-table,
+        .app-theme-midnight .bg-white,
+        .app-theme-midnight .bg-white\/90 {
+          background: rgba(23, 32, 51, .92) !important;
+          color: var(--am-ink) !important;
+          border-color: var(--am-line) !important;
+        }
+        .app-theme-midnight p,
+        .app-theme-midnight .text-gray-500,
+        .app-theme-midnight .text-gray-600,
+        .app-theme-midnight .text-slate-500 {
+          color: var(--am-muted) !important;
+        }
+        .app-theme-graphite,
+        .app-theme-graphite main {
+          background: linear-gradient(180deg, #FFFFFF, #F3F4F6) !important;
+        }
+        .app-theme-plum,
+        .app-theme-plum main {
+          background:
+            radial-gradient(circle at 8% 0%, rgba(198,150,50,.26), transparent 25rem),
+            linear-gradient(180deg, #FFFFFF, #FFF7ED) !important;
+        }
+        .app-theme-neo,
+        .app-theme-neo main {
+          background: #F6F8FA !important;
+          color: var(--am-ink) !important;
+        }
+        .app-theme-neo .desktop-sidebar {
+          background: #FFFFFF !important;
+          border-right: 1px solid #E7EBF0 !important;
+          box-shadow: none !important;
+        }
+        .app-theme-neo .desktop-sidebar h1 {
+          color: #ED1C24 !important;
+          font-weight: 850 !important;
+          letter-spacing: -0.03em;
+        }
+        .app-theme-neo .desktop-sidebar p {
+          color: #004B8D !important;
+        }
+        .app-theme-neo .desktop-sidebar nav button {
+          border-radius: 0 !important;
+          color: #65707B !important;
+          font-weight: 650 !important;
+          box-shadow: none !important;
+        }
+        .app-theme-neo .desktop-sidebar nav button.bg-sage {
+          background: transparent !important;
+          color: #004B8D !important;
+          border-bottom: 2px solid #004B8D !important;
+          box-shadow: none !important;
+        }
+        .app-theme-neo .bg-sage,
+        .app-theme-neo .btn-primary {
+          background: #004B8D !important;
+          color: #FFFFFF !important;
+          box-shadow: none !important;
+        }
+        .app-theme-neo .btn,
+        .app-theme-neo .btn-danger,
+        .app-theme-neo .field-input,
+        .app-theme-neo input,
+        .app-theme-neo select,
+        .app-theme-neo textarea {
+          border-color: #E1E7EF !important;
+          border-radius: 10px !important;
+          background: #FFFFFF !important;
+          box-shadow: none !important;
+        }
+        .app-theme-neo .btn {
+          color: #004B8D !important;
+          font-weight: 650 !important;
+        }
+        .app-theme-neo .btn-danger {
+          color: #ED1C24 !important;
+          background: #FFF5F5 !important;
+        }
+        .app-theme-neo .card,
+        .app-theme-neo section,
+        .app-theme-neo .rounded-2xl,
+        .app-theme-neo .rounded-3xl,
+        .app-theme-neo .investment-table,
+        .app-theme-neo .stock-holdings-table,
+        .app-theme-neo .table-smooth,
+        .app-theme-neo .bg-white,
+        .app-theme-neo .bg-white\/90 {
+          background: #FFFFFF !important;
+          border-color: #E7EBF0 !important;
+          border-radius: 8px !important;
+          box-shadow: none !important;
+        }
+        .app-theme-neo .investment-table,
+        .app-theme-neo .stock-holdings-table,
+        .app-theme-neo .table-smooth {
+          border-radius: 0 !important;
+        }
+        .app-theme-neo .investment-table table,
+        .app-theme-neo .stock-holdings-table table,
+        .app-theme-neo .table-smooth table {
+          border-collapse: collapse !important;
+          font-size: .88em !important;
+        }
+        .app-theme-neo .investment-table thead th,
+        .app-theme-neo .stock-holdings-table thead th,
+        .app-theme-neo .table-smooth thead th {
+          background: #F4F4F5 !important;
+          color: #3D4650 !important;
+          font-weight: 650 !important;
+          letter-spacing: 0 !important;
+          text-transform: none !important;
+          border-bottom: 1px solid #E7EBF0 !important;
+        }
+        .app-theme-neo .investment-table tbody td,
+        .app-theme-neo .stock-holdings-table tbody td,
+        .app-theme-neo .table-smooth tbody td {
+          color: #4B5563 !important;
+          border-top: 1px solid #EEF1F4 !important;
+          padding-top: 13px !important;
+          padding-bottom: 13px !important;
+        }
+        .app-theme-neo .investment-table tbody tr:hover,
+        .app-theme-neo .stock-holdings-table tbody tr:hover,
+        .app-theme-neo .table-smooth tbody tr:hover {
+          background: #F8FBFF !important;
+        }
+        .app-theme-neo .pill {
+          background: #EEF6FF !important;
+          color: #004B8D !important;
+          border: 1px solid #B8D8F5 !important;
+          border-radius: 999px !important;
+        }
+        .app-theme-neo .text-emerald-700,
+        .app-theme-neo .text-green-700,
+        .app-theme-neo .text-green-600 {
+          color: #00A878 !important;
+        }
+        .app-theme-neo .text-red-700,
+        .app-theme-neo .text-red-600 {
+          color: #FF3030 !important;
+        }
+        .app-theme-neo h1,
+        .app-theme-neo h2,
+        .app-theme-neo h3,
+        .app-theme-neo .phone-hero-value,
+        .app-theme-neo .phone-row-value,
+        .app-theme-neo .phone-stat-value {
+          color: #26313D !important;
+          text-shadow: none !important;
+          letter-spacing: 0 !important;
+          font-weight: 700 !important;
         }
 
         .desktop-sidebar {
@@ -3675,6 +4864,9 @@ export default function AssetManagerApp() {
 
         .phone-content {
           min-height: calc(100vh - 72px);
+          overflow-x: hidden !important;
+          overflow-y: visible !important;
+          touch-action: pan-y !important;
           background:
             radial-gradient(circle at -8% 0%, rgba(255,226,148,.45), transparent 17rem),
             radial-gradient(circle at 108% 4%, rgba(154,31,94,.11), transparent 18rem),
@@ -3684,7 +4876,9 @@ export default function AssetManagerApp() {
         .phone-screen {
           padding: 10px 10px 94px !important;
           max-width: 100vw !important;
-          overflow: hidden !important;
+          overflow-x: hidden !important;
+          overflow-y: visible !important;
+          touch-action: pan-y !important;
         }
 
         .phone-market-strip {
@@ -3816,7 +5010,7 @@ export default function AssetManagerApp() {
         .phone-row-meta { color: #746675 !important; font-weight: 820 !important; }
         .phone-section-title {
           margin: 13px 2px 8px !important;
-          font-size: 11px !important;
+          font-size: 10px !important;
         }
         .phone-section-title::after {
           content: "";
@@ -3832,7 +5026,7 @@ export default function AssetManagerApp() {
 
         .phone-list {
           display: grid !important;
-          gap: 9px !important;
+          gap: 14px !important;
         }
         .phone-account-strip {
           display: flex !important;
@@ -3884,15 +5078,22 @@ export default function AssetManagerApp() {
         .phone-stock-card {
           position: relative;
           display: grid !important;
-          gap: 6px !important;
+          gap: 9px !important;
           min-width: 0 !important;
-          padding: 9px 10px 8px 13px !important;
-          border: 1px solid rgba(83,43,72,.12) !important;
-          border-radius: 18px !important;
+          padding: 11px 10px 10px 14px !important;
+          border: 1px solid rgba(83,43,72,.20) !important;
+          border-radius: 19px !important;
           overflow: hidden !important;
           background:
-            linear-gradient(145deg, rgba(255,255,255,.99), rgba(255,249,237,.96) 62%, rgba(255,243,214,.88)) !important;
-          box-shadow: 0 8px 21px rgba(48,26,50,.08), inset 0 1px 0 rgba(255,255,255,.92) !important;
+            linear-gradient(145deg, rgba(255,255,255,1), rgba(255,250,240,.98) 56%, rgba(255,241,207,.92)) !important;
+          box-shadow:
+            0 12px 28px rgba(48,26,50,.13),
+            0 1px 0 rgba(255,255,255,.86) inset,
+            0 -1px 0 rgba(200,148,37,.12) inset !important;
+        }
+        .phone-stock-card + .phone-stock-card,
+        .phone-group + .phone-group {
+          margin-top: 2px !important;
         }
         .phone-stock-card::before {
           content: "";
@@ -3909,8 +5110,8 @@ export default function AssetManagerApp() {
           position: relative;
           z-index: 1;
           display: grid !important;
-          grid-template-columns: minmax(0, 1fr) auto !important;
-          gap: 8px !important;
+          grid-template-columns: minmax(0, 1fr) !important;
+          gap: 3px !important;
           align-items: start !important;
           width: 100% !important;
           text-align: left !important;
@@ -3937,14 +5138,7 @@ export default function AssetManagerApp() {
           line-height: 1.12 !important;
           font-weight: 850 !important;
         }
-        .phone-stock-total {
-          color: #160d16 !important;
-          font-size: 13.2px !important;
-          line-height: 1.05 !important;
-          font-weight: 950 !important;
-          text-align: right !important;
-          white-space: nowrap !important;
-        }
+        .phone-stock-top-stats,
         .phone-stock-metrics,
         .phone-stock-prices {
           position: relative;
@@ -3952,40 +5146,51 @@ export default function AssetManagerApp() {
           display: grid !important;
           gap: 6px !important;
         }
+        .phone-stock-top-stats {
+          grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+          align-items: stretch !important;
+          padding-bottom: 8px !important;
+          border-bottom: 1px solid rgba(122,18,72,.10) !important;
+        }
         .phone-stock-metrics {
           grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
         }
+        .phone-stock-top-stats > div,
         .phone-stock-metrics > div,
         .phone-stock-prices > span {
           min-width: 0 !important;
-          border-radius: 12px !important;
-          padding: 6px 7px !important;
+          border-radius: 13px !important;
+          padding: 7px 8px !important;
           background: rgba(255,255,255,.56) !important;
           border: 1px solid rgba(200,148,37,.18) !important;
           box-shadow: inset 0 1px 0 rgba(255,255,255,.78) !important;
         }
+        .phone-stock-top-stats span,
         .phone-stock-metrics span,
         .phone-stock-prices em {
           display: block !important;
-          color: #8b7182 !important;
+          color: #785f70 !important;
           font-size: 7.8px !important;
           line-height: 1 !important;
           font-style: normal !important;
           font-weight: 950 !important;
           text-transform: uppercase !important;
         }
+        .phone-stock-top-stats b,
         .phone-stock-metrics b,
         .phone-stock-prices b {
           display: block !important;
-          margin-top: 2px !important;
+          margin-top: 3px !important;
           color: #211521 !important;
-          font-size: 10.5px !important;
+          font-size: 12px !important;
           line-height: 1.08 !important;
           font-weight: 950 !important;
           text-align: right !important;
-          white-space: nowrap !important;
+          white-space: normal !important;
           overflow: hidden !important;
-          text-overflow: ellipsis !important;
+          text-overflow: clip !important;
+          overflow-wrap: anywhere !important;
+          word-break: normal !important;
         }
         .phone-stock-metrics small {
           display: block !important;
@@ -3997,11 +5202,96 @@ export default function AssetManagerApp() {
           text-align: right !important;
           white-space: nowrap !important;
         }
+        .phone-pair-cell {
+          display: grid !important;
+          align-content: center !important;
+          gap: 7px !important;
+        }
+        .phone-pair-line {
+          display: grid !important;
+          grid-template-columns: minmax(0, 1fr) auto !important;
+          align-items: baseline !important;
+          gap: 6px !important;
+          min-width: 0 !important;
+        }
+        .phone-pair-line + .phone-pair-line {
+          border-top: 1px solid rgba(122,18,72,.08) !important;
+          padding-top: 6px !important;
+        }
+        .phone-pair-line span {
+          color: #785f70 !important;
+          font-size: 7.8px !important;
+          line-height: 1 !important;
+          font-weight: 950 !important;
+          text-transform: uppercase !important;
+        }
+        .phone-pair-line b {
+          margin-top: 0 !important;
+          color: #211521 !important;
+          font-size: 12px !important;
+          line-height: 1.08 !important;
+          font-weight: 950 !important;
+          text-align: right !important;
+          white-space: normal !important;
+          overflow-wrap: anywhere !important;
+        }
+        .phone-gain-up {
+          border-color: rgba(0,122,85,.22) !important;
+          background: linear-gradient(180deg, rgba(235,252,244,.92), rgba(216,246,232,.82)) !important;
+        }
+        .phone-gain-down {
+          border-color: rgba(204,44,44,.22) !important;
+          background: linear-gradient(180deg, rgba(255,239,236,.95), rgba(255,221,216,.86)) !important;
+        }
         .phone-stock-prices {
           grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
           color: inherit !important;
           text-decoration: none !important;
           -webkit-tap-highlight-color: transparent !important;
+          padding-top: 1px !important;
+        }
+        .phone-stock-signal-row > span {
+          min-height: 52px !important;
+        }
+        .phone-stock-signal-row > .phone-box-neutral {
+          border-color: rgba(200,148,37,.24) !important;
+          background: linear-gradient(180deg, rgba(255,253,248,.98), rgba(255,244,219,.92)) !important;
+        }
+        .phone-stock-signal-row > .phone-box-neutral em,
+        .phone-stock-signal-row > .phone-box-neutral b {
+          color: #4f354a !important;
+        }
+        .phone-stock-signal-row > .phone-box-up {
+          border-color: rgba(0,122,85,.24) !important;
+          background: linear-gradient(180deg, rgba(226,250,239,.96), rgba(196,239,219,.92)) !important;
+        }
+        .phone-stock-signal-row > .phone-box-down {
+          border-color: rgba(204,44,44,.24) !important;
+          background: linear-gradient(180deg, rgba(255,235,232,.96), rgba(255,210,204,.92)) !important;
+        }
+        .phone-stock-signal-row > .phone-box-up em,
+        .phone-stock-signal-row > .phone-box-up b {
+          color: #006b4a !important;
+        }
+        .phone-stock-signal-row > .phone-box-down em,
+        .phone-stock-signal-row > .phone-box-down b {
+          color: #bd2020 !important;
+        }
+        .phone-stock-signal-row small {
+          display: block !important;
+          margin-top: 2px !important;
+          font-size: 10px !important;
+          line-height: 1 !important;
+          font-weight: 900 !important;
+          text-align: right !important;
+          white-space: nowrap !important;
+          opacity: .78 !important;
+        }
+        .phone-stock-signal-row > .phone-box-up small {
+          color: #006b4a !important;
+        }
+        .phone-stock-signal-row > .phone-box-down small {
+          color: #bd2020 !important;
         }
         .phone-stock-prices:active > span {
           border-color: rgba(122,18,72,.34) !important;
@@ -4038,7 +5328,7 @@ export default function AssetManagerApp() {
           pointer-events: none;
         }
         .phone-row-main {
-          grid-template-columns: minmax(0, 1fr) auto !important;
+          grid-template-columns: minmax(0, 1fr) !important;
           gap: 9px 12px !important;
           position: relative;
           z-index: 1;
@@ -4064,6 +5354,9 @@ export default function AssetManagerApp() {
           text-align: right !important;
           color: #160d16 !important;
         }
+        .phone-row-metrics {
+          grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+        }
         .phone-row-metric {
           min-width: 0 !important;
           border-radius: 15px !important;
@@ -4076,10 +5369,13 @@ export default function AssetManagerApp() {
         .phone-mini-label { font-size: 8.5px !important; color: #8b7182 !important; }
         .phone-mini-value {
           color: #211521 !important;
-          font-size: 11.8px !important;
+          font-size: 12px !important;
           line-height: 1.12 !important;
           font-weight: 950 !important;
           letter-spacing: -.02em !important;
+          white-space: normal !important;
+          overflow-wrap: anywhere !important;
+          text-overflow: clip !important;
         }
         .phone-green { color: var(--am-green) !important; text-shadow: 0 1px 0 rgba(255,255,255,.55); }
         .phone-red { color: var(--am-red) !important; text-shadow: 0 1px 0 rgba(255,255,255,.55); }
@@ -4474,6 +5770,26 @@ export default function AssetManagerApp() {
           color: #2e2230 !important;
           font-weight: 650 !important;
         }
+        .stock-holdings-table thead th {
+          padding: 8px 8px !important;
+        }
+        .stock-holdings-table tbody td {
+          padding: 8px 8px !important;
+          font-size: 12px !important;
+          line-height: 1.2 !important;
+        }
+        .stock-holdings-table .btn,
+        .stock-holdings-table .btn-danger {
+          min-height: 24px !important;
+          padding: 3px 8px !important;
+          font-size: 11px !important;
+          border-radius: 10px !important;
+        }
+        .stock-holdings-table .stock-range-box {
+          min-height: 22px !important;
+          padding: 2px 5px !important;
+          font-size: 10px !important;
+        }
         .investment-table tbody tr,
         .stock-holdings-table tbody tr,
         .table-smooth tbody tr {
@@ -4539,7 +5855,7 @@ export default function AssetManagerApp() {
           border-radius: 999px;
         }
       `}</style>
-      <aside className="desktop-sidebar sticky top-0 h-screen overflow-auto border-r border-[#e3dccc] bg-[#FFFFFF]/90 p-4 backdrop-blur-xl">
+      <aside className="desktop-sidebar sticky top-0 h-screen overflow-x-hidden overflow-y-auto border-r border-[#e3dccc] bg-[#FFFFFF]/90 p-4 backdrop-blur-xl">
         <div className="mb-6 flex items-center gap-3">
           <div className="flex h-12 w-12 items-center justify-center rounded-3xl bg-sage text-lg font-semibold text-white shadow-soft">
             PF
@@ -4551,6 +5867,26 @@ export default function AssetManagerApp() {
             </p>
           </div>
         </div>
+        {workspaces.length > 0 && (
+          <div className="mb-5">
+            <label className="field-label">Active household</label>
+            <select
+              className="field-input"
+              value={activeWorkspaceId}
+              onChange={(event) => {
+                setActiveWorkspaceId(event.target.value);
+                setWorkspaceMembers([]);
+                loadHousehold(event.target.value);
+              }}
+            >
+              {workspaces.map((workspace) => (
+                <option key={workspace.id} value={workspace.id}>
+                  {workspace.name} ({workspace.access.member_role})
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
         <nav className="space-y-4">
           {visibleGroups.map(([g, ids]: any) => (
             <div key={g}>
@@ -4564,7 +5900,7 @@ export default function AssetManagerApp() {
           ))}
         </nav>
       </aside>
-      <main className="min-w-0 max-w-full overflow-hidden p-6 max-lg:p-0">
+      <main className="min-w-0 max-w-full overflow-x-hidden p-6 max-lg:p-0">
         <div className="mobile-appbar">
           <div>
             <div className="text-[11px] font-semibold uppercase tracking-widest text-[#4f675b]">
@@ -4576,18 +5912,12 @@ export default function AssetManagerApp() {
             {MODULES[view] && view !== "dashboard" && (
               <button
                 className="btn-primary phone-add-btn"
+                disabled={!canEditModule(view)}
                 onClick={() => setEditing({ moduleKey: view })}
               >
                 <Plus size={14} /> Add
               </button>
             )}
-            <button
-              className="mobile-icon-btn"
-              onClick={() => setView("shareList")}
-              aria-label="Add share list"
-            >
-              <UploadCloud size={18} />
-            </button>
             <button
               className="mobile-icon-btn"
               onClick={() => setMobileMenuOpen((v) => !v)}
@@ -4608,9 +5938,6 @@ export default function AssetManagerApp() {
               </section>
             ))}
             <div className="mobile-menu-actions">
-              <button className="btn" onClick={exportBackup}>
-                <Download size={16} /> Backup
-              </button>
               <button className="btn" onClick={() => supabase.auth.signOut()}>
                 <LogOut size={16} /> Sign out
               </button>
@@ -4625,7 +5952,7 @@ export default function AssetManagerApp() {
               className="mobile-nav-back"
               aria-label="Back to summary navigation"
             >
-              <span aria-hidden="true">←</span>
+              <ArrowLeft size={18} />
               <span>Back</span>
             </button>
           )}
@@ -4641,8 +5968,8 @@ export default function AssetManagerApp() {
             </button>
           ))}
         </nav>
-        <div className="phone-content min-w-0 max-w-full overflow-hidden">
-          {view === "shareList" ? shareListView() : phoneView()}
+        <div className="phone-content min-w-0 max-w-full overflow-x-hidden">
+          {phoneView()}
         </div>
         <div className="desktop-content">
           {view !== "stocks" && (
@@ -4665,12 +5992,6 @@ export default function AssetManagerApp() {
                     onChange={(e) => setQuery(e.target.value)}
                   />
                 </div>
-                <button className="btn" onClick={exportBackup}>
-                  <Download size={16} className="inline" /> Backup
-                </button>
-                <button className="btn" onClick={() => setView("shareList")}>
-                  <UploadCloud size={16} className="inline" /> Add Share List
-                </button>
                 <button className="btn" onClick={() => supabase.auth.signOut()}>
                   <LogOut size={16} className="inline" /> Sign out
                 </button>
@@ -4679,26 +6000,17 @@ export default function AssetManagerApp() {
           )}
           {view === "dashboard" && dashboardModern()}
           {view === "accounts" && accountsView()}
-          {view === "documents" && documentsView()}
-          {view === "shareList" && shareListView()}
-          {view === "insights" && insights()}
-          {view === "recommendations" && recommendationsView()}
+          {view === "purchaseCalculator" && bullionCalculatorPanel()}
+          {view === "household" && householdView()}
           {view === "settings" && settings()}
           {view === "admin" && adminConsole()}
           {MODULES[view] &&
-            ![
-              "documents",
-              "shareList",
-              "insights",
-              "recommendations",
-              "watchlist",
-              "settings",
-              "admin",
-            ].includes(view) &&
+            !["watchlist", "settings", "admin"].includes(view) &&
             moduleView(view)}
         </div>
         {detail && detailModal()}
         {editing && recordModal()}
+        {corporateAction && corporateActionModal()}
         {accModal && accountModal()}
         {toast && (
           <div className="fixed bottom-6 left-1/2 z-50 -translate-x-1/2 rounded-full bg-sage px-5 py-3 text-sm font-bold text-white shadow-2xl">
@@ -5405,7 +6717,6 @@ export default function AssetManagerApp() {
         : [
             { name: "SENSEX" },
             { name: "NIFTY" },
-            { name: "CNX Midcap" },
             { name: "NIFTY BANK" },
             { name: "Gold - 10 GM" },
             { name: "Silver - 1 KG" },
@@ -5413,7 +6724,7 @@ export default function AssetManagerApp() {
             { name: "Crude $ / Barrel" },
           ],
       inr = (v: number, d = 2) =>
-        `₹${Number(v).toLocaleString("en-IN", { minimumFractionDigits: d, maximumFractionDigits: d })}`,
+        `â‚¹${Number(v).toLocaleString("en-IN", { minimumFractionDigits: d, maximumFractionDigits: d })}`,
       plain = (v: number, d = 2) =>
         Number(v).toLocaleString("en-IN", {
           minimumFractionDigits: d,
@@ -5610,8 +6921,476 @@ export default function AssetManagerApp() {
         ? bullionMarket?.gold
         : null;
   }
+  function bullionRatePanel() {
+    const bullionRecords = records.filter((record) => record.module_key === "bullion"),
+      gold = bullionMarket?.gold,
+      silver = bullionMarket?.silver,
+      goldBenchmark = num(gold?.ratePer10GramInr),
+      silverBenchmark = num(silver?.ratePerKgInr),
+      goldLocal = num(localBullionRate?.gold24kPer10GramInr),
+      silverLocal = num(localBullionRate?.silverPerKgInr),
+      city =
+        String(localBullionRate?.city || "").trim() ||
+        bullionRecords
+          .map((record) => String(record.data?.city || "").trim())
+          .find(Boolean) ||
+        profile?.city ||
+        "Current city",
+      rateCard = (
+        title: string,
+        local: number,
+        benchmark: number,
+        difference: number,
+        provider: string,
+        unit: string,
+        asOn: string,
+        sourceUrl: string,
+      ) => (
+        <div className="rounded-2xl border border-[#e3dccc] bg-white p-4">
+          <div className="text-xs font-semibold uppercase tracking-widest text-[#6d7c73]">
+            {title}
+          </div>
+          <div className="mt-2 text-2xl font-semibold text-[#17382b]">
+            {local ? fmt(local) : "Rate unavailable"}
+          </div>
+          <div className="mt-1 text-xs font-semibold text-gray-500">
+            5paisa local rate for {city} | {unit}
+            {asOn ? ` | As on ${asOn}` : ""}
+          </div>
+          <div className="mt-3 rounded-xl bg-[#f5efe3] px-3 py-2 text-sm">
+            <div className="flex justify-between gap-3">
+              <span>MCX / Moneycontrol</span>
+              <b>{benchmark ? fmt(benchmark) : "-"}</b>
+            </div>
+            <div className="mt-1 flex justify-between gap-3 text-xs text-gray-600">
+              <span>Local difference (display only)</span>
+              <b>{difference ? fmt(difference) : "-"}</b>
+            </div>
+            <div className="mt-2 flex flex-wrap justify-between gap-2 text-[11px] font-semibold text-[#7a1248]">
+              <span>{provider || "Selected bullion source"}</span>
+              {sourceUrl && (
+                <a href={sourceUrl} target="_blank" rel="noreferrer">
+                  Open 5paisa
+                </a>
+              )}
+            </div>
+          </div>
+        </div>
+      );
+    return (
+      <section className="mb-4 rounded-[24px] border border-[#ded6c4] bg-[#fffaf0] p-4">
+        <div className="mb-3 flex flex-wrap items-start justify-between gap-2">
+          <div>
+            <h3 className="text-lg font-semibold">Gold & Silver Rates</h3>
+            <p className="text-xs text-gray-600">
+              Portfolio valuation, gains and snapshots use only MCX or
+              Moneycontrol. Local rates are display references only.
+            </p>
+          </div>
+          <button className="btn" onClick={() => refreshBullionMarket()}>
+            <RefreshCw size={14} className="inline" /> Refresh Rates
+          </button>
+        </div>
+        <div className="grid grid-cols-2 gap-3 max-md:grid-cols-1">
+          {rateCard(
+            "Local Gold 24K",
+            goldLocal,
+            goldBenchmark,
+            goldLocal && goldBenchmark ? goldLocal - goldBenchmark : 0,
+            String(gold?.provider || ""),
+            "10 grams",
+            String(localBullionRate?.goldAsOn || ""),
+            String(localBullionRate?.goldUrl || ""),
+          )}
+          {rateCard(
+            "Local Silver",
+            silverLocal,
+            silverBenchmark,
+            silverLocal && silverBenchmark ? silverLocal - silverBenchmark : 0,
+            String(silver?.provider || ""),
+            "1 kilogram",
+            String(localBullionRate?.silverAsOn || ""),
+            String(localBullionRate?.silverUrl || ""),
+          )}
+        </div>
+      </section>
+    );
+  }
+  function bullionCalculatorPanel() {
+    const benchmarkQuote =
+        calculatorMetal === "gold"
+          ? bullionMarket?.gold
+          : bullionMarket?.silver,
+      localRateTotal =
+        calculatorMetal === "gold"
+          ? num(localBullionRate?.gold24kPer10GramInr)
+          : num(localBullionRate?.silverPerKgInr),
+      fetchedRatePerGram =
+        calculatorMetal === "gold"
+          ? localRateTotal / 10
+          : localRateTotal / 1000,
+      manualRate = calculatorRateOverrides[calculatorMetal],
+      hasManualRate = manualRate.trim() !== "",
+      ratePerGram = hasManualRate ? num(manualRate) : fetchedRatePerGram,
+      benchmarkRatePerGram = num(benchmarkQuote?.ratePerGramInr),
+      weight = Math.max(
+        calculatorMetal === "gold" ? 5 : 100,
+        num(calculatorWeight),
+      ),
+      basePrice = ratePerGram * weight,
+      wastageAmount = basePrice * (num(calculatorWastage) / 100),
+      priceAfterWastage = basePrice + wastageAmount,
+      gstAmount = priceAfterWastage * (num(calculatorGst) / 100),
+      totalPrice = priceAfterWastage + gstAmount,
+      summary = {
+        metal: calculatorMetal === "gold" ? "Gold" : "Silver",
+        rate_per_gram: ratePerGram,
+        weight_grams: weight,
+        wastage_percent: num(calculatorWastage),
+        gst_percent: num(calculatorGst),
+        base_price: basePrice,
+        wastage_amount: wastageAmount,
+        price_after_wastage: priceAfterWastage,
+        gst_amount: gstAmount,
+        total_price: totalPrice,
+        purchase_date: calculatorPurchaseDate,
+        vendor: calculatorVendor,
+        invoice_no: calculatorInvoice,
+        rate_provider: hasManualRate
+          ? "Manual local rate"
+          : String(
+              localBullionRate?.provider || "5paisa city bullion rates",
+            ),
+        rate_source_url: hasManualRate
+          ? ""
+          : String(
+              calculatorMetal === "gold"
+                ? localBullionRate?.goldUrl || ""
+                : localBullionRate?.silverUrl || "",
+            ),
+        benchmark_rate_per_gram: benchmarkRatePerGram,
+        benchmark_provider: String(
+          benchmarkQuote?.provider || "MCX / Moneycontrol",
+        ),
+        pricing_city: String(
+          localBullionRate?.city || profile?.city || "",
+        ),
+        calculated_at: new Date().toISOString(),
+      };
+    const addPurchaseRecord = async () => {
+      if (!ratePerGram)
+        return setToast("Refresh MCX / Moneycontrol rates before calculating");
+      if (!user || !canEditModule("bullion"))
+        return setToast("Bullion edit access is required");
+      const data = withSystemDates({
+        account_name: "",
+        security_name: summary.metal,
+        quantity: weight,
+        unit: "gms",
+        city: profile?.city || "",
+        metal_cost: Number(basePrice.toFixed(2)),
+        making_charges: Number(wastageAmount.toFixed(2)),
+        gst_paid: Number(gstAmount.toFixed(2)),
+        other_costs: 0,
+        purchase_price: Number(totalPrice.toFixed(2)),
+        latest_value: Number((weight * benchmarkRatePerGram).toFixed(2)),
+        purchase_date: calculatorPurchaseDate,
+        broker: calculatorVendor,
+        purchase_local_rate_per_gram: Number(ratePerGram.toFixed(2)),
+        benchmark_rate_per_gram: Number(benchmarkRatePerGram.toFixed(2)),
+        live_rate_per_gram: Number(benchmarkRatePerGram.toFixed(2)),
+        rate_provider: summary.benchmark_provider,
+        rate_source_url: String(benchmarkQuote?.sourceUrl || ""),
+        purchase_rate_provider: summary.rate_provider,
+        purchase_rate_source_url: summary.rate_source_url,
+        notes: [
+          `Wastage ${summary.wastage_percent}%`,
+          `GST ${summary.gst_percent}%`,
+          calculatorInvoice ? `Invoice ${calculatorInvoice}` : "",
+          "Created with Gold/Silver Calculator",
+        ]
+          .filter(Boolean)
+          .join(" | "),
+      });
+      const result = await supabase
+        .from("records")
+        .insert({
+          user_id: user.id,
+          ...(activeWorkspaceId ? { workspace_id: activeWorkspaceId } : {}),
+          module_key: "bullion",
+          data,
+        })
+        .select("id")
+        .single();
+      if (result.error) return setToast(result.error.message);
+      setCalculatorRecords((current) => [
+        ...current,
+        { ...summary, record_id: (result.data as any)?.id },
+      ]);
+      setToast("Bullion purchase record saved");
+      await loadAll(true);
+    };
+    const chooseInvoiceFolder = async () => {
+      const picker = (window as any).showDirectoryPicker;
+      if (!picker)
+        return setToast(
+          "Folder saving is not supported by this browser. Use Export Records JSON.",
+        );
+      try {
+        const handle = await picker({ mode: "readwrite" });
+        setInvoiceFolderHandle(handle);
+        setToast(`Invoice folder selected: ${handle.name}`);
+      } catch (error: any) {
+        if (error?.name !== "AbortError")
+          setToast(error?.message || "Could not select invoice folder");
+      }
+    };
+    const saveInvoice = async () => {
+      if (!ratePerGram) return setToast("Rate unavailable");
+      if (!invoiceFolderHandle)
+        return setToast("Choose an invoice folder first");
+      try {
+        const safeName = String(
+          calculatorInvoice ||
+            `${summary.metal}-${calculatorPurchaseDate}-${Date.now()}`,
+        )
+          .replace(/[^a-z0-9._-]+/gi, "-")
+          .replace(/^-+|-+$/g, "");
+        const fileHandle = await invoiceFolderHandle.getFileHandle(
+          `${safeName}.json`,
+          { create: true },
+        );
+        const writable = await fileHandle.createWritable();
+        await writable.write(JSON.stringify(summary, null, 2));
+        await writable.close();
+        setToast(`Invoice saved to ${invoiceFolderHandle.name}`);
+      } catch (error: any) {
+        setToast(error?.message || "Could not save invoice");
+      }
+    };
+    return (
+      <section className="rounded-[26px] border border-[#ded6c4] bg-white/90 p-5 shadow-[0_14px_34px_rgba(15,23,42,0.05)]">
+          <h3 className="text-xl font-semibold">Purchase Cost Calculator</h3>
+          <p className="mt-1 text-sm text-gray-600">
+            Calculate purchase cost using the local 5paisa city rate, then add
+            wastage and GST. Portfolio valuation continues to use MCX or
+            Moneycontrol.
+          </p>
+          <div className="mt-4 grid grid-cols-4 gap-3 max-xl:grid-cols-2 max-md:grid-cols-1">
+            <div>
+              <label className="field-label">Metal</label>
+              <select
+                className="field-input"
+                value={calculatorMetal}
+                onChange={(event) => {
+                  const metal = event.target.value as "gold" | "silver";
+                  setCalculatorMetal(metal);
+                  setCalculatorWeight(metal === "gold" ? 10 : 1000);
+                }}
+              >
+                <option value="gold">Gold</option>
+                <option value="silver">Silver</option>
+              </select>
+            </div>
+            <div>
+              <div className="flex items-center justify-between gap-2">
+                <label className="field-label">Local Rate per Gram (₹)</label>
+                {hasManualRate && (
+                  <button
+                    type="button"
+                    className="text-xs font-semibold text-[#7a1248] underline"
+                    onClick={() =>
+                      setCalculatorRateOverrides((current) => ({
+                        ...current,
+                        [calculatorMetal]: "",
+                      }))
+                    }
+                  >
+                    Use fetched
+                  </button>
+                )}
+              </div>
+              <input
+                className="field-input"
+                type="number"
+                min="0"
+                step="0.01"
+                value={
+                  hasManualRate
+                    ? manualRate
+                    : fetchedRatePerGram
+                      ? fetchedRatePerGram.toFixed(2)
+                      : ""
+                }
+                onChange={(event) =>
+                  setCalculatorRateOverrides((current) => ({
+                    ...current,
+                    [calculatorMetal]: event.target.value,
+                  }))
+                }
+                placeholder="Refresh 5paisa city rate"
+              />
+              <div className="mt-1 text-xs font-semibold text-gray-500">
+                {hasManualRate ? "Manual override | " : "Fetched | "}
+                {localBullionRate?.city || profile?.city || "City not set"}
+                {calculatorMetal === "gold" && localBullionRate?.goldAsOn
+                  ? ` | ${localBullionRate.goldAsOn}`
+                  : calculatorMetal === "silver" &&
+                      localBullionRate?.silverAsOn
+                    ? ` | ${localBullionRate.silverAsOn}`
+                    : ""}
+              </div>
+            </div>
+            <div>
+              <label className="field-label">Weight (grams)</label>
+              <input
+                className="field-input"
+                type="number"
+                min={calculatorMetal === "gold" ? 5 : 100}
+                max={calculatorMetal === "gold" ? 2000 : 100000}
+                step={calculatorMetal === "gold" ? 1 : 100}
+                value={calculatorWeight}
+                onChange={(event) => setCalculatorWeight(num(event.target.value))}
+              />
+            </div>
+            <div>
+              <label className="field-label">Wastage %</label>
+              <input
+                className="field-input"
+                type="number"
+                min="0"
+                step="0.01"
+                value={calculatorWastage}
+                onChange={(event) => setCalculatorWastage(num(event.target.value))}
+              />
+            </div>
+            <div>
+              <label className="field-label">GST %</label>
+              <input
+                className="field-input"
+                type="number"
+                min="0"
+                step="0.01"
+                value={calculatorGst}
+                onChange={(event) => setCalculatorGst(num(event.target.value))}
+              />
+            </div>
+            <div>
+              <label className="field-label">Purchase Date</label>
+              <input
+                className="field-input"
+                type="date"
+                value={calculatorPurchaseDate}
+                onChange={(event) => setCalculatorPurchaseDate(event.target.value)}
+              />
+            </div>
+            <div>
+              <label className="field-label">Vendor / Jeweller</label>
+              <input
+                className="field-input"
+                value={calculatorVendor}
+                placeholder="Optional"
+                onChange={(event) => setCalculatorVendor(event.target.value)}
+              />
+            </div>
+            <div>
+              <label className="field-label">Invoice No.</label>
+              <input
+                className="field-input"
+                value={calculatorInvoice}
+                placeholder="Optional"
+                onChange={(event) => setCalculatorInvoice(event.target.value)}
+              />
+            </div>
+          </div>
+          <button
+            className="btn-primary mt-4 w-full"
+            onClick={() =>
+              ratePerGram
+                ? setToast("Calculation updated with 5paisa local rate")
+                : refreshBullionMarket()
+            }
+          >
+            {ratePerGram ? "Calculate Total" : "Fetch Benchmark Rate"}
+          </button>
+          <div className="mt-5 rounded-2xl border border-[#e3dccc] bg-[#fbfcfe] p-4">
+            <h4 className="text-lg font-semibold">
+              {summary.metal} Calculation Summary
+            </h4>
+            <div className="mt-3 divide-y divide-dashed divide-[#e3dccc] text-sm">
+              {[
+                ["Base Price", basePrice],
+                ["Wastage Amount", wastageAmount],
+                ["Price After Wastage", priceAfterWastage],
+                ["GST Amount", gstAmount],
+              ].map(([label, value]) => (
+                <div className="flex justify-between gap-3 py-2" key={String(label)}>
+                  <span>{label}</span>
+                  <b>{fmt(value)}</b>
+                </div>
+              ))}
+              <div className="flex justify-between gap-3 py-3 text-lg font-semibold">
+                <span>Total Price</span>
+                <b>{fmt(totalPrice)}</b>
+              </div>
+            </div>
+          </div>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <button className="btn-primary" onClick={addPurchaseRecord}>
+              Add to Purchase Record
+            </button>
+            <button className="btn" onClick={chooseInvoiceFolder}>
+              Choose Invoice Folder
+            </button>
+            <button className="btn" onClick={saveInvoice}>
+              Save Current Invoice
+            </button>
+            <button
+              className="btn"
+              onClick={() =>
+                download(
+                  `bullion-calculator-records-${isoDate()}.json`,
+                  JSON.stringify(
+                    {
+                      exported_at: new Date().toISOString(),
+                      current_calculation: summary,
+                      records: calculatorRecords,
+                    },
+                    null,
+                    2,
+                  ),
+                )
+              }
+            >
+              Export Records JSON
+            </button>
+          </div>
+          <p className="mt-3 text-xs text-gray-600">
+            Gold weight: 5g to 2000g. Silver starts at 100g with 100g steps.
+            Purchase cost uses the 5paisa local rate. Current value, gains and
+            portfolio snapshots use MCX/Moneycontrol only.
+          </p>
+      </section>
+    );
+  }
   function computeLiveRecord(k: string, d: any) {
     const c = computeRecord(k, d);
+    if (k === "stocks") {
+      const livePrice = num(c.live_price || d.live_price),
+        dayChange = num(c.day_change || d.day_change),
+        qty = num(c.adjusted_quantity || c.quantity || d.quantity),
+        invested = num(c.invested),
+        latest = livePrice && qty ? qty * livePrice : num(c.latest);
+      if (livePrice && qty) {
+        Object.assign(c, {
+          latest_value: latest,
+          latest,
+          today_gain: qty * dayChange,
+          gain: latest - invested,
+          gain_pct: invested ? ((latest - invested) / invested) * 100 : 0,
+        });
+      }
+    }
     if (k === "fixedIncome") {
       c.category = fixedIncomeCategoryLabel(c.category);
     }
@@ -5634,6 +7413,13 @@ export default function AssetManagerApp() {
               : changePerGram;
       Object.assign(c, { security_name: bullionDisplayName(d) });
       if (currentPrice) Object.assign(c, { current_price: currentPrice, day_change: dayChange });
+      Object.assign(c, {
+        day_low: num(q?.dayLow) || num(d.day_low),
+        day_high: num(q?.dayHigh) || num(d.day_high),
+        fifty_two_week_low: num(q?.fiftyTwoWeekLow) || num(d.fifty_two_week_low),
+        fifty_two_week_high: num(q?.fiftyTwoWeekHigh) || num(d.fifty_two_week_high),
+        contract_expiry: q?.contractExpiry || q?.expiry || d.contract_expiry,
+      });
       if (rate && num(d.quantity)) {
         const grams = num(d.quantity) * metalUnitFactor(d.unit),
           latest = grams * rate,
@@ -5733,33 +7519,6 @@ export default function AssetManagerApp() {
         >
           Overall Dashboard
         </button>
-      </div>
-    );
-  }
-  function holdingBrokerTabs(k: string) {
-    const selected = detailTabs[k] || "holdings";
-    return (
-      <div className="mb-4 flex gap-2 overflow-auto rounded-2xl border border-[#e3dccc] bg-[#FFFFFF] p-1">
-        <button
-          onClick={() => setDetailTabs((p) => ({ ...p, [k]: "holdings" }))}
-          className={`shrink-0 rounded-xl px-3 py-2 text-sm font-semibold ${selected === "holdings" ? "bg-sage text-white" : "hover:bg-[#eef5ee]"}`}
-        >
-          Holdings
-        </button>
-        <button
-          onClick={() => setDetailTabs((p) => ({ ...p, [k]: "brokers" }))}
-          className={`shrink-0 rounded-xl px-3 py-2 text-sm font-semibold ${selected === "brokers" ? "bg-sage text-white" : "hover:bg-[#eef5ee]"}`}
-        >
-          Broker Details
-        </button>
-        {k === "stocks" && (
-          <button
-            onClick={() => setDetailTabs((p) => ({ ...p, [k]: "watchlist" }))}
-            className={`shrink-0 rounded-xl px-3 py-2 text-sm font-semibold ${selected === "watchlist" ? "bg-sage text-white" : "hover:bg-[#eef5ee]"}`}
-          >
-            Watchlist
-          </button>
-        )}
       </div>
     );
   }
@@ -5929,9 +7688,6 @@ export default function AssetManagerApp() {
               </p>
             )}
           </div>
-          <button className="btn" onClick={() => setView("shareList")}>
-            <UploadCloud size={16} className="inline" /> Add Share List
-          </button>
         </div>
         <div className="overflow-auto bg-white">
           <table className="w-full min-w-[920px] border-collapse text-sm">
@@ -6333,6 +8089,352 @@ export default function AssetManagerApp() {
       </section>
     );
   }
+  function portfolioPerformancePanel() {
+    const accountMap = new Map<
+        string,
+        { account: string; invested: number; current: number }
+      >(),
+      assetRecords = records.filter(
+        (record) => MODULES[record.module_key]?.kind === "asset",
+      );
+    assetRecords.forEach((record) => {
+      const c = computeLiveRecord(record.module_key, record.data),
+        account = String(record.data?.account_name || "Unassigned"),
+        row = accountMap.get(account) || { account, invested: 0, current: 0 };
+      row.invested += num(c.invested);
+      row.current += num(c.latest);
+      accountMap.set(account, row);
+    });
+    const accountRows = [...accountMap.values()].sort((a, b) =>
+        a.account.localeCompare(b.account),
+      ),
+      today = istCalendar().iso,
+      currentPoint = {
+        date: today,
+        invested: accountRows.reduce((sum, item) => sum + item.invested, 0),
+        current: accountRows.reduce((sum, item) => sum + item.current, 0),
+        type: "live",
+      },
+      rangeFrom =
+        performanceView === "ytd"
+          ? `${performanceTo.slice(0, 4)}-01-01`
+          : performanceFrom,
+      savedPoints = records
+        .filter(
+          (record) =>
+            record.module_key === INVESTMENT_PERIOD_SNAPSHOT_MODULE &&
+            ["weekly", "monthly"].includes(record.data?.snapshot_type),
+        )
+        .map((record) => ({
+          date: String(record.data?.snapshot_date || "").slice(0, 10),
+          periodKey: String(record.data?.period_key || ""),
+          type: String(record.data?.snapshot_type || ""),
+          invested: num(record.data?.invested),
+          current: num(record.data?.current),
+        }))
+        .filter(
+          (point) =>
+            point.date &&
+            point.date >= rangeFrom &&
+            point.date <= performanceTo &&
+            (performanceView === "weekly"
+              ? point.type === "weekly"
+              : point.type === "monthly"),
+        )
+        .sort((a, b) => a.date.localeCompare(b.date)),
+      points = historicalPerformance.length
+        ? historicalPerformance.filter(
+            (point) => point.date >= rangeFrom && point.date <= performanceTo,
+          )
+        : savedPoints.length
+          ? savedPoints
+          : [currentPoint],
+      values = points.flatMap((point) => [point.invested, point.current]),
+      minValue = Math.min(...values, 0),
+      maxValue = Math.max(...values, 1),
+      padding = Math.max(1, (maxValue - minValue) * 0.08),
+      chartMin = Math.max(0, minValue - padding),
+      chartMax = maxValue + padding,
+      chartSpan = Math.max(1, chartMax - chartMin),
+      width = 900,
+      height = 260,
+      x = (index: number) =>
+        points.length <= 1 ? width / 2 : (index / (points.length - 1)) * width,
+      y = (value: number) =>
+        height - ((value - chartMin) / chartSpan) * height,
+      pathFor = (key: "invested" | "current") =>
+        points
+          .map(
+            (point, index) =>
+              `${index ? "L" : "M"} ${x(index).toFixed(1)} ${y(point[key]).toFixed(1)}`,
+          )
+          .join(" "),
+      allPeriodPoints = records
+        .filter(
+          (record) =>
+            record.module_key === INVESTMENT_PERIOD_SNAPSHOT_MODULE,
+        )
+        .map((record) => ({
+          type: String(record.data?.snapshot_type || ""),
+          date: String(record.data?.snapshot_date || ""),
+          current: num(record.data?.current),
+        }))
+        .filter(
+          (point) =>
+            point.date >= rangeFrom && point.date <= performanceTo,
+        )
+        .sort((a, b) => a.date.localeCompare(b.date)),
+      weekly = allPeriodPoints.filter((point) => point.type === "weekly"),
+      monthly = allPeriodPoints.filter((point) => point.type === "monthly"),
+      latestWeek = weekly.at(-1),
+      previousWeek = weekly.at(-2),
+      latestMonth = monthly.at(-1),
+      previousMonth = monthly.at(-2),
+      weekMove =
+        latestWeek && previousWeek
+          ? latestWeek.current - previousWeek.current
+          : null,
+      monthMove =
+        latestMonth && previousMonth
+          ? latestMonth.current - previousMonth.current
+          : null,
+      weekPct =
+        previousWeek?.current && weekMove !== null
+          ? (weekMove / previousWeek.current) * 100
+          : null,
+      monthPct =
+        previousMonth?.current && monthMove !== null
+          ? (monthMove / previousMonth.current) * 100
+          : null,
+      overallGain = currentPoint.current - currentPoint.invested;
+    const periodKpi = (
+      title: string,
+      move: number | null,
+      movePct: number | null,
+      note: string,
+    ) =>
+      kpi(
+        title,
+        move === null ? "-" : fmt(move),
+        move === null
+          ? "text-gray-500"
+          : move >= 0
+            ? "text-emerald-700"
+            : "text-red-700",
+        movePct === null ? `${note}; more history required` : `${pct(movePct)} | ${note}`,
+      );
+    return (
+      <section className="rounded-[26px] border border-[#ded6c4] bg-white/90 p-5 shadow-[0_14px_34px_rgba(15,23,42,0.05)]">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <h3 className="text-xl font-semibold tracking-tight">
+              Overall Investment Performance
+            </h3>
+            <p className="mt-1 text-sm text-gray-600">
+              Combined account portfolio. Weekly closes save Friday-Sunday;
+              monthly closes save on the final calendar day.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <button className="btn" type="button" onClick={createRestorePoint}>
+              Create Restore Point
+            </button>
+            <label className="btn cursor-pointer">
+              Reinstate
+              <input
+                type="file"
+                accept=".json,application/json"
+                className="hidden"
+                onChange={(event) => {
+                  void reinstateRestorePoint(event.currentTarget.files?.[0] || null);
+                  event.currentTarget.value = "";
+                }}
+              />
+            </label>
+          </div>
+        </div>
+        <div className="mt-4 grid grid-cols-[1fr_1fr_1.2fr_auto] gap-3 rounded-2xl border border-[#e3dccc] bg-[#fffaf0] p-3 max-lg:grid-cols-2 max-md:grid-cols-1">
+          <div>
+            <label className="field-label">From</label>
+            <input
+              type="date"
+              className="field-input"
+              value={performanceFrom}
+              disabled={performanceView === "ytd"}
+              onChange={(event) => {
+                setPerformanceFrom(event.target.value);
+                setHistoricalPerformance([]);
+              }}
+            />
+          </div>
+          <div>
+            <label className="field-label">To</label>
+            <input
+              type="date"
+              className="field-input"
+              value={performanceTo}
+              max={today}
+              onChange={(event) => {
+                setPerformanceTo(event.target.value);
+                setHistoricalPerformance([]);
+              }}
+            />
+          </div>
+          <div>
+            <label className="field-label">
+              Do you need Weekly, Monthly or YTD view?
+            </label>
+            <select
+              className="field-input"
+              value={performanceView}
+              onChange={(event) => {
+                setPerformanceView(
+                  event.target.value as "weekly" | "monthly" | "ytd",
+                );
+                setHistoricalPerformance([]);
+              }}
+            >
+              <option value="weekly">Weekly view</option>
+              <option value="monthly">Monthly view</option>
+              <option value="ytd">Year-to-date view</option>
+            </select>
+          </div>
+          <div className="flex items-end">
+            <button
+              type="button"
+              className="btn-primary w-full"
+              disabled={historyBusy}
+              onClick={backtrackInvestmentPrices}
+            >
+              {historyBusy ? "Backtracking..." : "Backtrack Available Prices"}
+            </button>
+          </div>
+        </div>
+        {historicalPerformance.length > 0 && (
+          <div className="mt-3 rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-900">
+            Historical estimate: stock and bullion market closes are backtracked.
+            Manual assets and unavailable symbols retain their recorded value.
+          </div>
+        )}
+        <div className="mt-4 min-w-0 rounded-2xl border border-[#e3dccc] bg-white p-3">
+            <div className="mb-2 flex flex-wrap items-center justify-between gap-2 text-xs font-semibold">
+              <span className="text-[#17382b]">
+                <span className="mr-1 inline-block h-2 w-5 rounded bg-[#115c45]" />
+                Current value
+              </span>
+              <span className="text-[#8b6a28]">
+                <span className="mr-1 inline-block h-2 w-5 rounded bg-[#c69632]" />
+                Cost basis
+              </span>
+              <span className="text-gray-500">
+                {historicalPerformance.length
+                  ? `${points.length} backtracked points`
+                  : savedPoints.length
+                  ? `${points.length} saved ${performanceView === "weekly" ? "weekly" : "month-end"} points`
+                  : "Waiting for the first scheduled close"}
+              </span>
+            </div>
+            <svg
+              viewBox={`0 0 ${width} ${height}`}
+              className="h-64 w-full overflow-visible"
+              role="img"
+              aria-label="Overall investment performance graph"
+            >
+              {[0, 0.25, 0.5, 0.75, 1].map((ratio) => (
+                <line
+                  key={ratio}
+                  x1="0"
+                  x2={width}
+                  y1={height * ratio}
+                  y2={height * ratio}
+                  stroke="#e9e2d6"
+                  strokeWidth="1"
+                />
+              ))}
+              <path
+                d={pathFor("invested")}
+                fill="none"
+                stroke="#c69632"
+                strokeWidth="4"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+              <path
+                d={pathFor("current")}
+                fill="none"
+                stroke="#115c45"
+                strokeWidth="5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+              {points.map((point, index) => (
+                <circle
+                  key={`${point.date}-${index}`}
+                  cx={x(index)}
+                  cy={y(point.current)}
+                  r="5"
+                  fill="#115c45"
+                >
+                  <title>
+                    {point.date} {point.type}: {fmt(point.current)}
+                  </title>
+                </circle>
+              ))}
+            </svg>
+            <div className="mt-1 flex justify-between text-xs font-semibold text-gray-500">
+              <span>{points[0]?.date || today}</span>
+              <span>{points.at(-1)?.date || today}</span>
+            </div>
+        </div>
+        <div className="mt-4 grid grid-cols-5 gap-3 max-xl:grid-cols-3 max-md:grid-cols-1">
+          {kpi("Total Cost", fmt(currentPoint.invested), "text-[#17382b]", "All accounts")}
+          {kpi("Current Value", fmt(currentPoint.current), "text-emerald-700", "All accounts")}
+          {periodKpi("Week on Week", weekMove, weekPct, "Last two saved weekly closes")}
+          {periodKpi("Month on Month", monthMove, monthPct, "Last two saved month-end closes")}
+          {kpi(
+            "Overall Performance",
+            fmt(overallGain),
+            overallGain >= 0 ? "text-emerald-700" : "text-red-700",
+            currentPoint.invested
+              ? `${pct((overallGain / currentPoint.invested) * 100)} on cost`
+              : "Current value - cost basis",
+          )}
+        </div>
+        <div className="mt-4 overflow-auto rounded-2xl border border-[#e3dccc] bg-white">
+          <table className="w-full min-w-[650px] border-collapse text-sm">
+            <thead className="bg-[#f5efe3] text-left text-xs uppercase tracking-widest">
+              <tr>
+                <th className="p-3">Account</th>
+                <th className="p-3 text-right">Cost Basis</th>
+                <th className="p-3 text-right">Current Value</th>
+                <th className="p-3 text-right">Performance</th>
+              </tr>
+            </thead>
+            <tbody>
+              {accountRows.map((row) => {
+                const gain = row.current - row.invested;
+                return (
+                  <tr key={row.account} className="border-t border-[#eee6d9]">
+                    <td className="p-3 font-semibold">{row.account}</td>
+                    <td className="p-3 text-right">{fmt(row.invested)}</td>
+                    <td className="p-3 text-right font-semibold">
+                      {fmt(row.current)}
+                    </td>
+                    <td
+                      className={`p-3 text-right font-semibold ${gain >= 0 ? "text-emerald-700" : "text-red-700"}`}
+                    >
+                      {fmt(gain)}
+                      {row.invested ? ` (${pct((gain / row.invested) * 100)})` : ""}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </section>
+    );
+  }
   function assetAllocationPanel() {
     const assetKeys = [
         "stocks",
@@ -6728,7 +8830,7 @@ export default function AssetManagerApp() {
             bestBidQuantity = String(r.data?.best_bid_quantity ?? ""),
             bestAskQuantity = String(r.data?.best_ask_quantity ?? ""),
             spread = String(r.data?.bid_ask_spread ?? ""),
-            c = computeRecord("stocks", r.data),
+            c = computeLiveRecord("stocks", r.data),
             today = todayGainFor("stocks", r);
           return {
             r,
@@ -6844,17 +8946,38 @@ export default function AssetManagerApp() {
                     >
                       <td className="p-3 font-semibold">{row.broker}</td>
                       <td className="p-3">
-                        <a
-                          className="font-semibold text-[#004080]"
-                          href={moneycontrolHref(computed)}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                          }}
-                        >
-                          {row.holding}
-                        </a>
+                        <div className="flex items-center gap-2">
+                          <a
+                            className="min-w-0 flex-1 truncate font-semibold text-[#004080]"
+                            href={moneycontrolHref(computed)}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                            }}
+                          >
+                            {row.holding}
+                          </a>
+                          <button
+                            type="button"
+                            className={`inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full border shadow-sm transition ${
+                              row.c.corporate_action_applied ||
+                              row.c.corporate_action_type ||
+                              row.c.corporate_action_ratio ||
+                              row.c.ex_base_price
+                                ? "border-[#b8892b] bg-[#fff2c7] text-[#7a1248] ring-1 ring-[#e6c46a]/50"
+                                : "border-[#e3dccc] bg-white text-[#6d7c73] hover:border-[#b8892b] hover:bg-[#fffaf0] hover:text-[#7a1248]"
+                            }`}
+                            title="Corporate action"
+                            aria-label={`Corporate action for ${row.holding}`}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setCorporateAction(row.r);
+                            }}
+                          >
+                            <GitBranch size={14} strokeWidth={3} />
+                          </button>
+                        </div>
                       </td>
                       <td className="p-3 whitespace-nowrap text-xs font-semibold text-gray-600">
                         {row.purchaseDate}
@@ -7044,9 +9167,6 @@ export default function AssetManagerApp() {
           <div className="flex flex-wrap gap-2">
             <button className="btn" onClick={() => refreshWatchlist()}>
               <RefreshCw size={16} className="inline" /> Refresh Watchlist
-            </button>
-            <button className="btn" onClick={() => setView("shareList")}>
-              <FileUp size={16} className="inline" /> Add Share List
             </button>
             <button
               className="btn-primary"
@@ -7335,7 +9455,7 @@ export default function AssetManagerApp() {
                 <tr
                   key={row.r.id}
                   className={`cursor-pointer border-t border-[#eee6d9] transition ${marketRowClass("bullion", computed)}`}
-                  onClick={() => openMoneycontrolCommodity(computed)}
+                  onClick={() => openMcxCommodity()}
                 >
                       <td className="p-3 font-semibold">{row.broker}</td>
                       <td>
@@ -7343,7 +9463,7 @@ export default function AssetManagerApp() {
                           className="font-semibold text-[#004080]"
                           onClick={(e) => {
                             e.stopPropagation();
-                            openMoneycontrolCommodity(computed);
+                            openMcxCommodity();
                           }}
                         >
                           {row.holding}
@@ -7464,38 +9584,8 @@ export default function AssetManagerApp() {
             "Assets incl. Insurance - Loans incl. linked Property - Borrowings",
           )}
         </div>
+        {portfolioPerformancePanel()}
         {portfolioSummaryTable()}
-        {dashboardFeaturePanels()}
-        <div className="grid grid-cols-2 gap-5 max-xl:grid-cols-1">
-          <section className="rounded-[26px] border border-[#ded6c4] bg-white/90 p-5 shadow-[0_14px_34px_rgba(15,23,42,0.05)]">
-            <h3 className="mb-3 text-xl font-semibold">Current Value Composition</h3>
-            {simpleTable(
-              ["Module", "Current Value", "Invested", "Gain", "Weight"],
-              assetRows.map((r) => [
-                r.title,
-                fmt(r.latest),
-                r.key === "insurance" ? "-" : fmt(r.invested),
-                r.key === "insurance" ? "-" : fmt(r.gain),
-                totals.assets ? pct((r.latest / totals.assets) * 100) : "0.00%",
-              ]),
-            )}
-          </section>
-          <section className="rounded-[26px] border border-[#ded6c4] bg-white/90 p-5 shadow-[0_14px_34px_rgba(15,23,42,0.05)]">
-            <h3 className="mb-3 text-xl font-semibold">Growth Leaders</h3>
-            {simpleTable(
-              ["Module", "Gain", "Gain %"],
-              [...assetRows]
-                .filter((r) => r.key !== "insurance" && r.invested)
-                .sort((a, b) => b.gain / b.invested - a.gain / a.invested)
-                .slice(0, 5)
-                .map((r) => [
-                  r.title,
-                  fmt(r.gain),
-                  pct((r.gain / r.invested) * 100),
-                ]),
-            )}
-          </section>
-        </div>
       </div>
     );
   }
@@ -7842,7 +9932,11 @@ export default function AssetManagerApp() {
               records.
             </p>
           </div>
-          <button className="btn-primary" onClick={() => setAccModal("new")}>
+          <button
+            className="btn-primary"
+            disabled={!canEditModule("accounts")}
+            onClick={() => setAccModal("new")}
+          >
             <Plus size={16} className="inline" /> Add Account
           </button>
         </div>
@@ -7866,7 +9960,11 @@ export default function AssetManagerApp() {
                     <td>{a.type}</td>
                     <td>{a.institution}</td>
                     <td className="space-x-2">
-                      <button className="btn" onClick={() => setAccModal(a)}>
+                      <button
+                        className="btn"
+                        disabled={!canEditModule("accounts")}
+                        onClick={() => setAccModal(a)}
+                      >
                         Edit
                       </button>
                       {isAdmin ? (
@@ -8116,8 +10214,8 @@ export default function AssetManagerApp() {
             <div>
               <h3 className="text-xl font-semibold tracking-tight">Document Repository</h3>
               <p className="text-sm text-gray-600">
-                New asset references are stored in Google Drive and linked back
-                to each asset here.
+                Personal files can use Google Drive; household files use shared,
+                access-controlled storage.
               </p>
             </div>
             <button className="btn" onClick={() => loadAll(true)}>
@@ -8126,6 +10224,252 @@ export default function AssetManagerApp() {
           </div>
           {docRows(rows)}
         </section>
+      </div>
+    );
+  }
+  async function runHouseholdAction(body: Record<string, any>) {
+    setHouseholdBusy(true);
+    try {
+      const json = await householdRequest(body);
+      setToast(json.message || "Household access updated");
+      await loadHousehold(activeWorkspaceId);
+    } catch (caught: any) {
+      setToast(caught?.message || "Household action failed");
+    } finally {
+      setHouseholdBusy(false);
+    }
+  }
+  function householdView() {
+    const modules = views
+      .filter(
+        ([key]) =>
+          !["dashboard", "household", "settings", "admin"].includes(key),
+      )
+      .map(([key, , label]) => ({ key, label }));
+    if (householdSetupRequired) {
+      return (
+        <section className="rounded-[26px] border border-amber-300 bg-amber-50 p-6 text-amber-950">
+          <h3 className="text-xl font-semibold">Household database setup required</h3>
+          <p className="mt-2 text-sm leading-6">
+            Run <code>supabase/household-workspaces.sql</code> once in the
+            Supabase SQL editor. Existing data is automatically moved into each
+            user&apos;s primary household.
+          </p>
+          <button className="btn mt-4" onClick={() => loadHousehold()}>
+            <RefreshCw size={16} className="inline" /> Check setup
+          </button>
+        </section>
+      );
+    }
+    return (
+      <div className="space-y-5">
+        <section className="rounded-[26px] border border-[#ded6c4] bg-white/90 p-5">
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div>
+              <h3 className="text-xl font-semibold">{activeWorkspace?.name || "Household"}</h3>
+              <p className="mt-1 text-sm text-gray-600">
+                Your role: {workspaceAccess.member_role}. Access is enforced at the database level.
+              </p>
+            </div>
+            {workspaceAccess.member_role === "owner" && (
+              <button
+                className="btn"
+                disabled={householdBusy}
+                onClick={() => {
+                  const name = prompt("Household name", activeWorkspace?.name || "");
+                  if (name?.trim())
+                    runHouseholdAction({ action: "renameWorkspace", name: name.trim() });
+                }}
+              >
+                Rename
+              </button>
+            )}
+          </div>
+          <div className="mt-4 grid gap-3 sm:grid-cols-3">
+            {[
+              ["View", workspaceAccess.all_modules ? "All modules" : `${workspaceAccess.modules.length} modules`],
+              ["Change data", workspaceAccess.can_edit ? "Allowed" : "Read only"],
+              ["Delete", workspaceAccess.can_delete ? "Allowed" : "Not allowed"],
+            ].map(([label, value]) => (
+              <div key={label} className="rounded-2xl border border-[#e3dccc] bg-[#fffaf0] p-4">
+                <div className="text-xs font-semibold uppercase text-gray-500">{label}</div>
+                <div className="mt-1 font-semibold">{value}</div>
+              </div>
+            ))}
+          </div>
+        </section>
+        {workspaceAccess.can_manage_members && (
+          <>
+            <section className="rounded-[26px] border border-[#ded6c4] bg-white/90 p-5">
+              <h3 className="text-xl font-semibold">Add household member</h3>
+              <p className="mt-1 text-sm text-gray-600">
+                Existing users are linked immediately. New users receive an email invitation.
+              </p>
+              <form
+                className="mt-4 grid gap-3 md:grid-cols-[1fr_220px_auto]"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  const form = new FormData(event.currentTarget);
+                  runHouseholdAction({
+                    action: "invite",
+                    email: String(form.get("email") || ""),
+                    member_role: String(form.get("member_role") || "viewer"),
+                  });
+                  event.currentTarget.reset();
+                }}
+              >
+                <input className="field-input" type="email" name="email" required placeholder="member@example.com" />
+                <select className="field-input" name="member_role" defaultValue="viewer">
+                  <option value="viewer">Viewer: read only</option>
+                  <option value="editor">Editor: add and edit</option>
+                  <option value="custom">Custom permissions</option>
+                </select>
+                <button className="btn-primary" disabled={householdBusy}>
+                  <Plus size={16} className="inline" /> Add member
+                </button>
+              </form>
+            </section>
+            <section className="space-y-3">
+              {workspaceMembers.map((member) => {
+                const permissions = member.permissions || ({} as any),
+                  owner = member.member_role === "owner";
+                return (
+                  <form
+                    key={member.id}
+                    className="rounded-[22px] border border-[#ded6c4] bg-white/90 p-5"
+                    onSubmit={(event) => {
+                      event.preventDefault();
+                      const form = new FormData(event.currentTarget),
+                        role = String(form.get("member_role") || "viewer"),
+                        selectedModules = form.getAll("modules").map(String);
+                      runHouseholdAction({
+                        action: "updateMember",
+                        membershipId: member.id,
+                        member_role: role,
+                        permissions: {
+                          all_modules: form.get("all_modules") === "on",
+                          modules: selectedModules,
+                          can_edit: form.get("can_edit") === "on",
+                          can_delete: form.get("can_delete") === "on",
+                          can_manage_members: form.get("can_manage_members") === "on",
+                          can_view_documents: form.get("can_view_documents") === "on",
+                          can_upload_documents: form.get("can_upload_documents") === "on",
+                        },
+                      });
+                    }}
+                  >
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <div className="font-semibold">
+                          {member.profile?.full_name || member.profile?.email || member.user_id}
+                        </div>
+                        <div className="text-xs text-gray-500">{member.profile?.email}</div>
+                      </div>
+                      <div className="flex gap-2">
+                        <span className="rounded-full border px-3 py-1 text-xs font-semibold">
+                          {member.status}
+                        </span>
+                        {!owner && (
+                          <button
+                            type="button"
+                            className="btn"
+                            onClick={() =>
+                              runHouseholdAction({
+                                action: "setStatus",
+                                membershipId: member.id,
+                                status: member.status === "active" ? "suspended" : "active",
+                              })
+                            }
+                          >
+                            {member.status === "active" ? "Suspend" : "Activate"}
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                    <div className="mt-4 grid gap-4 lg:grid-cols-[220px_1fr]">
+                      <div>
+                        <label className="field-label">Role preset</label>
+                        <select
+                          className="field-input"
+                          name="member_role"
+                          defaultValue={member.member_role}
+                          disabled={owner}
+                        >
+                          {owner && <option value="owner">Primary owner</option>}
+                          <option value="viewer">Viewer</option>
+                          <option value="editor">Editor</option>
+                          <option value="custom">Custom</option>
+                        </select>
+                        {!owner && (
+                          <div className="mt-4 space-y-2 text-sm">
+                            {[
+                              ["all_modules", "All modules"],
+                              ["can_edit", "Add and edit"],
+                              ["can_delete", "Delete data"],
+                              ["can_manage_members", "Manage members"],
+                              ["can_view_documents", "View documents"],
+                              ["can_upload_documents", "Upload documents"],
+                            ].map(([name, label]) => (
+                              <label key={name} className="flex items-center gap-2">
+                                <input
+                                  type="checkbox"
+                                  name={name}
+                                  defaultChecked={Boolean((permissions as any)[name])}
+                                />
+                                {label}
+                              </label>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                      {!owner && (
+                        <div>
+                          <div className="field-label">Selected modules</div>
+                          <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+                            {modules.map((module) => (
+                              <label
+                                key={module.key}
+                                className="flex items-center gap-2 rounded-xl border border-[#e3dccc] bg-[#fffaf0] px-3 py-2 text-sm"
+                              >
+                                <input
+                                  type="checkbox"
+                                  name="modules"
+                                  value={module.key}
+                                  defaultChecked={permissions.modules?.includes(module.key)}
+                                />
+                                {module.label}
+                              </label>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                    {!owner && (
+                      <div className="mt-4 flex flex-wrap justify-end gap-2 border-t border-[#e3dccc] pt-4">
+                        <button
+                          type="button"
+                          className="btn"
+                          onClick={() => {
+                            if (confirm("Remove this member's household access?"))
+                              runHouseholdAction({
+                                action: "removeMember",
+                                membershipId: member.id,
+                              });
+                          }}
+                        >
+                          <Trash2 size={15} className="inline" /> Remove
+                        </button>
+                        <button className="btn-primary" disabled={householdBusy}>
+                          Save permissions
+                        </button>
+                      </div>
+                    )}
+                  </form>
+                );
+              })}
+            </section>
+          </>
+        )}
       </div>
     );
   }
@@ -8155,6 +10499,161 @@ export default function AssetManagerApp() {
             "All user records",
           )}
         </div>
+        <section className="rounded-[26px] border border-[#ded6c4] bg-white/90 p-5 shadow-[0_14px_34px_rgba(15,23,42,0.05)]">
+          <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h3 className="text-xl font-semibold tracking-tight">Investment Data Sources</h3>
+              <p className="text-sm text-gray-600">
+                Choose where each investment module fetches live or default data.
+              </p>
+            </div>
+            <button
+              className="btn"
+              onClick={() => {
+                setSourcePrefs(DEFAULT_SOURCE_PREFS);
+                setToast("Source preferences reset");
+              }}
+            >
+              Reset Sources
+            </button>
+          </div>
+          <div className="grid gap-3 lg:grid-cols-2">
+            {Object.entries(INVESTMENT_SOURCE_OPTIONS).map(([moduleKey, options]) => {
+              const selected = sourceFor(moduleKey),
+                selectedOption = options.find((option) => option.value === selected) || options[0];
+              return (
+                <div
+                  key={moduleKey}
+                  className="rounded-2xl border border-[#e3dccc] bg-[#fffaf0] p-4"
+                >
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <div className="text-sm font-semibold text-[#17382b]">
+                        {MODULES[moduleKey]?.title || pretty(moduleKey)}
+                      </div>
+                      <div className="mt-1 text-xs font-semibold text-gray-500">
+                        Active source: {selectedOption?.label}
+                      </div>
+                    </div>
+                    <select
+                      className="field-input max-w-[220px]"
+                      value={selected}
+                      onChange={(e) => setSourcePref(moduleKey, e.target.value)}
+                    >
+                      {options.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <p className="mt-3 text-xs font-semibold leading-5 text-gray-600">
+                    {selectedOption?.note}
+                  </p>
+                </div>
+              );
+            })}
+          </div>
+        </section>
+        <section className="rounded-[26px] border border-[#ded6c4] bg-white/90 p-5 shadow-[0_14px_34px_rgba(15,23,42,0.05)]">
+          <div className="mb-4">
+            <h3 className="text-xl font-semibold tracking-tight">Appearance Lab</h3>
+            <p className="text-sm text-gray-600">
+              Explore embedded themes and tune the app typography.
+            </p>
+          </div>
+          <div className="grid gap-4 xl:grid-cols-[1.4fr_.9fr]">
+            <div className="grid gap-3 md:grid-cols-2">
+              {APP_THEMES.map((theme) => (
+                <button
+                  key={theme.id}
+                  type="button"
+                  className={`rounded-2xl border p-4 text-left transition hover:shadow-md ${
+                    appearance.theme === theme.id
+                      ? "border-[#115c45] bg-[#eef5ee]"
+                      : "border-[#e3dccc] bg-white"
+                  }`}
+                  onClick={() => setAppearancePref({ theme: theme.id })}
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <div className="text-sm font-semibold text-[#17382b]">
+                        {theme.name}
+                      </div>
+                      <div className="mt-1 text-xs font-semibold text-gray-500">
+                        {theme.note}
+                      </div>
+                    </div>
+                    <div className="flex gap-1">
+                      {theme.swatches.map((color) => (
+                        <span
+                          key={color}
+                          className="h-5 w-5 rounded-full border border-white shadow-sm"
+                          style={{ backgroundColor: color }}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                </button>
+              ))}
+            </div>
+            <div className="rounded-2xl border border-[#e3dccc] bg-[#fffaf0] p-4">
+              <div className="grid gap-4">
+                <div>
+                  <label className="field-label">Font</label>
+                  <select
+                    className="field-input"
+                    value={appearance.font}
+                    onChange={(e) => setAppearancePref({ font: e.target.value })}
+                  >
+                    {APP_FONTS.map((font) => (
+                      <option key={font.value} value={font.value}>
+                        {font.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="field-label">Font Size</label>
+                  <div className="flex items-center gap-3">
+                    <input
+                      type="range"
+                      min="13"
+                      max="19"
+                      step="1"
+                      value={appearance.fontSize}
+                      onChange={(e) =>
+                        setAppearancePref({ fontSize: Number(e.target.value) })
+                      }
+                      className="w-full"
+                    />
+                    <input
+                      className="field-input w-20 text-center"
+                      type="number"
+                      min="13"
+                      max="19"
+                      value={appearance.fontSize}
+                      onChange={(e) =>
+                        setAppearancePref({ fontSize: Number(e.target.value) || 16 })
+                      }
+                    />
+                  </div>
+                </div>
+                <div className="rounded-2xl border border-[#e3dccc] bg-white p-4">
+                  <div className="text-xs font-semibold uppercase tracking-widest text-gray-500">
+                    Preview
+                  </div>
+                  <div className="mt-2 text-2xl font-semibold tracking-tight">
+                    Portfolio Summary
+                  </div>
+                  <p className="mt-2 text-sm text-gray-600">
+                    Tables, dashboards and admin tools use this font and size.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
         <section className="rounded-[26px] border border-[#ded6c4] bg-white/90 p-5 shadow-[0_14px_34px_rgba(15,23,42,0.05)]">
           <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
             <div>
@@ -8349,16 +10848,25 @@ export default function AssetManagerApp() {
       acct = accountTab(k) === "All" ? "" : key(d.account_name || ""),
       category =
         k === "fixedIncome" ? fixedIncomeCategoryLabel(d.category) : d.category,
-      holdingName = k === "bullion" ? bullionDisplayName(d) : d.security_name;
+      holdingName = k === "bullion" ? bullionDisplayName(d) : d.security_name,
+      propertyIdentity =
+        k === "property"
+          ? [
+              key(d.security_name || category || "property"),
+              key(d.location || ""),
+              key(d.broker || d.community || d.project || d.society || ""),
+            ].join("|")
+          : "";
     return [
       acct,
-      key(
-        d.ticker_symbol ||
-          d.scheme_code ||
-          holdingName ||
-          category ||
-          "item",
-      ),
+      propertyIdentity ||
+        key(
+          d.ticker_symbol ||
+            d.scheme_code ||
+            holdingName ||
+            category ||
+            "item",
+        ),
       key(d.exchange || ""),
       key(d.unit || ""),
     ].join("|");
@@ -8391,7 +10899,7 @@ export default function AssetManagerApp() {
       items.forEach((r) => {
         const d = r.data,
           c = computeLiveRecord(k, d);
-        qty += num(d.quantity);
+        qty += num(c.adjusted_quantity) || num(d.quantity);
         invested += num(c.invested);
         latest += num(c.latest);
       });
@@ -8507,10 +11015,15 @@ export default function AssetManagerApp() {
       .sort()
       .at(-1);
     if (synced) data.last_synced = synced;
+    const todayGain = items.reduce(
+      (sum, record) => sum + todayGainFor(k, record),
+      0,
+    );
     const computed =
       ["bullion", "fixedIncome"].includes(k)
         ? computeLiveRecord(k, data)
         : computeRecord(k, data);
+    if (showsDailyChange(k)) computed.today_gain = todayGain;
     if (k === "fixedIncome")
       Object.assign(computed, {
         current_value_today: data.current_value_today,
@@ -8576,10 +11089,14 @@ export default function AssetManagerApp() {
     return live && prev ? live - prev : 0;
   }
   function marketMove(k: string, c: any) {
-    return k === "stocks" ? stockMove(c) : num(c.day_change);
+    if (k === "stocks") return stockMove(c);
+    if (showsDailyChange(k)) return num(c.day_change || c.today_gain);
+    if (MODULES[k]?.kind === "asset") return num(c.gain);
+    return 0;
   }
   function marketRowClass(k: string, c: any) {
-    if (!["stocks", "bullion"].includes(k)) return "hover:bg-[#f7faf6]";
+    if (!["stocks", "mutualFunds", "ulips", "bullion", "nsel", "fixedIncome", "property", "otherAssets"].includes(k))
+      return "hover:bg-[#f7faf6]";
     const move = marketMove(k, c);
     if (move > 0) return "bg-emerald-50/40 hover:bg-emerald-50";
     if (move < 0) return "bg-red-50/40 hover:bg-red-50";
@@ -8604,22 +11121,22 @@ export default function AssetManagerApp() {
     );
   }
   function stockColWidth(col: string) {
-    if (col === "account_name") return "82px";
-    if (col === "security_name") return "126px";
-    if (col === "quantity") return "58px";
-    if (col === "inv_price") return "92px";
-    if (col === "live_price") return "108px";
-    if (col === "day_change") return "96px";
+    if (col === "account_name") return "58px";
+    if (col === "security_name") return "108px";
+    if (col === "quantity") return "44px";
+    if (col === "inv_price") return "76px";
+    if (col === "live_price") return "82px";
+    if (col === "day_change") return "76px";
     if (
       ["day_low", "day_high", "fifty_two_week_low", "fifty_two_week_high"].includes(
         col,
       )
     )
-      return "104px";
-    if (col === "gain_pct") return "78px";
-    if (["invested", "latest"].includes(col)) return "96px";
-    if (col === "gain") return "104px";
-    return "92px";
+      return "82px";
+    if (col === "gain_pct") return "64px";
+    if (["invested", "latest"].includes(col)) return "82px";
+    if (col === "gain") return "86px";
+    return "74px";
   }
   function stockCellClass(moduleKey: string, col: string) {
     if (moduleKey === "bullion") {
@@ -8649,9 +11166,9 @@ export default function AssetManagerApp() {
       Arrow = positive ? ArrowUp : negative ? ArrowDown : null;
     return (
       <span
-        className={`inline-flex w-full max-w-[6.5rem] items-center justify-end gap-1 rounded-full border px-2 py-0.5 text-xs font-semibold tabular-nums shadow-sm ${cls}`}
+        className={`inline-flex w-full max-w-[5rem] items-center justify-end gap-0.5 rounded-full border px-1.5 py-0.5 text-[10px] font-semibold tabular-nums shadow-sm ${cls}`}
       >
-        {Arrow && <Arrow size={14} strokeWidth={3} />}
+        {Arrow && <Arrow size={11} strokeWidth={3} />}
         {fmtSignedPrice(move)}
       </span>
     );
@@ -8669,7 +11186,7 @@ export default function AssetManagerApp() {
             : "border-slate-200 bg-slate-50 text-slate-800";
     return (
       <span
-        className={`inline-flex w-full max-w-[6rem] justify-end rounded-lg border px-2 py-0.5 text-xs font-semibold tabular-nums ${cls}`}
+        className={`inline-flex w-full max-w-[5rem] justify-end rounded-lg border px-1.5 py-0.5 text-[10px] font-semibold tabular-nums ${cls}`}
       >
         {fmtPrice(v)}
       </span>
@@ -8693,26 +11210,51 @@ export default function AssetManagerApp() {
             : "border-sky-300 bg-sky-50 text-sky-950";
     return <div className={`stock-range-box ${cls}`}>{fmtPrice(v)}</div>;
   }
-  function formatModuleCell(moduleKey: string, col: string, c: any) {
+  function formatModuleCell(moduleKey: string, col: string, c: any, record?: Rec) {
     if (moduleKey === "stocks" && col === "security_name") {
       const fullName = String(c[col] || ""),
-        shortName = compactName(fullName);
+        shortName = compactName(fullName),
+        hasAction =
+          !!c.corporate_action_applied ||
+          !!c.corporate_action_type ||
+          !!c.corporate_action_ratio ||
+          !!c.ex_base_price;
       return (
-        <a
-          className="block leading-tight text-[#004080] underline decoration-[#004080]/40"
-          href={moneycontrolHref(c)}
-          target="_blank"
-          rel="noopener noreferrer"
-          onClick={(e) => e.stopPropagation()}
-          title={fullName}
-        >
-          <span className="block truncate font-semibold">{shortName}</span>
-          {shortName !== fullName && (
-            <span className="block truncate text-[10px] font-medium text-[#6d7c73] no-underline">
-              {fullName}
-            </span>
+        <div className="flex min-w-0 items-center gap-2">
+          <a
+            className="min-w-0 flex-1 leading-tight text-[#004080] underline decoration-[#004080]/40"
+            href={moneycontrolHref(c)}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={(e) => e.stopPropagation()}
+            title={fullName}
+          >
+            <span className="block truncate font-semibold">{shortName}</span>
+            {shortName !== fullName && (
+              <span className="block truncate text-[10px] font-medium text-[#6d7c73] no-underline">
+                {fullName}
+              </span>
+            )}
+          </a>
+          {record && (
+            <button
+              type="button"
+              className={`inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full border shadow-sm transition ${
+                hasAction
+                  ? "border-[#b8892b] bg-[#fff2c7] text-[#7a1248] ring-1 ring-[#e6c46a]/50"
+                  : "border-[#e3dccc] bg-white text-[#6d7c73] hover:border-[#b8892b] hover:bg-[#fffaf0] hover:text-[#7a1248]"
+              }`}
+              title="Corporate action"
+              aria-label={`Corporate action for ${fullName}`}
+              onClick={(e) => {
+                e.stopPropagation();
+                setCorporateAction(record);
+              }}
+            >
+              <GitBranch size={14} strokeWidth={3} />
+            </button>
           )}
-        </a>
+        </div>
       );
     }
     if (moduleKey === "stocks" && col === "live_price") {
@@ -8834,8 +11376,28 @@ export default function AssetManagerApp() {
                 selected === "All" ||
                 String(r.data?.account_name || "Unassigned") === selected,
             ),
-      tabTotals = computeModuleTotals(k, filtered),
-      rows = groupedRows(k, filtered).filter((x) =>
+      grouped = groupedRows(k, filtered),
+      rawTabTotals = computeModuleTotals(k, filtered),
+      tabTotals =
+        k === "bullion"
+          ? (() => {
+              const displayed = grouped.reduce(
+                (totals, row) => ({
+                  assets: totals.assets + Math.round(num(row.c.latest)),
+                  invested: totals.invested + Math.round(num(row.c.invested)),
+                }),
+                { assets: 0, invested: 0 },
+              );
+              return {
+                assets: displayed.assets,
+                liabilities: 0,
+                net: displayed.assets,
+                invested: displayed.invested,
+                gain: displayed.assets - displayed.invested,
+              };
+            })()
+          : rawTabTotals,
+      rows = grouped.filter((x) =>
         JSON.stringify(x.c).toLowerCase().includes(query.toLowerCase()),
       ),
       isInvestment = [
@@ -8869,12 +11431,28 @@ export default function AssetManagerApp() {
     const hasDailyChange = showsDailyChange(k),
       monthlyGain = filtered.reduce((s, r) => s + monthlyGainFor(k, r), 0),
       moduleToday = hasDailyChange
-        ? filtered.reduce((s, r) => s + todayGainFor(k, r), 0)
+        ? k === "bullion"
+          ? grouped.reduce(
+              (sum, row) => sum + Math.round(num(row.c.today_gain)),
+              0,
+            )
+          : filtered.reduce((s, r) => s + todayGainFor(k, r), 0)
         : 0;
     const visibleCols =
       k === "stocks"
         ? def.cols.filter(
-            (c) => !["ticker_symbol", "exchange", "last_synced"].includes(c),
+            (c) =>
+              ![
+                "ticker_symbol",
+                "exchange",
+                "last_synced",
+                "bonus_ratio",
+                "split_ratio",
+                "corporate_action_type",
+                "corporate_action_ratio",
+                "corporate_action_ex_date",
+                "ex_base_price",
+              ].includes(c),
           )
         : k === "bullion"
         ? def.cols.filter((c) => c !== "last_synced")
@@ -8893,7 +11471,7 @@ export default function AssetManagerApp() {
           <tr
             onClick={() => {
               if (k === "bullion") {
-                openMoneycontrolCommodity(c);
+                openMcxCommodity();
                 return;
               }
               setDetail({
@@ -8921,7 +11499,7 @@ export default function AssetManagerApp() {
             </td>
             {visibleCols.slice(1).map((col) => (
               <td className="p-3" key={col}>
-                {formatModuleCell(k, col, c)}
+                {formatModuleCell(k, col, c, lot)}
               </td>
             ))}
             <td className="p-3 text-right">
@@ -9006,105 +11584,6 @@ export default function AssetManagerApp() {
           {stockWatchlistTable()}
         </div>
       );
-    if (k === "stocks" && mode === "brokers")
-      return (
-        <div className="space-y-5">
-          <section className="rounded-[26px] border border-[#ded6c4] bg-white/90 p-5 shadow-[0_14px_34px_rgba(15,23,42,0.05)]">
-            <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <h3 className="text-xl font-semibold tracking-tight">{def.title}</h3>
-                <p className="text-sm text-gray-600">{def.desc}</p>
-              </div>
-              <div className="flex flex-wrap items-center gap-2">
-                <button
-                  type="button"
-                  className="inline-flex items-center rounded-full border border-[#e1d8c8] bg-[#FFFFFF] px-3 py-1.5 text-xs font-medium text-[#37534a] shadow-none"
-                  onClick={() => setAutoRefresh((v) => !v)}
-                >
-                  Auto refresh: {autoRefresh ? "On" : "Off"}
-                  {editing || detail || accModal
-                    ? " | Paused while editing"
-                    : ""}
-                  {lastSynced ? ` | Last sync: ${lastSynced}` : ""}
-                </button>
-                <button className="btn" onClick={() => refreshModuleRates(k, false, true)}>
-                  <RefreshCw size={16} className="inline" /> Refresh Current
-                  Rates
-                </button>
-                <button className="btn" onClick={() => exportModuleCsv(k)}>
-                  Export CSV
-                </button>
-                <button
-                  className="btn-primary"
-                  onClick={() => setEditing({ moduleKey: k })}
-                >
-                  <Plus size={16} className="inline" /> Add
-                </button>
-              </div>
-            </div>
-            {hasAccountTabs && tabs.length > 1 && (
-              <div className="mb-4 flex gap-2 overflow-auto rounded-2xl border border-[#e3dccc] bg-[#FFFFFF] p-1">
-                {tabs.map((t) => {
-                  const count =
-                    t === "All"
-                      ? moduleRecords.length
-                      : k === "stocks" && t === "Watchlist"
-                        ? stockWatchlistCount
-                        : moduleRecords.filter(
-                            (r) =>
-                              String(r.data?.account_name || "Unassigned") === t,
-                          ).length;
-                  return (
-                    <button
-                      key={t}
-                      onClick={() =>
-                        setAccountTabs((prev) => ({ ...prev, [k]: t }))
-                      }
-                      className={`shrink-0 rounded-xl px-3 py-2 text-sm font-semibold ${selected === t ? "bg-sage text-white shadow-sm" : "text-[#17382b] hover:bg-[#eef5ee]"}`}
-                    >
-                      {t} <span className="opacity-70">({count})</span>
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-            <div className="grid grid-cols-5 gap-3 max-xl:grid-cols-3 max-lg:grid-cols-2 max-md:grid-cols-1">
-              {kpi(
-                "Invested",
-                fmt(tabTotals.invested),
-                "text-[#17382b]",
-                "Cost basis",
-              )}
-              {kpi(
-                "Today Gain",
-                fmt(moduleToday),
-                moduleToday >= 0 ? "text-emerald-700" : "text-red-700",
-                "Calculated from this investment tab",
-              )}
-              {kpi(
-                "Monthly Gain",
-                fmt(monthlyGain),
-                monthlyGain >= 0 ? "text-emerald-700" : "text-red-700",
-                "Saved, month-start, this-month, or accrual estimate",
-              )}
-              {kpi(
-                "Overall Gain",
-                fmt(tabTotals.gain),
-                tabTotals.gain >= 0 ? "text-emerald-700" : "text-red-700",
-                "Current value - invested",
-              )}
-              {kpi(
-                "Current Value",
-                fmt(tabTotals.assets),
-                "text-emerald-700",
-                `${selected} investment particulars: ${filtered.length} rows / ${rows.length} grouped`,
-              )}
-            </div>
-          </section>
-          {marketTodayHeader()}
-          {stockBrokerDetailsTable(`${def.title} Broker Details`, filtered)}
-        </div>
-      );
     return (
       <section className="rounded-[26px] border border-[#ded6c4] bg-white/90 p-5 shadow-[0_14px_34px_rgba(15,23,42,0.05)]">
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
@@ -9134,6 +11613,7 @@ export default function AssetManagerApp() {
             </button>
             <button
               className="btn-primary"
+              disabled={!canEditModule(k)}
               onClick={() => setEditing({ moduleKey: k })}
             >
               <Plus size={16} className="inline" /> Add
@@ -9165,6 +11645,7 @@ export default function AssetManagerApp() {
             })}
           </div>
         )}
+        {k === "bullion" && bullionRatePanel()}
         {k === "stocks" && <div className="mb-4">{marketTodayHeader()}</div>}
         {isInvestment && (
           <div className="mb-4 grid grid-cols-5 gap-3 max-xl:grid-cols-3 max-lg:grid-cols-2 max-md:grid-cols-1">
@@ -9262,6 +11743,7 @@ export default function AssetManagerApp() {
                   <div className="flex gap-2">
                     <button
                       className="btn"
+                      disabled={!canEditModule(k)}
                       onClick={() => setEditing({ moduleKey: k, record: r })}
                     >
                       Update
@@ -9321,14 +11803,18 @@ export default function AssetManagerApp() {
             </div>
           </div>
         )}
-        {rows.length ? (
+        {rows.length && ["stocks", "bullion"].includes(k) ? (
+          <div className="desktop-market-card-grid">
+            {rows.map((row) => desktopMarketHoldingCard(k, row, visibleCols))}
+          </div>
+        ) : rows.length ? (
           <div
             className={`overflow-auto rounded-[22px] border border-[#ded6c4] bg-white shadow-[0_10px_30px_rgba(15,23,42,0.04)] investment-table ${k === "stocks" ? "stock-holdings-table" : ""} ${k === "bullion" ? "bullion-holdings-table" : ""} ${k === "fixedIncome" ? "fixed-income-table" : ""}`}
           >
             <table
               className={`border-collapse text-sm ${
                 k === "stocks"
-                  ? "w-[1360px] table-fixed"
+                  ? "w-[1120px] table-fixed"
                     : k === "fixedIncome"
                       ? "w-[1330px] table-fixed"
                     : k === "bullion"
@@ -9406,7 +11892,7 @@ export default function AssetManagerApp() {
                     <tr
                       onClick={() => {
                         if (k === "bullion") {
-                          openMoneycontrolCommodity(c);
+                          openMcxCommodity();
                           return;
                         }
                         setDetail({
@@ -9422,7 +11908,7 @@ export default function AssetManagerApp() {
                     >
                       {visibleCols.map((col) => (
                         <td className={`p-3 ${stockCellClass(k, col)}`} key={col}>
-                          {formatModuleCell(k, col, c)}
+                          {formatModuleCell(k, col, c, r)}
                         </td>
                       ))}
                       <td className="space-x-2 p-3 text-right">
@@ -9501,7 +11987,7 @@ export default function AssetManagerApp() {
                 ref={fileRef}
                 type="file"
                 className="field-input"
-                accept=".xlsx,.xls,.csv,.tsv,.txt,.json"
+                accept=".xlsx,.csv,.tsv,.txt,.json"
                 onChange={(e) => handleImport(e.target.files?.[0] || null)}
               />
             </div>
@@ -9563,106 +12049,6 @@ export default function AssetManagerApp() {
           </ol>
         </div>
       </section>
-    );
-  }
-  function insights() {
-    const s = aiSignals(),
-      stocks = stockAiCandidates(),
-      assets = records
-        .filter((r) => MODULES[r.module_key]?.kind === "asset")
-        .map((r) => {
-          const c = computeLiveRecord(r.module_key, r.data);
-          return {
-            r,
-            c,
-            weight: totals.assets ? (num(c.latest) / totals.assets) * 100 : 0,
-            today: showsDailyChange(r.module_key)
-              ? todayGainFor(r.module_key, r)
-              : 0,
-          };
-        })
-        .sort((a, b) => b.weight - a.weight);
-    return (
-      <div className="space-y-5">
-        <div className="grid grid-cols-4 gap-4 max-xl:grid-cols-2 max-md:grid-cols-1">
-          {kpi(
-            "Local Health Signal",
-            `${Math.round(s.score)}/100`,
-            s.score > 70
-              ? "text-emerald-700"
-              : s.score > 45
-                ? "text-amber-700"
-                : "text-red-700",
-            "Calculated from portfolio data",
-          )}
-          {kpi(
-            "Daily Gain",
-            fmt(s.daily),
-            s.daily >= 0 ? "text-emerald-700" : "text-red-700",
-            "Stocks and bullion movement",
-          )}
-          {kpi(
-            "Monthly Gain",
-            fmt(s.monthly),
-            s.monthly >= 0 ? "text-emerald-700" : "text-red-700",
-            "Saved, month-start, this-month, or accrual estimate",
-          )}
-          {kpi(
-            "Local Risk Signal",
-            s.action,
-            s.action === "Stay Invested" ? "text-emerald-700" : "text-red-700",
-            "Stay invested or sell / reduce",
-          )}
-        </div>
-        {aiAnalystPanel()}
-        <section className="rounded-[26px] border border-[#ded6c4] bg-white/90 p-5 shadow-[0_14px_34px_rgba(15,23,42,0.05)]">
-          <h3 className="text-xl font-semibold tracking-tight">Local Signal Notes</h3>
-          <ul className="mt-3 list-disc space-y-2 pl-5 text-sm text-gray-700">
-            {s.notes.map((n) => (
-              <li key={n}>{n}</li>
-            ))}
-            <li>
-              Signals are generated from your saved values, price refresh fields
-              and concentration, not from a guaranteed prediction model.
-            </li>
-          </ul>
-        </section>
-        <div className="grid grid-cols-2 gap-5 max-xl:grid-cols-1">
-          <section className="rounded-[26px] border border-[#ded6c4] bg-white/90 p-5 shadow-[0_14px_34px_rgba(15,23,42,0.05)]">
-            <h3 className="mb-3 text-xl font-semibold">Allocation Risk</h3>
-            {simpleTable(
-              ["Holding", "Section", "Weight", "Today"],
-              assets
-                .slice(0, 8)
-                .map((x) => [
-                  x.c.security_name ||
-                    x.c.category ||
-                    MODULES[x.r.module_key]?.title,
-                  MODULES[x.r.module_key]?.title,
-                  pct(x.weight),
-                  fmt(x.today),
-                ]),
-            )}
-          </section>
-          <section className="rounded-[26px] border border-[#ded6c4] bg-white/90 p-5 shadow-[0_14px_34px_rgba(15,23,42,0.05)]">
-            <h3 className="mb-3 text-xl font-semibold">Growth Stock Radar</h3>
-            {simpleTable(
-              ["Candidate", "Sector", "Score", "Why"],
-              stocks
-                .slice(0, 8)
-                .map((x) => [x.name, x.category, `${x.score}/100`, x.why]),
-            )}
-          </section>
-        </div>
-      </div>
-    );
-  }
-  function recommendationsView() {
-    return (
-      <div className="space-y-5">
-        {aiAnalystPanel()}
-        {aiRecommendationPanel("dashboard")}
-      </div>
     );
   }
   function watchlistView() {
@@ -9785,7 +12171,7 @@ export default function AssetManagerApp() {
   }
   function settings() {
     return (
-      <div className="grid grid-cols-[1.1fr_.9fr] gap-4 max-xl:grid-cols-1">
+      <div className="grid gap-4">
         <div className="rounded-[26px] border border-[#ded6c4] bg-white/90 p-5 shadow-[0_14px_34px_rgba(15,23,42,0.05)]">
           <h3 className="text-xl font-semibold tracking-tight">Profile</h3>
           <form
@@ -9844,17 +12230,6 @@ export default function AssetManagerApp() {
             accounts/records. Normal can add/edit but destructive actions are
             blocked.
           </p>
-        </div>
-        <div className="rounded-[26px] border border-[#ded6c4] bg-white/90 p-5 shadow-[0_14px_34px_rgba(15,23,42,0.05)]">
-          <h3 className="text-xl font-semibold tracking-tight">Backup</h3>
-          <div className="mt-4 space-y-3">
-            <button className="btn w-full" onClick={exportBackup}>
-              Download JSON Backup
-            </button>
-            <p className="rounded-2xl bg-amber-50 p-3 text-sm text-amber-800">
-              Data is stored in Supabase with RLS policies.
-            </p>
-          </div>
         </div>
       </div>
     );
@@ -9954,6 +12329,104 @@ export default function AssetManagerApp() {
       </Modal>
     );
   }
+  function corporateActionModal() {
+    const r = corporateAction!,
+      c = computeLiveRecord("stocks", r.data),
+      title = String(r.data?.security_name || "Stock"),
+      currentAction = String(
+        r.data?.corporate_action_type ||
+          (r.data?.bonus_ratio ? "Bonus" : r.data?.split_ratio ? "Split" : ""),
+      ),
+      currentRatio = String(
+        r.data?.corporate_action_ratio || r.data?.bonus_ratio || r.data?.split_ratio || "",
+      ),
+      currentExDate = String(
+        r.data?.corporate_action_ex_date ||
+          r.data?.ex_bonus_date ||
+          r.data?.ex_split_date ||
+          r.data?.ex_date ||
+          "",
+      ).slice(0, 10);
+    return (
+      <Modal
+        title={`Corporate Action: ${compactName(title)}`}
+        onClose={() => setCorporateAction(null)}
+      >
+        <form
+          className="grid grid-cols-2 gap-3 max-md:grid-cols-1"
+          onSubmit={(e) => {
+            e.preventDefault();
+            const fd = new FormData(e.currentTarget);
+            saveCorporateAction(r, {
+              corporate_action_type: String(fd.get("corporate_action_type") || ""),
+              corporate_action_ratio: String(fd.get("corporate_action_ratio") || ""),
+              corporate_action_ex_date: String(fd.get("corporate_action_ex_date") || ""),
+              ex_base_price: num(fd.get("ex_base_price")),
+            });
+          }}
+        >
+          <div className="col-span-2 rounded-2xl border border-[#e3dccc] bg-[#fffaf0] p-3 text-sm text-[#4a3b45] max-md:col-span-1">
+            <div className="font-semibold text-[#17382b]">{title}</div>
+            <div className="mt-1 grid grid-cols-3 gap-2 text-xs max-md:grid-cols-1">
+              <span>Qty: {num(c.quantity).toLocaleString("en-IN")}</span>
+              <span>Live: {fmtPrice(c.live_price)}</span>
+              <span>Increase: {fmtSignedPrice(c.day_change)}</span>
+            </div>
+          </div>
+          <div>
+            <label className="field-label">Action</label>
+            <select
+              name="corporate_action_type"
+              className="field-input"
+              defaultValue={currentAction}
+            >
+              <option value="">None</option>
+              <option value="Bonus">Bonus</option>
+              <option value="Split">Split</option>
+            </select>
+          </div>
+          <div>
+            <label className="field-label">Ratio</label>
+            <input
+              name="corporate_action_ratio"
+              className="field-input"
+              placeholder="1:2"
+              defaultValue={currentRatio}
+            />
+          </div>
+          <div>
+            <label className="field-label">Ex Date</label>
+            <input
+              name="corporate_action_ex_date"
+              type="date"
+              className="field-input"
+              defaultValue={currentExDate}
+            />
+          </div>
+          <div>
+            <label className="field-label">Ex-Day Base Price</label>
+            <input
+              name="ex_base_price"
+              className="field-input"
+              inputMode="decimal"
+              placeholder="2783"
+              defaultValue={r.data?.ex_base_price || ""}
+            />
+          </div>
+          <div className="col-span-2 flex justify-end gap-2 border-t border-[#e3dccc] pt-3 max-md:col-span-1">
+            <button
+              type="button"
+              className="btn"
+              onClick={() => setCorporateAction(null)}
+            >
+              Cancel
+            </button>
+            <button className="btn-primary">Save Corporate Action</button>
+          </div>
+        </form>
+      </Modal>
+    );
+  }
   function recordModal() {
     const def = MODULES[editing!.moduleKey],
       raw = editing!.record?.data || editing!.defaults || {},
@@ -9982,6 +12455,8 @@ export default function AssetManagerApp() {
           onInput={(e) => {
             if (editing!.moduleKey === "stocks")
               fillStockTotals(e.currentTarget);
+            if (editing!.moduleKey === "bullion")
+              fillBullionCosts(e.currentTarget);
             const t = e.target as HTMLInputElement | HTMLSelectElement;
             if (editing!.moduleKey === "fixedIncome") {
               if (t.name === "category") {
@@ -10033,7 +12508,21 @@ export default function AssetManagerApp() {
                 f.type === "textarea" ? "col-span-2 max-md:col-span-1" : ""
               }
             >
-              <label className="field-label">{f.label}</label>
+              <div className="flex items-center justify-between gap-2">
+                <label className="field-label">{f.label}</label>
+                {editing!.moduleKey === "bullion" && f.name === "city" && (
+                  <button
+                    type="button"
+                    className="text-xs font-semibold text-[#7a1248] underline"
+                    disabled={bullionLocating}
+                    onClick={(e) =>
+                      detectCurrentBullionCity(e.currentTarget.form)
+                    }
+                  >
+                    {bullionLocating ? "Locating..." : "Use current city"}
+                  </button>
+                )}
+              </div>
               {f.type === "textarea" ? (
                 <textarea
                   name={f.name}
@@ -10135,7 +12624,11 @@ export default function AssetManagerApp() {
                   autoComplete="off"
                   defaultValue={
                     f.type === "number"
-                      ? fmtInr(cur[f.name])
+                      ? ["latitude", "longitude"].includes(f.name)
+                        ? cur[f.name] === undefined || cur[f.name] === ""
+                          ? ""
+                          : Number(cur[f.name]).toFixed(6)
+                        : fmtInr(cur[f.name])
                       : cur[f.name] || ""
                   }
                   readOnly={
@@ -10243,7 +12736,7 @@ export default function AssetManagerApp() {
     set("category", s.category);
     try {
       const res = await fetch(
-        `/api/quote?symbol=${encodeURIComponent(s.ticker)}&exchange=${encodeURIComponent(s.exchange)}&name=${encodeURIComponent(s.name)}`,
+        `/api/quote?symbol=${encodeURIComponent(s.ticker)}&exchange=${encodeURIComponent(s.exchange)}&name=${encodeURIComponent(s.name)}${quoteProviderParam()}`,
       );
       const q = await res.json();
       if (Number.isFinite(Number(q.price))) {

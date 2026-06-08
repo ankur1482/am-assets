@@ -99,7 +99,7 @@ export async function POST(req:NextRequest){
     if(action==='resetPassword'){
       const email=String(body.email||'');
       if(!email)return NextResponse.json({error:'Email is required for password reset'},{status:400});
-      const redirectTo=body.redirectTo||`${req.nextUrl.origin}/`;
+      const redirectTo=body.redirectTo||`${process.env.NEXT_PUBLIC_APP_URL||'https://gupta.vercel.app'}/`;
       const {data,error}=await serviceClient.auth.admin.generateLink({type:'recovery',email,options:{redirectTo}});
       if(error)throw error;
       return NextResponse.json({ok:true,message:'Password reset link generated',action_link:data?.properties?.action_link});
