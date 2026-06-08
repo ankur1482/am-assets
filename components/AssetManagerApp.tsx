@@ -4,6 +4,7 @@ import {
   ArrowDown,
   ArrowLeft,
   ArrowUp,
+  ArrowUpDown,
   BarChart3,
   Bell,
   BriefcaseBusiness,
@@ -836,6 +837,22 @@ export default function AssetManagerApp() {
       return allViews.some((v) => v[0] === saved) ? saved : "dashboard";
     }),
     [query, setQuery] = useState(""),
+    [watchlistSort, setWatchlistSort] = useState<{
+      key:
+        | "name"
+        | "live"
+        | "dayLow"
+        | "dayHigh"
+        | "change"
+        | "base"
+        | "dayGain"
+        | "overall";
+      direction: "asc" | "desc";
+    }>({ key: "name", direction: "asc" }),
+    [stockHoldingsSort, setStockHoldingsSort] = useState<{
+      key: string;
+      direction: "asc" | "desc";
+    }>({ key: "security_name", direction: "asc" }),
     [profile, setProfile] = useState<Profile | null>(null),
     [role, setRole] = useState<Role>("normal"),
     [accounts, setAccounts] = useState<Account[]>([]),
@@ -893,6 +910,7 @@ export default function AssetManagerApp() {
     [performanceView, setPerformanceView] = useState<
       "weekly" | "monthly" | "ytd"
     >("weekly"),
+    [performanceModule, setPerformanceModule] = useState("all"),
     [historicalPerformance, setHistoricalPerformance] = useState<
       { date: string; invested: number; current: number; type: string }[]
     >([]),
@@ -1430,6 +1448,10 @@ export default function AssetManagerApp() {
       accountMap = new Map<
         string,
         { account_name: string; invested: number; current: number }
+      >(),
+      moduleMap = new Map<
+        string,
+        { module_key: string; invested: number; current: number }
       >();
     assetRecords.forEach((record) => {
       const computed = computeLiveRecord(record.module_key, record.data),
@@ -1438,13 +1460,24 @@ export default function AssetManagerApp() {
           account_name: accountName,
           invested: 0,
           current: 0,
+        },
+        moduleTotal = moduleMap.get(record.module_key) || {
+          module_key: record.module_key,
+          invested: 0,
+          current: 0,
         };
       current.invested += num(computed.invested);
       current.current += num(computed.latest);
       accountMap.set(accountName, current);
+      moduleTotal.invested += num(computed.invested);
+      moduleTotal.current += num(computed.latest);
+      moduleMap.set(record.module_key, moduleTotal);
     });
     const accountTotals = [...accountMap.values()].sort((a, b) =>
         a.account_name.localeCompare(b.account_name),
+      ),
+      moduleTotals = [...moduleMap.values()].sort((a, b) =>
+        a.module_key.localeCompare(b.module_key),
       ),
       invested = accountTotals.reduce((sum, item) => sum + item.invested, 0),
       current = accountTotals.reduce((sum, item) => sum + item.current, 0),
@@ -1477,6 +1510,7 @@ export default function AssetManagerApp() {
       if (
         snapshotRef.current === snapshotKey &&
         existing?.data?.account_totals?.length === accountTotals.length &&
+        existing?.data?.module_totals?.length === moduleTotals.length &&
         num(existing?.data?.current) === current &&
         num(existing?.data?.invested) === invested
       )
@@ -1492,6 +1526,7 @@ export default function AssetManagerApp() {
           current,
           gain: current - invested,
           account_totals: accountTotals,
+          module_totals: moduleTotals,
           record_count: assetRecords.length,
           notes:
             period.type === "weekly"
@@ -3054,7 +3089,10 @@ export default function AssetManagerApp() {
     setHistoryBusy(true);
     try {
       const assetRecords = records.filter(
-          (record) => MODULES[record.module_key]?.kind === "asset",
+          (record) =>
+            MODULES[record.module_key]?.kind === "asset" &&
+            (performanceModule === "all" ||
+              record.module_key === performanceModule),
         ),
         marketHoldings: any[] = [],
         manualValue = assetRecords.reduce((sum, record) => {
@@ -3097,6 +3135,10 @@ export default function AssetManagerApp() {
           ),
         ),
       );
+      if (!totalsByDate.size) {
+        totalsByDate.set(performanceFrom, 0);
+        totalsByDate.set(performanceTo, 0);
+      }
       const daily = [...totalsByDate.entries()]
         .map(([date, value]) => ({
           date,
@@ -3116,7 +3158,7 @@ export default function AssetManagerApp() {
       });
       setHistoricalPerformance([...grouped.values()]);
       setToast(
-        `Backtracked ${daily.length} market days. Manual and unavailable assets use their recorded value.`,
+        `Backtracked ${daily.length} market days for ${performanceModule === "all" ? "all investments" : MODULES[performanceModule]?.title || performanceModule}. Manual and unavailable assets use their recorded value.`,
       );
     } catch (error: any) {
       setToast(error?.message || "Could not backtrack prices");
@@ -3745,159 +3787,6 @@ export default function AssetManagerApp() {
       </article>
     );
   }
-  function desktopMarketHoldingCard(k: string, x: any, visibleCols: string[]) {
-    const c = x.c || {},
-      isBullion = k === "bullion",
-      title = isBullion
-        ? bullionDisplayName(c)
-        : compactName(String(c.security_name || "Investment")),
-      broker = String(c.broker || c.account_name || (isBullion ? "MCX" : "Stocks")),
-      quantity = isBullion
-        ? x.records.reduce(
-            (sum: number, record: Rec) =>
-              sum + num(record.data?.quantity || record.data?.qty || record.data?.units),
-            0,
-          )
-        : num(c.adjusted_quantity) ||
-          x.records.reduce(
-            (sum: number, record: Rec) =>
-              sum +
-              (num(computeLiveRecord("stocks", record.data).adjusted_quantity) ||
-                num(record.data?.quantity)),
-            0,
-          ),
-      invested = num(c.invested),
-      total = num(c.latest),
-      overallGain = num(c.gain) || total - invested,
-      todayGain = num(c.today_gain),
-      current = num(
-        isBullion
-          ? c.current_price || c.live_price
-          : c.live_price || c.current_price,
-      ),
-      low = num(c.day_low || c.today_low || c.low),
-      high = num(c.day_high || c.today_high || c.high),
-      weekLow = num(c.fifty_two_week_low),
-      weekHigh = num(c.fifty_two_week_high),
-      move = marketMove(k, c),
-      openHolding = () => {
-        if (x.records.length > 1) {
-          setExpandedLots((previous) => ({
-            ...previous,
-            [x.key]: !previous[x.key],
-          }));
-          return;
-        }
-        setDetail({
-          moduleKey: k,
-          record: x.r,
-          computed: c,
-          cols: visibleCols,
-          linkedProperty: x.r.data?.source_module === "property",
-        });
-      };
-    return (
-      <div className="desktop-market-card-wrap" key={x.key}>
-        <article className="desktop-market-card">
-          <button type="button" className="desktop-market-card-head" onClick={openHolding}>
-            <strong>{title}</strong>
-            <span>
-              {broker} | {x.records.length} lot{x.records.length > 1 ? "s" : ""}
-              {quantity
-                ? ` | Qty ${quantity.toLocaleString("en-IN", {
-                    maximumFractionDigits: 3,
-                  })}`
-                : ""}
-            </span>
-          </button>
-          <div className="desktop-market-pairs">
-            <div className="desktop-market-pair">
-              <span>Invested</span><b>{fmt(invested)}</b>
-              <span>Total</span><b>{fmt(total)}</b>
-            </div>
-            <div className={`desktop-market-pair ${overallGain >= 0 ? "gain-up" : "gain-down"}`}>
-              <span>Overall Gain</span>
-              <b className={overallGain >= 0 ? "text-emerald-700" : "text-red-700"}>
-                {fmt(overallGain)}
-              </b>
-              <span>Today Gain</span>
-              <b className={todayGain >= 0 ? "text-emerald-700" : "text-red-700"}>
-                {fmt(todayGain)}
-              </b>
-            </div>
-          </div>
-          <div className="desktop-market-prices">
-            <button
-              type="button"
-              className={move > 0 ? "price-up" : move < 0 ? "price-down" : "price-neutral"}
-              onClick={openHolding}
-            >
-              <span>Current</span><b>{current ? fmt(current) : "-"}</b>
-            </button>
-            <div className="price-down">
-              <span>Low</span><b>{low ? fmt(low) : "-"}</b>
-              <small>{weekLow ? `52W ${fmt(weekLow)}` : "52W -"}</small>
-            </div>
-            <div className="price-up">
-              <span>High</span><b>{high ? fmt(high) : "-"}</b>
-              <small>{weekHigh ? `52W ${fmt(weekHigh)}` : "52W -"}</small>
-            </div>
-          </div>
-        </article>
-        {x.records.length > 1 && expandedLots[x.key] && (
-          <div className="desktop-market-lots">
-            <div className="desktop-market-lot-header" aria-hidden="true">
-              <span>Account Name</span>
-              <span>Quantity</span>
-              <span>Purchase Price</span>
-              <span>Purchase Value</span>
-              <span>Current Value</span>
-            </div>
-            {x.records.map((record: Rec, index: number) => {
-              const lot = computeLiveRecord(k, record.data),
-                lotQuantity =
-                  num(lot.adjusted_quantity) ||
-                  num(lot.quantity) ||
-                  num(record.data?.quantity),
-                purchaseValue = num(lot.invested),
-                purchasePrice =
-                  num(lot.inv_price) ||
-                  num(lot.nav) ||
-                  num(record.data?.purchase_unit_price) ||
-                  (lotQuantity ? purchaseValue / lotQuantity : purchaseValue),
-                currentValue = num(lot.latest);
-              return (
-                <button
-                  type="button"
-                  key={record.id}
-                  onClick={() =>
-                    setDetail({
-                      moduleKey: k,
-                      record,
-                      computed: lot,
-                      cols: visibleCols,
-                      linkedProperty: record.data?.source_module === "property",
-                    })
-                  }
-                  aria-label={`Open lot ${index + 1} details`}
-                >
-                  <strong>{String(record.data?.account_name || "Unassigned")}</strong>
-                  <span>
-                    {lotQuantity.toLocaleString("en-IN", {
-                      maximumFractionDigits: 3,
-                    })}
-                  </span>
-                  <b>{purchasePrice ? fmt(purchasePrice) : "-"}</b>
-                  <b>{purchaseValue ? fmt(purchaseValue) : "-"}</b>
-                  <b>{currentValue ? fmt(currentValue) : "-"}</b>
-                </button>
-              );
-            })}
-          </div>
-        )}
-      </div>
-    );
-  }
   function phoneMarketValue(x: any) {
     const price = num(x.price);
     if (!x.ok && !price) return "Loading";
@@ -4355,6 +4244,136 @@ export default function AssetManagerApp() {
         )}
       </div>
     );
+  }
+  function stockRangeBox(value: any, tone: "dayLow" | "dayHigh" | "rangeLow" | "rangeHigh") {
+    const v = num(value);
+    if (!v)
+      return (
+        <div className="stock-range-box border-gray-200 bg-gray-50 text-gray-400">
+          -
+        </div>
+      );
+    const cls =
+      tone === "dayLow"
+        ? "border-amber-300 bg-amber-50 text-amber-950"
+        : tone === "dayHigh"
+          ? "border-emerald-300 bg-emerald-50 text-emerald-950"
+          : tone === "rangeLow"
+            ? "border-slate-300 bg-slate-50 text-slate-900"
+            : "border-sky-300 bg-sky-50 text-sky-950";
+    return <div className={`stock-range-box ${cls}`}>{fmtPrice(v)}</div>;
+  }
+  const stockHoldingColumns = [
+    "account_name",
+    "security_name",
+    "quantity",
+    "current_purchase",
+    "invested",
+    "latest",
+    "low_range",
+    "high_range",
+    "day_change",
+    "gain_display",
+    "gain_pct",
+    "monthly_gain",
+  ];
+  function stockHoldingLabel(col: string) {
+    const labels: Record<string, React.ReactNode> = {
+      account_name: <>Account Name</>,
+      security_name: <>Security Name</>,
+      quantity: <>Quantity</>,
+      current_purchase: (
+        <>
+          Current Price
+          <br />
+          Purchase Price
+        </>
+      ),
+      invested: <>Invested</>,
+      latest: <>Total Value</>,
+      low_range: (
+        <>
+          Day Low
+          <br />
+          52W Low
+        </>
+      ),
+      high_range: (
+        <>
+          Day High
+          <br />
+          52W High
+        </>
+      ),
+      day_change: <>Increase</>,
+      gain_display: (
+        <>
+          Overall Gain
+          <br />
+          Today's Gain
+        </>
+      ),
+      gain_pct: <>Gain %</>,
+      monthly_gain: <>Monthly Gain</>,
+    };
+    return labels[col] || pretty(col);
+  }
+  function stockHoldingSortValue(col: string, c: any) {
+    if (col === "current_purchase") return num(c.live_price);
+    if (col === "low_range") return num(c.day_low);
+    if (col === "high_range") return num(c.day_high);
+    if (col === "gain_display") return num(c.gain);
+    if (col === "monthly_gain") return num(c.monthly_gain);
+    if (["account_name", "security_name"].includes(col))
+      return String(c[col] || "").toLowerCase();
+    return num(c[col]);
+  }
+  function stockHoldingCell(col: string, c: any, record?: Rec) {
+    if (col === "current_purchase")
+      return (
+        <div className="grid justify-items-end gap-1 tabular-nums">
+          <div>{formatModuleCell("stocks", "live_price", c, record)}</div>
+          <div className="text-[10px] font-semibold text-gray-500">
+            Purchase {num(c.inv_price) ? fmtPrice(c.inv_price) : "-"}
+          </div>
+        </div>
+      );
+    if (col === "low_range")
+      return (
+        <div className="grid gap-1">
+          {stockRangeBox(c.day_low, "dayLow")}
+          <div className="text-[10px] font-semibold text-gray-500">
+            52W {num(c.fifty_two_week_low) ? fmtPrice(c.fifty_two_week_low) : "-"}
+          </div>
+        </div>
+      );
+    if (col === "high_range")
+      return (
+        <div className="grid gap-1">
+          {stockRangeBox(c.day_high, "dayHigh")}
+          <div className="text-[10px] font-semibold text-gray-500">
+            52W {num(c.fifty_two_week_high) ? fmtPrice(c.fifty_two_week_high) : "-"}
+          </div>
+        </div>
+      );
+    if (col === "gain_display")
+      return (
+        <div className="grid justify-items-end gap-1 tabular-nums">
+          <div className={num(c.gain) >= 0 ? "text-emerald-700 font-semibold" : "text-red-600 font-semibold"}>
+            {fmt(c.gain)}
+          </div>
+          <div className="text-[10px] font-semibold text-gray-500">
+            {num(c.today_gain) >= 0 ? "+" : ""}{fmt(c.today_gain)}
+          </div>
+        </div>
+      );
+    if (col === "monthly_gain")
+      return (
+        <div className={num(c.monthly_gain) >= 0 ? "text-emerald-700 font-semibold" : "text-red-600 font-semibold"}>
+          {num(c.monthly_gain) >= 0 ? "+" : ""}{fmt(c.monthly_gain)}
+        </div>
+      );
+    return formatModuleCell("stocks", col, c, record);
   }
   if (loading)
     return (
@@ -7655,12 +7674,15 @@ export default function AssetManagerApp() {
         invested = num(c.invested),
         latest = livePrice && qty ? qty * livePrice : num(c.latest);
       if (livePrice && qty) {
+        const monthStartPrice = num(d.month_start_price || d.month_open_price),
+          monthlyGain = monthStartPrice && qty ? (livePrice - monthStartPrice) * qty : 0;
         Object.assign(c, {
           latest_value: latest,
           latest,
           today_gain: qty * dayChange,
           gain: latest - invested,
           gain_pct: invested ? ((latest - invested) / invested) * 100 : 0,
+          monthly_gain: monthlyGain,
         });
       }
     }
@@ -8363,12 +8385,29 @@ export default function AssetManagerApp() {
     );
   }
   function portfolioPerformancePanel() {
-    const accountMap = new Map<
+    const investmentTypes = Object.entries(MODULES)
+        .filter(
+          ([moduleKey, module]) =>
+            module.kind === "asset" &&
+            records.some((record) => record.module_key === moduleKey),
+        )
+        .map(([moduleKey, module]) => ({
+          key: moduleKey,
+          title: module.title,
+        })),
+      selectedInvestmentTitle =
+        performanceModule === "all"
+          ? "All Investments"
+          : MODULES[performanceModule]?.title || "Selected Investment",
+      accountMap = new Map<
         string,
         { account: string; invested: number; current: number }
       >(),
       assetRecords = records.filter(
-        (record) => MODULES[record.module_key]?.kind === "asset",
+        (record) =>
+          MODULES[record.module_key]?.kind === "asset" &&
+          (performanceModule === "all" ||
+            record.module_key === performanceModule),
       );
     assetRecords.forEach((record) => {
       const c = computeLiveRecord(record.module_key, record.data),
@@ -8396,15 +8435,27 @@ export default function AssetManagerApp() {
         .filter(
           (record) =>
             record.module_key === INVESTMENT_PERIOD_SNAPSHOT_MODULE &&
-            ["weekly", "monthly"].includes(record.data?.snapshot_type),
+            ["weekly", "monthly"].includes(record.data?.snapshot_type) &&
+            (performanceModule === "all" ||
+              record.data?.module_totals?.some(
+                (item: any) => item.module_key === performanceModule,
+              )),
         )
-        .map((record) => ({
-          date: String(record.data?.snapshot_date || "").slice(0, 10),
-          periodKey: String(record.data?.period_key || ""),
-          type: String(record.data?.snapshot_type || ""),
-          invested: num(record.data?.invested),
-          current: num(record.data?.current),
-        }))
+        .map((record) => {
+          const moduleTotal =
+            performanceModule === "all"
+              ? null
+              : record.data?.module_totals?.find(
+                  (item: any) => item.module_key === performanceModule,
+                );
+          return {
+            date: String(record.data?.snapshot_date || "").slice(0, 10),
+            periodKey: String(record.data?.period_key || ""),
+            type: String(record.data?.snapshot_type || ""),
+            invested: num(moduleTotal?.invested ?? record.data?.invested),
+            current: num(moduleTotal?.current ?? record.data?.current),
+          };
+        })
         .filter(
           (point) =>
             point.date &&
@@ -8415,13 +8466,19 @@ export default function AssetManagerApp() {
               : point.type === "monthly"),
         )
         .sort((a, b) => a.date.localeCompare(b.date)),
-      points = historicalPerformance.length
+      basePoints = historicalPerformance.length
         ? historicalPerformance.filter(
             (point) => point.date >= rangeFrom && point.date <= performanceTo,
           )
-        : savedPoints.length
-          ? savedPoints
-          : [currentPoint],
+        : savedPoints,
+      pointMap = new Map(
+        basePoints.map((point) => [point.date, point]),
+      );
+    if (today >= rangeFrom && today <= performanceTo)
+      pointMap.set(today, currentPoint);
+    const points = [...pointMap.values()].sort((a, b) =>
+        a.date.localeCompare(b.date),
+      ),
       values = points.flatMap((point) => [point.invested, point.current]),
       minValue = Math.min(...values, 0),
       maxValue = Math.max(...values, 1),
@@ -8430,28 +8487,63 @@ export default function AssetManagerApp() {
       chartMax = maxValue + padding,
       chartSpan = Math.max(1, chartMax - chartMin),
       width = 900,
-      height = 260,
+      height = 280,
+      plotLeft = 82,
+      plotRight = 18,
+      plotTop = 24,
+      plotBottom = 24,
+      plotWidth = width - plotLeft - plotRight,
+      plotHeight = height - plotTop - plotBottom,
       x = (index: number) =>
-        points.length <= 1 ? width / 2 : (index / (points.length - 1)) * width,
+        points.length <= 1
+          ? plotLeft + plotWidth / 2
+          : plotLeft + (index / (points.length - 1)) * plotWidth,
       y = (value: number) =>
-        height - ((value - chartMin) / chartSpan) * height,
+        plotTop +
+        plotHeight -
+        ((value - chartMin) / chartSpan) * plotHeight,
+      compactInr = (value: number) => {
+        const absolute = Math.abs(value),
+          sign = value < 0 ? "-" : "";
+        if (absolute >= 10000000)
+          return `${sign}₹${(absolute / 10000000).toFixed(2)}Cr`;
+        if (absolute >= 100000)
+          return `${sign}₹${(absolute / 100000).toFixed(2)}L`;
+        if (absolute >= 1000)
+          return `${sign}₹${(absolute / 1000).toFixed(1)}K`;
+        return `${sign}₹${Math.round(absolute).toLocaleString("en-IN")}`;
+      },
       pathFor = (key: "invested" | "current") =>
-        points
-          .map(
-            (point, index) =>
-              `${index ? "L" : "M"} ${x(index).toFixed(1)} ${y(point[key]).toFixed(1)}`,
-          )
-          .join(" "),
+        points.length === 1
+          ? `M ${plotLeft} ${y(points[0][key]).toFixed(1)} L ${plotLeft + plotWidth} ${y(points[0][key]).toFixed(1)}`
+          : points
+              .map(
+                (point, index) =>
+                  `${index ? "L" : "M"} ${x(index).toFixed(1)} ${y(point[key]).toFixed(1)}`,
+              )
+              .join(" "),
       allPeriodPoints = records
         .filter(
           (record) =>
-            record.module_key === INVESTMENT_PERIOD_SNAPSHOT_MODULE,
+            record.module_key === INVESTMENT_PERIOD_SNAPSHOT_MODULE &&
+            (performanceModule === "all" ||
+              record.data?.module_totals?.some(
+                (item: any) => item.module_key === performanceModule,
+              )),
         )
-        .map((record) => ({
-          type: String(record.data?.snapshot_type || ""),
-          date: String(record.data?.snapshot_date || ""),
-          current: num(record.data?.current),
-        }))
+        .map((record) => {
+          const moduleTotal =
+            performanceModule === "all"
+              ? null
+              : record.data?.module_totals?.find(
+                  (item: any) => item.module_key === performanceModule,
+                );
+          return {
+            type: String(record.data?.snapshot_type || ""),
+            date: String(record.data?.snapshot_date || ""),
+            current: num(moduleTotal?.current ?? record.data?.current),
+          };
+        })
         .filter(
           (point) =>
             point.date >= rangeFrom && point.date <= performanceTo,
@@ -8501,11 +8593,14 @@ export default function AssetManagerApp() {
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
             <h3 className="text-xl font-semibold tracking-tight">
-              Overall Investment Performance
+              {selectedInvestmentTitle} Performance
             </h3>
             <p className="mt-1 text-sm text-gray-600">
-              Combined account portfolio. Weekly closes save Friday-Sunday;
-              monthly closes save on the final calendar day.
+              {performanceModule === "all"
+                ? "Combined account portfolio."
+                : `${selectedInvestmentTitle} across all accounts.`}{" "}
+              Weekly closes save Friday-Sunday; monthly closes save on the final
+              calendar day.
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -8526,7 +8621,25 @@ export default function AssetManagerApp() {
             </label>
           </div>
         </div>
-        <div className="mt-4 grid grid-cols-[1fr_1fr_1.2fr_auto] gap-3 rounded-2xl border border-[#e3dccc] bg-[#fffaf0] p-3 max-lg:grid-cols-2 max-md:grid-cols-1">
+        <div className="mt-4 grid grid-cols-[1.1fr_1fr_1fr_1.2fr_auto] gap-3 rounded-2xl border border-[#e3dccc] bg-[#fffaf0] p-3 max-xl:grid-cols-3 max-lg:grid-cols-2 max-md:grid-cols-1">
+          <div>
+            <label className="field-label">Investment Type</label>
+            <select
+              className="field-input"
+              value={performanceModule}
+              onChange={(event) => {
+                setPerformanceModule(event.target.value);
+                setHistoricalPerformance([]);
+              }}
+            >
+              <option value="all">All Investments</option>
+              {investmentTypes.map((investmentType) => (
+                <option key={investmentType.key} value={investmentType.key}>
+                  {investmentType.title}
+                </option>
+              ))}
+            </select>
+          </div>
           <div>
             <label className="field-label">From</label>
             <input
@@ -8611,19 +8724,34 @@ export default function AssetManagerApp() {
               viewBox={`0 0 ${width} ${height}`}
               className="h-64 w-full overflow-visible"
               role="img"
-              aria-label="Overall investment performance graph"
+                aria-label={`${selectedInvestmentTitle} performance graph`}
             >
-              {[0, 0.25, 0.5, 0.75, 1].map((ratio) => (
-                <line
-                  key={ratio}
-                  x1="0"
-                  x2={width}
-                  y1={height * ratio}
-                  y2={height * ratio}
-                  stroke="#e9e2d6"
-                  strokeWidth="1"
-                />
-              ))}
+              {[0, 0.25, 0.5, 0.75, 1].map((ratio) => {
+                const gridY = plotTop + plotHeight * ratio,
+                  gridValue = chartMax - chartSpan * ratio;
+                return (
+                  <g key={ratio}>
+                    <line
+                      x1={plotLeft}
+                      x2={plotLeft + plotWidth}
+                      y1={gridY}
+                      y2={gridY}
+                      stroke="#e9e2d6"
+                      strokeWidth="1"
+                    />
+                    <text
+                      x={plotLeft - 8}
+                      y={gridY + 4}
+                      textAnchor="end"
+                      fill="#6b7280"
+                      fontSize="11"
+                      fontWeight="600"
+                    >
+                      {compactInr(gridValue)}
+                    </text>
+                  </g>
+                );
+              })}
               <path
                 d={pathFor("invested")}
                 fill="none"
@@ -8640,19 +8768,59 @@ export default function AssetManagerApp() {
                 strokeLinecap="round"
                 strokeLinejoin="round"
               />
-              {points.map((point, index) => (
-                <circle
-                  key={`${point.date}-${index}`}
-                  cx={x(index)}
-                  cy={y(point.current)}
-                  r="5"
-                  fill="#115c45"
-                >
-                  <title>
-                    {point.date} {point.type}: {fmt(point.current)}
-                  </title>
-                </circle>
-              ))}
+              {points.map((point, index) => {
+                const pointX = x(index),
+                  currentY = y(point.current),
+                  investedY = y(point.invested),
+                  currentLabelY =
+                    currentY - 10 < plotTop ? currentY + 18 : currentY - 10,
+                  investedLabelY =
+                    investedY + 18 > plotTop + plotHeight
+                      ? investedY - 10
+                      : investedY + 18;
+                return (
+                  <g key={`${point.date}-${index}`}>
+                    <circle cx={pointX} cy={currentY} r="5" fill="#115c45">
+                      <title>
+                        {point.date} {point.type} current value:{" "}
+                        {fmt(point.current)}
+                      </title>
+                    </circle>
+                    <text
+                      x={pointX}
+                      y={currentLabelY}
+                      textAnchor="middle"
+                      fill="#115c45"
+                      fontSize="10"
+                      fontWeight="700"
+                      paintOrder="stroke"
+                      stroke="white"
+                      strokeWidth="3"
+                    >
+                      {compactInr(point.current)}
+                    </text>
+                    <circle cx={pointX} cy={investedY} r="4" fill="#c69632">
+                      <title>
+                        {point.date} {point.type} cost basis:{" "}
+                        {fmt(point.invested)}
+                      </title>
+                    </circle>
+                    <text
+                      x={pointX}
+                      y={investedLabelY}
+                      textAnchor="middle"
+                      fill="#8b6a28"
+                      fontSize="10"
+                      fontWeight="700"
+                      paintOrder="stroke"
+                      stroke="white"
+                      strokeWidth="3"
+                    >
+                      {compactInr(point.invested)}
+                    </text>
+                  </g>
+                );
+              })}
             </svg>
             <div className="mt-1 flex justify-between text-xs font-semibold text-gray-500">
               <span>{points[0]?.date || today}</span>
@@ -8660,8 +8828,18 @@ export default function AssetManagerApp() {
             </div>
         </div>
         <div className="mt-4 grid grid-cols-5 gap-3 max-xl:grid-cols-3 max-md:grid-cols-1">
-          {kpi("Total Cost", fmt(currentPoint.invested), "text-[#17382b]", "All accounts")}
-          {kpi("Current Value", fmt(currentPoint.current), "text-emerald-700", "All accounts")}
+          {kpi(
+            "Total Cost",
+            fmt(currentPoint.invested),
+            "text-[#17382b]",
+            `${selectedInvestmentTitle} | All accounts`,
+          )}
+          {kpi(
+            "Current Value",
+            fmt(currentPoint.current),
+            "text-emerald-700",
+            `${selectedInvestmentTitle} | All accounts`,
+          )}
           {periodKpi("Week on Week", weekMove, weekPct, "Last two saved weekly closes")}
           {periodKpi("Month on Month", monthMove, monthPct, "Last two saved month-end closes")}
           {kpi(
@@ -9372,6 +9550,10 @@ export default function AssetManagerApp() {
             match = findStock(d.security_name || d.ticker_symbol || ""),
             qty = num(d.quantity) || 1,
             live = num(d.current_price || d.live_price),
+            dayLow = num(d.day_low),
+            dayHigh = num(d.day_high),
+            weekLow = num(d.fifty_two_week_low),
+            weekHigh = num(d.fifty_two_week_high),
             change = num(d.day_change),
             base = num(d.base_price || d.inv_price || d.target_price),
             latest = live * qty,
@@ -9392,6 +9574,10 @@ export default function AssetManagerApp() {
             d,
             qty,
             live,
+            dayLow,
+            dayHigh,
+            weekLow,
+            weekHigh,
             change,
             base,
             baseDate,
@@ -9417,7 +9603,16 @@ export default function AssetManagerApp() {
             .toLowerCase()
             .includes(q),
         )
-        .sort((a, b) => a.name.localeCompare(b.name));
+        .sort((a, b) => {
+          const key = watchlistSort.key,
+            left = key === "name" ? a.name.toLowerCase() : a[key],
+            right = key === "name" ? b.name.toLowerCase() : b[key],
+            comparison =
+              typeof left === "string"
+                ? left.localeCompare(String(right))
+                : num(left) - num(right);
+          return watchlistSort.direction === "asc" ? comparison : -comparison;
+        });
     const total = rows.reduce(
       (a, x) => ({
         invested: a.invested + x.invested,
@@ -9427,6 +9622,53 @@ export default function AssetManagerApp() {
       }),
       { invested: 0, latest: 0, day: 0, overall: 0 },
     );
+    const sortableHeader = (
+      key: typeof watchlistSort.key,
+      label: React.ReactNode,
+      align: "left" | "right" = "right",
+    ) => {
+      const active = watchlistSort.key === key;
+      return (
+        <th
+          className={`p-3 ${align === "right" ? "text-right" : "text-left"}`}
+          aria-sort={
+            active
+              ? watchlistSort.direction === "asc"
+                ? "ascending"
+                : "descending"
+              : undefined
+          }
+        >
+          <button
+            type="button"
+            className={`inline-flex w-full items-center gap-1.5 text-inherit ${
+              align === "right" ? "justify-end text-right" : "justify-start text-left"
+            }`}
+            onClick={() =>
+              setWatchlistSort((previous) => ({
+                key,
+                direction:
+                  previous.key === key && previous.direction === "asc"
+                    ? "desc"
+                    : "asc",
+              }))
+            }
+            title={`Sort by ${typeof label === "string" ? label : key}`}
+          >
+            <span>{label}</span>
+            {active ? (
+              watchlistSort.direction === "asc" ? (
+                <ArrowUp size={13} aria-hidden="true" />
+              ) : (
+                <ArrowDown size={13} aria-hidden="true" />
+              )
+            ) : (
+              <ArrowUpDown size={13} className="opacity-45" aria-hidden="true" />
+            )}
+          </button>
+        </th>
+      );
+    };
     return (
       <section className="rounded-[26px] border border-[#ded6c4] bg-white/90 p-5 shadow-[0_14px_34px_rgba(15,23,42,0.05)]">
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
@@ -9482,30 +9724,65 @@ export default function AssetManagerApp() {
         </div>
         {rows.length ? (
           <div className="overflow-auto rounded-2xl border border-[#9bb4d8] bg-white">
-            <table className="w-full min-w-[1220px] border-collapse text-sm">
+            <table className="w-full min-w-[1380px] border-collapse text-sm">
               <thead className="bg-[#eaf0f7] text-left text-black">
                 <tr>
-                  <th className="p-3">
-                    Company
-                    <br />
-                    Sector
-                  </th>
-                  <th className="p-3 text-right">Current Price</th>
-                  <th className="p-3 text-right">Change</th>
-                  <th className="p-3 text-right">
-                    Added Price
-                    <br />
-                    Date Added
-                  </th>
-                  <th className="p-3 text-right">
-                    Day's Gain
-                    <br />% Change
-                  </th>
-                  <th className="p-3 text-right">
-                    Overall Gain
-                    <br />% Change
-                  </th>
-                  <th className="p-3 text-right">Added Value</th>
+                  {sortableHeader(
+                    "name",
+                    <>
+                      Company
+                      <br />
+                      Sector
+                    </>,
+                    "left",
+                  )}
+                  {sortableHeader(
+                    "live",
+                    <>
+                      Current Price
+                      <br />
+                      Added Value
+                    </>,
+                  )}
+                  {sortableHeader(
+                    "dayLow",
+                    <>
+                      Day Low
+                      <br />
+                      52W Low
+                    </>,
+                  )}
+                  {sortableHeader(
+                    "dayHigh",
+                    <>
+                      Day High
+                      <br />
+                      52W High
+                    </>,
+                  )}
+                  {sortableHeader("change", "Change")}
+                  {sortableHeader(
+                    "base",
+                    <>
+                      Added Price
+                      <br />
+                      Date Added
+                    </>,
+                  )}
+                  {sortableHeader(
+                    "dayGain",
+                    <>
+                      Day's Gain
+                      <br />% Change
+                    </>,
+                  )}
+                  {sortableHeader(
+                    "overall",
+                    <>
+                      Overall Gain
+                      <br />% Change
+                    </>,
+                  )}
                   <th className="p-3">Transaction</th>
                 </tr>
               </thead>
@@ -9580,7 +9857,26 @@ export default function AssetManagerApp() {
                         </span>
                       </td>
                       <td className="p-3 text-right tabular-nums">
-                        {x.live ? x.live.toFixed(2) : ""}
+                        <div>{x.live ? fmtPrice(x.live) : "-"}</div>
+                        <div className="mt-1 text-xs font-semibold text-gray-500">
+                          Added {fmt(x.invested)}
+                        </div>
+                      </td>
+                      <td className="p-3 text-right tabular-nums">
+                        <div className="font-semibold text-red-700">
+                          {x.dayLow ? fmtPrice(x.dayLow) : "-"}
+                        </div>
+                        <div className="mt-1 text-xs font-semibold text-gray-500">
+                          52W {x.weekLow ? fmtPrice(x.weekLow) : "-"}
+                        </div>
+                      </td>
+                      <td className="p-3 text-right tabular-nums">
+                        <div className="font-semibold text-emerald-700">
+                          {x.dayHigh ? fmtPrice(x.dayHigh) : "-"}
+                        </div>
+                        <div className="mt-1 text-xs font-semibold text-gray-500">
+                          52W {x.weekHigh ? fmtPrice(x.weekHigh) : "-"}
+                        </div>
                       </td>
                       <td
                         className={`p-3 text-right tabular-nums ${x.change >= 0 ? "text-green-700" : "text-red-700"}`}
@@ -9628,9 +9924,6 @@ export default function AssetManagerApp() {
                           )}
                         </div>
                         <div>{movementValue(x.overallPct, pct(x.overallPct))}</div>
-                      </td>
-                      <td className="p-3 text-right tabular-nums">
-                        {Math.round(x.invested).toLocaleString("en-IN")}
                       </td>
                       <td className="p-3">
                         <button
@@ -9825,40 +10118,50 @@ export default function AssetManagerApp() {
     return (
       <div className="space-y-5">
         {dashboardTabs()}
-        <div className="grid grid-cols-5 gap-4 max-2xl:grid-cols-3 max-xl:grid-cols-2 max-md:grid-cols-1">
-          {kpi(
-            "Invested",
-            fmt(totals.invested),
-            "text-[#17382b]",
-            "Portfolio cost basis",
-          )}
-          {kpi(
-            "Today Gain",
-            fmt(todayGain),
-            todayGain >= 0 ? "text-emerald-700" : "text-red-700",
-            "Calculated from investment rows",
-          )}
-          {kpi(
-            "Monthly Gain",
-            fmt(monthlyGain),
-            monthlyGain >= 0 ? "text-emerald-700" : "text-red-700",
-            "Saved, month-start, this-month, or accrual estimate",
-          )}
-          {kpi(
-            "Yrly Gain",
-            fmt(yearlyGain),
-            yearlyGain >= 0 ? "text-emerald-700" : "text-red-700",
-            "Current value - invested",
-          )}
-          {kpi(
-            "Current Net Worth",
-            fmt(totals.net),
-            totals.net >= 0 ? "text-emerald-700" : "text-red-700",
-            "Assets incl. Insurance - Loans incl. linked Property - Borrowings",
-          )}
-        </div>
-        {portfolioPerformancePanel()}
+        <section className="overflow-hidden rounded-2xl border border-[#ded6c4] bg-white/90 shadow-[0_8px_22px_rgba(15,23,42,0.04)]">
+          <div className="grid grid-cols-5 divide-x divide-[#e7ebdf] max-lg:grid-cols-2 max-lg:divide-x-0 max-md:grid-cols-1">
+            {[
+              ["Invested", totals.invested, "text-[#17382b]"],
+              [
+                "Today Gain",
+                todayGain,
+                todayGain >= 0 ? "text-emerald-700" : "text-red-700",
+              ],
+              [
+                "Monthly Gain",
+                monthlyGain,
+                monthlyGain >= 0 ? "text-emerald-700" : "text-red-700",
+              ],
+              [
+                "Yearly Gain",
+                yearlyGain,
+                yearlyGain >= 0 ? "text-emerald-700" : "text-red-700",
+              ],
+              [
+                "Current Net Worth",
+                totals.net,
+                totals.net >= 0 ? "text-emerald-700" : "text-red-700",
+              ],
+            ].map(([label, value, color]) => (
+              <div
+                key={String(label)}
+                className="min-w-0 px-4 py-3 max-lg:border-b max-lg:border-[#e7ebdf]"
+              >
+                <div className="text-[10px] font-semibold uppercase tracking-[.14em] text-gray-500">
+                  {label}
+                </div>
+                <div
+                  className={`mt-1 truncate text-lg font-semibold tabular-nums ${color}`}
+                  title={fmt(value)}
+                >
+                  {fmt(value)}
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
         {portfolioSummaryTable()}
+        {portfolioPerformancePanel()}
       </div>
     );
   }
@@ -11394,21 +11697,17 @@ export default function AssetManagerApp() {
     );
   }
   function stockColWidth(col: string) {
-    if (col === "account_name") return "58px";
-    if (col === "security_name") return "108px";
-    if (col === "quantity") return "44px";
-    if (col === "inv_price") return "76px";
-    if (col === "live_price") return "82px";
-    if (col === "day_change") return "76px";
-    if (
-      ["day_low", "day_high", "fifty_two_week_low", "fifty_two_week_high"].includes(
-        col,
-      )
-    )
-      return "82px";
+    if (col === "account_name") return "72px";
+    if (col === "security_name") return "132px";
+    if (col === "quantity") return "58px";
+    if (col === "current_purchase") return "108px";
+    if (["low_range", "high_range"].includes(col)) return "102px";
+    if (col === "day_change") return "82px";
     if (col === "gain_pct") return "64px";
-    if (["invested", "latest"].includes(col)) return "82px";
-    if (col === "gain") return "86px";
+    if (col === "gain_display") return "102px";
+    if (col === "monthly_gain") return "88px";
+    if (["invested", "latest"].includes(col)) return "94px";
+    if (col === "gain") return "94px";
     return "74px";
   }
   function stockCellClass(moduleKey: string, col: string) {
@@ -11464,24 +11763,6 @@ export default function AssetManagerApp() {
         {fmtPrice(v)}
       </span>
     );
-  }
-  function stockRangeBox(value: any, tone: "dayLow" | "dayHigh" | "rangeLow" | "rangeHigh") {
-    const v = num(value);
-    if (!v)
-      return (
-        <div className="stock-range-box border-gray-200 bg-gray-50 text-gray-400">
-          -
-        </div>
-      );
-    const cls =
-      tone === "dayLow"
-        ? "border-amber-300 bg-amber-50 text-amber-950"
-        : tone === "dayHigh"
-          ? "border-emerald-300 bg-emerald-50 text-emerald-950"
-          : tone === "rangeLow"
-            ? "border-slate-300 bg-slate-50 text-slate-900"
-            : "border-sky-300 bg-sky-50 text-sky-950";
-    return <div className={`stock-range-box ${cls}`}>{fmtPrice(v)}</div>;
   }
   function formatModuleCell(moduleKey: string, col: string, c: any, record?: Rec) {
     if (moduleKey === "stocks" && col === "security_name") {
@@ -11670,9 +11951,23 @@ export default function AssetManagerApp() {
               };
             })()
           : rawTabTotals,
-      rows = grouped.filter((x) =>
+      matchedRows = grouped.filter((x) =>
         JSON.stringify(x.c).toLowerCase().includes(query.toLowerCase()),
       ),
+      rows =
+        k === "stocks"
+          ? [...matchedRows].sort((a, b) => {
+              const left = stockHoldingSortValue(stockHoldingsSort.key, a.c),
+                right = stockHoldingSortValue(stockHoldingsSort.key, b.c),
+                comparison =
+                  typeof left === "string"
+                    ? left.localeCompare(String(right))
+                    : num(left) - num(right);
+              return stockHoldingsSort.direction === "asc"
+                ? comparison
+                : -comparison;
+            })
+          : matchedRows,
       isInvestment = [
         "stocks",
         "mutualFunds",
@@ -11711,7 +12006,7 @@ export default function AssetManagerApp() {
             )
           : filtered.reduce((s, r) => s + todayGainFor(k, r), 0)
         : 0;
-    const visibleCols =
+    const detailCols =
       k === "stocks"
         ? def.cols.filter(
             (c) =>
@@ -11729,7 +12024,8 @@ export default function AssetManagerApp() {
           )
         : k === "bullion"
         ? def.cols.filter((c) => c !== "last_synced")
-        : def.cols;
+        : def.cols,
+      visibleCols = k === "stocks" ? stockHoldingColumns : detailCols;
     const lastSynced =
       filtered
         .map((r) => String(r.data?.last_synced || ""))
@@ -11751,7 +12047,7 @@ export default function AssetManagerApp() {
                 moduleKey: k,
                 record: lot,
                 computed: c,
-                cols: visibleCols,
+                cols: detailCols,
                 linkedProperty,
               });
             }}
@@ -11771,8 +12067,10 @@ export default function AssetManagerApp() {
               {lot.data?.account_name || `Lot ${i + 1}`}
             </td>
             {visibleCols.slice(1).map((col) => (
-              <td className="p-3" key={col}>
-                {formatModuleCell(k, col, c, lot)}
+              <td className={`p-3 ${stockCellClass(k, col)}`} key={col}>
+                {k === "stocks"
+                  ? stockHoldingCell(col, c, lot)
+                  : formatModuleCell(k, col, c, lot)}
               </td>
             ))}
             <td className="p-3 text-right">
@@ -11784,7 +12082,7 @@ export default function AssetManagerApp() {
                     moduleKey: k,
                     record: lot,
                     computed: c,
-                    cols: visibleCols,
+                    cols: detailCols,
                     linkedProperty,
                   });
                 }}
@@ -12076,11 +12374,7 @@ export default function AssetManagerApp() {
             </div>
           </div>
         )}
-        {rows.length && ["stocks", "bullion"].includes(k) ? (
-          <div className="desktop-market-card-grid">
-            {rows.map((row) => desktopMarketHoldingCard(k, row, visibleCols))}
-          </div>
-        ) : rows.length ? (
+        {rows.length ? (
           <div
             className={`overflow-auto rounded-[22px] border border-[#ded6c4] bg-white shadow-[0_10px_30px_rgba(15,23,42,0.04)] investment-table ${k === "stocks" ? "stock-holdings-table" : ""} ${k === "bullion" ? "bullion-holdings-table" : ""} ${k === "fixedIncome" ? "fixed-income-table" : ""}`}
           >
@@ -12148,11 +12442,60 @@ export default function AssetManagerApp() {
               )}
               <thead className="bg-[#f5efe3] text-left text-xs uppercase tracking-widest">
                 <tr>
-                  {visibleCols.map((c) => (
-                    <th className={`p-3 ${stockCellClass(k, c)}`} key={c}>
-                      {fieldLabel(k, c)}
-                    </th>
-                  ))}
+                  {visibleCols.map((c) => {
+                    const active = stockHoldingsSort.key === c;
+                    return (
+                      <th
+                        className={`p-3 ${stockCellClass(k, c)}`}
+                        key={c}
+                        aria-sort={
+                          k === "stocks" && active
+                            ? stockHoldingsSort.direction === "asc"
+                              ? "ascending"
+                              : "descending"
+                            : undefined
+                        }
+                      >
+                        {k === "stocks" ? (
+                          <button
+                            type="button"
+                            className={`inline-flex w-full items-center gap-1 text-inherit ${
+                              ["account_name", "security_name"].includes(c)
+                                ? "justify-start text-left"
+                                : "justify-end text-right"
+                            }`}
+                            onClick={() =>
+                              setStockHoldingsSort((previous) => ({
+                                key: c,
+                                direction:
+                                  previous.key === c &&
+                                  previous.direction === "asc"
+                                    ? "desc"
+                                    : "asc",
+                              }))
+                            }
+                          >
+                            <span>{stockHoldingLabel(c)}</span>
+                            {active ? (
+                              stockHoldingsSort.direction === "asc" ? (
+                                <ArrowUp size={12} aria-hidden="true" />
+                              ) : (
+                                <ArrowDown size={12} aria-hidden="true" />
+                              )
+                            ) : (
+                              <ArrowUpDown
+                                size={12}
+                                className="opacity-45"
+                                aria-hidden="true"
+                              />
+                            )}
+                          </button>
+                        ) : (
+                          fieldLabel(k, c)
+                        )}
+                      </th>
+                    );
+                  })}
                   <th className={k === "stocks" ? "text-right" : ""}>
                     Transaction
                   </th>
@@ -12172,7 +12515,7 @@ export default function AssetManagerApp() {
                           moduleKey: k,
                           record: r,
                           computed: c,
-                          cols: visibleCols,
+                          cols: detailCols,
                           linkedProperty: r.data?.source_module === "property",
                         });
                       }}
@@ -12181,7 +12524,9 @@ export default function AssetManagerApp() {
                     >
                       {visibleCols.map((col) => (
                         <td className={`p-3 ${stockCellClass(k, col)}`} key={col}>
-                          {formatModuleCell(k, col, c, r)}
+                          {k === "stocks"
+                            ? stockHoldingCell(col, c, r)
+                            : formatModuleCell(k, col, c, r)}
                         </td>
                       ))}
                       <td className="space-x-2 p-3 text-right">
@@ -12194,7 +12539,7 @@ export default function AssetManagerApp() {
                                 moduleKey: k,
                                 record: r,
                                 computed: c,
-                                cols: visibleCols,
+                                cols: detailCols,
                                 linkedProperty:
                                   r.data?.source_module === "property",
                               });
