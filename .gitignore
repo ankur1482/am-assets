@@ -8,6 +8,7 @@ pnpm-debug.log*
 # Next / build cache
 .next
 .next-dev
+*.tsbuildinfo
 .vercel
 node_modules
 dist

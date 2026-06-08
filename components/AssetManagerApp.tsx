@@ -4375,6 +4375,118 @@ export default function AssetManagerApp() {
       );
     return formatModuleCell("stocks", col, c, record);
   }
+  const bullionHoldingColumns = [
+    "account_name",
+    "security_name",
+    "quantity",
+    "current_purchase",
+    "invested",
+    "latest",
+    "low_range",
+    "high_range",
+    "day_change",
+    "gain_display",
+    "gain_pct",
+    "monthly_gain",
+  ];
+  function bullionHoldingLabel(col: string) {
+    const labels: Record<string, React.ReactNode> = {
+      account_name: <>Account Name</>,
+      security_name: <>Asset Type</>,
+      quantity: <>Quantity</>,
+      current_purchase: (
+        <>
+          Current Rate
+          <br />
+          Purchase Price
+        </>
+      ),
+      invested: <>Invested</>,
+      latest: <>Total Value</>,
+      low_range: (
+        <>
+          Day Low
+          <br />
+          52W Low
+        </>
+      ),
+      high_range: (
+        <>
+          Day High
+          <br />
+          52W High
+        </>
+      ),
+      day_change: <>Increase</>,
+      gain_display: (
+        <>
+          Overall Gain
+          <br />
+          Today's Gain
+        </>
+      ),
+      gain_pct: <>Gain %</>,
+      monthly_gain: <>Monthly Gain</>,
+    };
+    return labels[col] || pretty(col);
+  }
+  function bullionHoldingSortValue(col: string, c: any) {
+    if (col === "current_purchase") return num(c.live_rate_per_gram);
+    if (col === "low_range") return num(c.day_low);
+    if (col === "high_range") return num(c.day_high);
+    if (col === "gain_display") return num(c.gain);
+    if (col === "monthly_gain") return num(c.monthly_gain);
+    if (["account_name", "security_name"].includes(col))
+      return String(c[col] || "").toLowerCase();
+    return num(c[col]);
+  }
+  function bullionHoldingCell(col: string, c: any, record?: Rec) {
+    if (col === "current_purchase")
+      return (
+        <div className="grid justify-items-end gap-1 tabular-nums">
+          <div>{num(c.live_rate_per_gram) ? fmtPrice(c.live_rate_per_gram) : "-"}</div>
+          <div className="text-[10px] font-semibold text-gray-500">
+            Purchase {num(c.inv_price) ? fmtPrice(c.inv_price) : "-"}
+          </div>
+        </div>
+      );
+    if (col === "low_range")
+      return (
+        <div className="grid gap-1">
+          {stockRangeBox(c.day_low, "dayLow")}
+          <div className="text-[10px] font-semibold text-gray-500">
+            52W {num(c.fifty_two_week_low) ? fmtPrice(c.fifty_two_week_low) : "-"}
+          </div>
+        </div>
+      );
+    if (col === "high_range")
+      return (
+        <div className="grid gap-1">
+          {stockRangeBox(c.day_high, "dayHigh")}
+          <div className="text-[10px] font-semibold text-gray-500">
+            52W {num(c.fifty_two_week_high) ? fmtPrice(c.fifty_two_week_high) : "-"}
+          </div>
+        </div>
+      );
+    if (col === "gain_display")
+      return (
+        <div className="grid justify-items-end gap-1 tabular-nums">
+          <div className={num(c.gain) >= 0 ? "text-emerald-700 font-semibold" : "text-red-600 font-semibold"}>
+            {fmt(c.gain)}
+          </div>
+          <div className="text-[10px] font-semibold text-gray-500">
+            {num(c.today_gain) >= 0 ? "+" : ""}{fmt(c.today_gain)}
+          </div>
+        </div>
+      );
+    if (col === "monthly_gain")
+      return (
+        <div className={num(c.monthly_gain) >= 0 ? "text-emerald-700 font-semibold" : "text-red-600 font-semibold"}>
+          {num(c.monthly_gain) >= 0 ? "+" : ""}{fmt(c.monthly_gain)}
+        </div>
+      );
+    return formatModuleCell("bullion", col, c, record);
+  }
   if (loading)
     return (
       <div className="flex min-h-screen items-center justify-center text-lg font-bold text-sage">
@@ -7718,7 +7830,9 @@ export default function AssetManagerApp() {
       if (rate && num(d.quantity)) {
         const grams = num(d.quantity) * metalUnitFactor(d.unit),
           latest = grams * rate,
-          invested = num(c.invested);
+          invested = num(c.invested),
+          monthStartRate = num(d.month_start_rate || d.month_open_rate),
+          monthlyGain = monthStartRate && grams ? (rate - monthStartRate) * grams : 0;
         Object.assign(c, {
           latest,
           latest_value: latest,
@@ -7726,6 +7840,7 @@ export default function AssetManagerApp() {
           today_gain: grams * changePerGram,
           gain: latest - invested,
           gain_pct: invested ? ((latest - invested) / invested) * 100 : 0,
+          monthly_gain: monthlyGain,
         });
       }
     }
@@ -11967,6 +12082,18 @@ export default function AssetManagerApp() {
                 ? comparison
                 : -comparison;
             })
+          : k === "bullion"
+          ? [...matchedRows].sort((a, b) => {
+              const left = bullionHoldingSortValue(stockHoldingsSort.key, a.c),
+                right = bullionHoldingSortValue(stockHoldingsSort.key, b.c),
+                comparison =
+                  typeof left === "string"
+                    ? left.localeCompare(String(right))
+                    : num(left) - num(right);
+              return stockHoldingsSort.direction === "asc"
+                ? comparison
+                : -comparison;
+            })
           : matchedRows,
       isInvestment = [
         "stocks",
@@ -12025,7 +12152,7 @@ export default function AssetManagerApp() {
         : k === "bullion"
         ? def.cols.filter((c) => c !== "last_synced")
         : def.cols,
-      visibleCols = k === "stocks" ? stockHoldingColumns : detailCols;
+      visibleCols = k === "stocks" ? stockHoldingColumns : k === "bullion" ? bullionHoldingColumns : detailCols;
     const lastSynced =
       filtered
         .map((r) => String(r.data?.last_synced || ""))
@@ -12070,6 +12197,8 @@ export default function AssetManagerApp() {
               <td className={`p-3 ${stockCellClass(k, col)}`} key={col}>
                 {k === "stocks"
                   ? stockHoldingCell(col, c, lot)
+                  : k === "bullion"
+                  ? bullionHoldingCell(col, c, lot)
                   : formatModuleCell(k, col, c, lot)}
               </td>
             ))}
@@ -12449,7 +12578,7 @@ export default function AssetManagerApp() {
                         className={`p-3 ${stockCellClass(k, c)}`}
                         key={c}
                         aria-sort={
-                          k === "stocks" && active
+                          (k === "stocks" || k === "bullion") && active
                             ? stockHoldingsSort.direction === "asc"
                               ? "ascending"
                               : "descending"
@@ -12476,6 +12605,40 @@ export default function AssetManagerApp() {
                             }
                           >
                             <span>{stockHoldingLabel(c)}</span>
+                            {active ? (
+                              stockHoldingsSort.direction === "asc" ? (
+                                <ArrowUp size={12} aria-hidden="true" />
+                              ) : (
+                                <ArrowDown size={12} aria-hidden="true" />
+                              )
+                            ) : (
+                              <ArrowUpDown
+                                size={12}
+                                className="opacity-45"
+                                aria-hidden="true"
+                              />
+                            )}
+                          </button>
+                        ) : k === "bullion" ? (
+                          <button
+                            type="button"
+                            className={`inline-flex w-full items-center gap-1 text-inherit ${
+                              ["account_name", "security_name"].includes(c)
+                                ? "justify-start text-left"
+                                : "justify-end text-right"
+                            }`}
+                            onClick={() =>
+                              setStockHoldingsSort((previous) => ({
+                                key: c,
+                                direction:
+                                  previous.key === c &&
+                                  previous.direction === "asc"
+                                    ? "desc"
+                                    : "asc",
+                              }))
+                            }
+                          >
+                            <span>{bullionHoldingLabel(c)}</span>
                             {active ? (
                               stockHoldingsSort.direction === "asc" ? (
                                 <ArrowUp size={12} aria-hidden="true" />
@@ -12526,6 +12689,8 @@ export default function AssetManagerApp() {
                         <td className={`p-3 ${stockCellClass(k, col)}`} key={col}>
                           {k === "stocks"
                             ? stockHoldingCell(col, c, r)
+                            : k === "bullion"
+                            ? bullionHoldingCell(col, c, r)
                             : formatModuleCell(k, col, c, r)}
                         </td>
                       ))}
