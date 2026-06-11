@@ -1,10 +1,11 @@
 import { NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
-export const revalidate = 0;
 export const runtime = "edge";
 export const preferredRegion = "bom1";
 
+const RESPONSE_CACHE_CONTROL =
+  "public, s-maxage=600, stale-while-revalidate=1800";
 const TROY_OZ_GRAMS = 31.1034768;
 const MCX_MARKET_WATCH_URL =
   "https://www.mcxindia.com/market-data/market-watch";
@@ -609,7 +610,7 @@ export async function GET(request: Request) {
           unit: asset === "gold" ? "10g" : "kg",
           time: new Date().toISOString(),
         },
-        { headers: { "Cache-Control": "no-store, max-age=0" } },
+        { headers: { "Cache-Control": RESPONSE_CACHE_CONTROL } },
       );
     }
     if (asset === "crude") {
@@ -624,7 +625,7 @@ export async function GET(request: Request) {
           provider: "Yahoo Finance WTI crude futures",
           time: new Date().toISOString(),
         },
-        { headers: { "Cache-Control": "no-store, max-age=0" } },
+        { headers: { "Cache-Control": RESPONSE_CACHE_CONTROL } },
       );
     }
 
@@ -644,7 +645,7 @@ export async function GET(request: Request) {
         provider: "Yahoo Finance futures + USDINR",
         time: new Date().toISOString(),
       },
-      { headers: { "Cache-Control": "no-store, max-age=0" } },
+      { headers: { "Cache-Control": RESPONSE_CACHE_CONTROL } },
     );
   } catch (error: any) {
     return NextResponse.json(

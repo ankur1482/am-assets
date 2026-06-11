@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
-export const revalidate = 0;
+
+const RESPONSE_CACHE_CONTROL =
+  "public, s-maxage=900, stale-while-revalidate=3600";
 
 function citySlug(value: string) {
   return value
@@ -103,7 +105,7 @@ export async function GET(request: Request) {
         silverUrl,
         time: new Date().toISOString(),
       },
-      { headers: { "Cache-Control": "no-store, max-age=0" } },
+      { headers: { "Cache-Control": RESPONSE_CACHE_CONTROL } },
     );
   } catch (error: any) {
     return NextResponse.json(

@@ -9,6 +9,8 @@ import {
   Bell,
   BriefcaseBusiness,
   CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
   Eye,
   FileText,
   FileUp,
@@ -155,7 +157,6 @@ type WorkspaceMember = {
 };
 const views = [
   ["dashboard", "DB", "Dashboard"],
-  ["accounts", "AC", "Accounts"],
   ["stocks", "ST", "Stocks"],
   ["mutualFunds", "MF", "Mutual Funds"],
   ["ulips", "UL", "ULIPs"],
@@ -168,13 +169,14 @@ const views = [
   ["loans", "LN", "Loans"],
   ["borrowings", "BR", "Borrowings"],
   ["goals", "GO", "Goals"],
+  ["watchlist", "WL", "Watchlist"],
   ["alerts", "AL", "Alerts"],
   ["purchaseCalculator", "CALC", "Purchase Calculator"],
   ["household", "HH", "Household Access"],
   ["settings", "SET", "Settings"],
 ];
 const groups = [
-  ["Core", ["dashboard", "accounts"]],
+  ["Core", ["dashboard"]],
   [
     "Investments",
     [
@@ -191,7 +193,7 @@ const groups = [
   ],
   ["Liabilities", ["loans", "borrowings"]],
   ["Planning", ["goals"]],
-  ["Utility", ["purchaseCalculator", "alerts", "household", "settings"]],
+  ["Utility", ["watchlist", "purchaseCalculator", "alerts", "household", "settings"]],
   ["Admin", ["admin"]],
 ];
 const allViews = [...views, ["admin", "Admin", "Admin Console"]];
@@ -658,7 +660,7 @@ const isCompanyPfType = (value: any) =>
   /^(companypf|pf)$/.test(key(String(value || "")));
 const NET_WORTH_SNAPSHOT_MODULE = "netWorthSnapshot";
 const INVESTMENT_PERIOD_SNAPSHOT_MODULE = "investmentPeriodSnapshot";
-const AUTO_REFRESH_MS = 5 * 1000;
+const AUTO_REFRESH_MS = 5 * 60 * 1000;
 const LIVE_DISPLAY_REFRESH_MS = AUTO_REFRESH_MS;
 const SAVED_RATE_REFRESH_MS = AUTO_REFRESH_MS;
 const IST_TIME_ZONE = "Asia/Kolkata";
@@ -831,12 +833,31 @@ export default function AssetManagerApp() {
     [phoneMode, setPhoneMode] = useState(false),
     [mobileAccountMenu, setMobileAccountMenu] = useState(""),
     [mobileNavMode, setMobileNavMode] = useState<"main" | "investments">("main");
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
+      if (typeof window === "undefined") return false;
+      return localStorage.getItem("asset-manager-sidebar-collapsed") === "true";
+    }),
+    [sidebarWidth, setSidebarWidth] = useState(() => {
+      if (typeof window === "undefined") return 280;
+      const saved = Number(localStorage.getItem("asset-manager-sidebar-width"));
+      return Number.isFinite(saved) ? Math.min(420, Math.max(220, saved)) : 280;
+    });
   const [view, setView] = useState(() => {
       if (typeof window === "undefined") return "dashboard";
       const saved = localStorage.getItem("asset-manager-view") || "dashboard";
+      if (saved === "accounts") return "settings";
       return allViews.some((v) => v[0] === saved) ? saved : "dashboard";
     }),
+    [settingsTab, setSettingsTab] = useState<"profile" | "accounts">(() => {
+      if (typeof window === "undefined") return "profile";
+      if (localStorage.getItem("asset-manager-view") === "accounts")
+        return "accounts";
+      return localStorage.getItem("asset-manager-settings-tab") === "accounts"
+        ? "accounts"
+        : "profile";
+    }),
     [query, setQuery] = useState(""),
+    [selectedWatchlistId, setSelectedWatchlistId] = useState(""),
     [watchlistSort, setWatchlistSort] = useState<{
       key:
         | "name"
@@ -1124,6 +1145,7 @@ export default function AssetManagerApp() {
   useEffect(() => {
     if (
       !user?.id ||
+      phoneMode ||
       !autoRefresh ||
       editing ||
       detail ||
@@ -1136,10 +1158,20 @@ export default function AssetManagerApp() {
         refreshModuleRates(view, true);
     }, SAVED_RATE_REFRESH_MS);
     return () => clearInterval(t);
-  }, [user?.id, view, accountTabs, autoRefresh, editing, detail, accModal]);
+  }, [
+    user?.id,
+    phoneMode,
+    view,
+    accountTabs,
+    autoRefresh,
+    editing,
+    detail,
+    accModal,
+  ]);
   useEffect(() => {
     if (
       !user?.id ||
+      phoneMode ||
       !autoRefresh ||
       editing ||
       detail ||
@@ -1178,6 +1210,7 @@ export default function AssetManagerApp() {
     };
   }, [
     user?.id,
+    phoneMode,
     view,
     accountTabs,
     autoRefresh,
@@ -1231,10 +1264,29 @@ export default function AssetManagerApp() {
     } catch {}
   }, [expandedLots]);
   useEffect(() => {
+    if (view !== "accounts") return;
+    setSettingsTab("accounts");
+    setView("settings");
+  }, [view]);
+  useEffect(() => {
     try {
       localStorage.setItem("asset-manager-view", view);
     } catch {}
   }, [view]);
+  useEffect(() => {
+    try {
+      localStorage.setItem("asset-manager-settings-tab", settingsTab);
+    } catch {}
+  }, [settingsTab]);
+  useEffect(() => {
+    try {
+      localStorage.setItem(
+        "asset-manager-sidebar-collapsed",
+        String(sidebarCollapsed),
+      );
+      localStorage.setItem("asset-manager-sidebar-width", String(sidebarWidth));
+    } catch {}
+  }, [sidebarCollapsed, sidebarWidth]);
   useEffect(() => {
     setMobileMenuOpen(false);
   }, [view]);
@@ -1481,7 +1533,24 @@ export default function AssetManagerApp() {
       ),
       invested = accountTotals.reduce((sum, item) => sum + item.invested, 0),
       current = accountTotals.reduce((sum, item) => sum + item.current, 0),
-      periods: { type: "weekly" | "monthly"; key: string; date: string }[] = [];
+      overallTotals = computeLiveTotals(
+        records.filter(
+          (record) =>
+            record.module_key !== "watchlist" && !!MODULES[record.module_key],
+        ),
+      ),
+      monthKey = `${calendar.year}-${String(calendar.month).padStart(2, "0")}`,
+      periods: {
+        type: "weekly" | "monthly" | "month_start";
+        key: string;
+        date: string;
+      }[] = [
+        {
+          type: "month_start",
+          key: monthKey,
+          date: calendar.iso,
+        },
+      ];
     if (["Fri", "Sat", "Sun"].includes(calendar.weekday)) {
       const daysUntilSunday =
         calendar.weekday === "Fri" ? 2 : calendar.weekday === "Sat" ? 1 : 0;
@@ -1494,10 +1563,9 @@ export default function AssetManagerApp() {
     if (calendar.day === calendar.lastDay)
       periods.push({
         type: "monthly",
-        key: `${calendar.year}-${String(calendar.month).padStart(2, "0")}`,
+        key: monthKey,
         date: calendar.iso,
       });
-    if (!periods.length) return;
     let changed = false;
     for (const period of periods) {
       const snapshotKey = `${activeWorkspaceId || user.id}:${period.type}:${period.key}`,
@@ -1507,6 +1575,7 @@ export default function AssetManagerApp() {
             record.data?.snapshot_type === period.type &&
             record.data?.period_key === period.key,
         );
+      if (period.type === "month_start" && existing) continue;
       if (
         snapshotRef.current === snapshotKey &&
         existing?.data?.account_totals?.length === accountTotals.length &&
@@ -1525,13 +1594,25 @@ export default function AssetManagerApp() {
           invested,
           current,
           gain: current - invested,
+          ...(period.type === "month_start"
+            ? {
+                assets: overallTotals.assets,
+                liabilities: overallTotals.liabilities,
+                net: overallTotals.net,
+                portfolio_invested: overallTotals.invested,
+                portfolio_gain: overallTotals.gain,
+                excludes_watchlist: true,
+              }
+            : {}),
           account_totals: accountTotals,
           module_totals: moduleTotals,
           record_count: assetRecords.length,
           notes:
             period.type === "weekly"
               ? "Automatic weekly investment close captured Friday-Sunday"
-              : "Automatic month-end investment close",
+              : period.type === "monthly"
+                ? "Automatic month-end investment close"
+                : "First available monthly portfolio baseline; watchlist excluded",
         },
         existing,
       );
@@ -1864,16 +1945,11 @@ export default function AssetManagerApp() {
       "";
     try {
       const [goldRes, silverRes, localRes] = await Promise.all([
-          fetch(`/api/market-rate?asset=gold&t=${Date.now()}${bullionSourceParam()}`, {
-            cache: "no-store",
-          }),
-          fetch(`/api/market-rate?asset=silver&t=${Date.now()}${bullionSourceParam()}`, {
-            cache: "no-store",
-          }),
+          fetch(`/api/market-rate?asset=gold${bullionSourceParam()}`),
+          fetch(`/api/market-rate?asset=silver${bullionSourceParam()}`),
           city
             ? fetch(
-                `/api/local-bullion-rate?city=${encodeURIComponent(city)}&t=${Date.now()}`,
-                { cache: "no-store" },
+                `/api/local-bullion-rate?city=${encodeURIComponent(city)}`,
               )
             : Promise.resolve(null),
         ]),
@@ -1911,8 +1987,7 @@ export default function AssetManagerApp() {
       for (const [name, symbol] of indices) {
         try {
           const res = await fetch(
-              `/api/quote?symbol=${encodeURIComponent(symbol)}&exchange=INDEX&t=${Date.now()}${quoteProviderParam()}`,
-              { cache: "no-store" },
+              `/api/quote?symbol=${encodeURIComponent(symbol)}&exchange=INDEX${quoteProviderParam()}`,
             ),
             q = await res.json();
           if (!res.ok || !Number.isFinite(Number(q.price))) throw new Error();
@@ -1937,18 +2012,11 @@ export default function AssetManagerApp() {
         }
       }
       const [goldRes, silverRes, crudeRes, usdRes] = await Promise.all([
-        fetch(`/api/market-rate?asset=gold&t=${Date.now()}${bullionSourceParam()}`, {
-          cache: "no-store",
-        }),
-        fetch(`/api/market-rate?asset=silver&t=${Date.now()}${bullionSourceParam()}`, {
-          cache: "no-store",
-        }),
-        fetch(`/api/market-rate?asset=crude&t=${Date.now()}`, {
-          cache: "no-store",
-        }),
+        fetch(`/api/market-rate?asset=gold${bullionSourceParam()}`),
+        fetch(`/api/market-rate?asset=silver${bullionSourceParam()}`),
+        fetch(`/api/market-rate?asset=crude`),
         fetch(
-          `/api/quote?symbol=${encodeURIComponent("USDINR=X")}&exchange=INDEX&t=${Date.now()}${quoteProviderParam()}`,
-          { cache: "no-store" },
+          `/api/quote?symbol=${encodeURIComponent("USDINR=X")}&exchange=INDEX${quoteProviderParam()}`,
         ),
       ]);
       const [gold, silver, crude, usd] = await Promise.all([
@@ -2426,8 +2494,7 @@ export default function AssetManagerApp() {
         quotes.set(
           quoteKey,
           fetch(
-            `/api/quote?symbol=${encodeURIComponent(symbol)}&exchange=${encodeURIComponent(exchange)}&name=${encodeURIComponent(name)}&t=${Date.now()}${quoteProviderParam()}`,
-            { cache: "no-store" },
+            `/api/quote?symbol=${encodeURIComponent(symbol)}&exchange=${encodeURIComponent(exchange)}&name=${encodeURIComponent(name)}${quoteProviderParam()}`,
           ).then(async (res) => {
             const q = await res.json();
             if (!res.ok || !Number.isFinite(Number(q.price))) throw new Error();
@@ -2575,8 +2642,7 @@ export default function AssetManagerApp() {
         quotes.set(
           asset,
           fetch(
-            `/api/market-rate?asset=${encodeURIComponent(asset)}&t=${Date.now()}${bullionSourceParam()}`,
-            { cache: "no-store" },
+            `/api/market-rate?asset=${encodeURIComponent(asset)}${bullionSourceParam()}`,
           ).then(async (res) => {
             const q = await res.json();
             if (!res.ok || !Number.isFinite(Number(q.ratePerGramInr)))
@@ -3337,25 +3403,28 @@ export default function AssetManagerApp() {
   const mobileInvestmentTabs = [
       ["stocks", "Stocks", BarChart3],
       ["bullion", "Gold/Silver", BriefcaseBusiness],
-      ["mutualFunds", "MF", BriefcaseBusiness],
-      ["fixedIncome", "Fixed", FolderOpen],
       ["property", "Property", Home],
+      ["fixedIncome", "Fixed", FolderOpen],
+      ["insurance", "Insurance", Shield],
+      ["mutualFunds", "MF", BriefcaseBusiness],
       ["ulips", "ULIP", Shield],
       ["nsel", "NSEL", BriefcaseBusiness],
       ["otherAssets", "Other", FolderOpen],
     ] as const,
     mobileInvestmentTabsByValue = mobileInvestmentTabs
-      .map((tab) => {
-        const [id] = tab,
-          value = records
-            .filter((r) => r.module_key === id)
-            .reduce(
-              (sum, r) => sum + num(computeLiveRecord(id, r.data).latest),
-              0,
-            );
-        return { tab, value };
+      .map((tab, preferredOrder) => {
+        const [id] = tab;
+        return {
+          tab,
+          preferredOrder,
+          hasEntries: records.some((r) => r.module_key === id),
+        };
       })
-      .sort((a, b) => b.value - a.value)
+      .sort(
+        (a, b) =>
+          Number(b.hasEntries) - Number(a.hasEntries) ||
+          a.preferredOrder - b.preferredOrder,
+      )
       .map((x) => x.tab),
     mobileTabAccounts =
       mobileAccountMenu && MODULES[mobileAccountMenu]
@@ -3883,6 +3952,8 @@ export default function AssetManagerApp() {
   }
   function phoneView() {
     if (view === "household") return householdView();
+    if (view === "settings")
+      return <div className="phone-screen">{settings()}</div>;
     if (view === "purchaseCalculator")
       return <div className="phone-screen">{bullionCalculatorPanel()}</div>;
 
@@ -4268,14 +4339,13 @@ export default function AssetManagerApp() {
     "security_name",
     "quantity",
     "current_purchase",
-    "invested",
-    "latest",
     "low_range",
     "high_range",
     "day_change",
     "gain_display",
     "gain_pct",
-    "monthly_gain",
+    "invested",
+    "latest",
   ];
   function stockHoldingLabel(col: string) {
     const labels: Record<string, React.ReactNode> = {
@@ -4308,13 +4378,12 @@ export default function AssetManagerApp() {
       day_change: <>Increase</>,
       gain_display: (
         <>
-          Overall Gain
-          <br />
           Today's Gain
+          <br />
+          Overall Gain
         </>
       ),
       gain_pct: <>Gain %</>,
-      monthly_gain: <>Monthly Gain</>,
     };
     return labels[col] || pretty(col);
   }
@@ -4323,7 +4392,6 @@ export default function AssetManagerApp() {
     if (col === "low_range") return num(c.day_low);
     if (col === "high_range") return num(c.day_high);
     if (col === "gain_display") return num(c.gain);
-    if (col === "monthly_gain") return num(c.monthly_gain);
     if (["account_name", "security_name"].includes(col))
       return String(c[col] || "").toLowerCase();
     return num(c[col]);
@@ -4359,18 +4427,12 @@ export default function AssetManagerApp() {
     if (col === "gain_display")
       return (
         <div className="grid justify-items-end gap-1 tabular-nums">
-          <div className={num(c.gain) >= 0 ? "text-emerald-700 font-semibold" : "text-red-600 font-semibold"}>
-            {fmt(c.gain)}
-          </div>
-          <div className="text-[10px] font-semibold text-gray-500">
+          <div className={num(c.today_gain) >= 0 ? "text-emerald-700 font-semibold" : "text-red-600 font-semibold"}>
             {num(c.today_gain) >= 0 ? "+" : ""}{fmt(c.today_gain)}
           </div>
-        </div>
-      );
-    if (col === "monthly_gain")
-      return (
-        <div className={num(c.monthly_gain) >= 0 ? "text-emerald-700 font-semibold" : "text-red-600 font-semibold"}>
-          {num(c.monthly_gain) >= 0 ? "+" : ""}{fmt(c.monthly_gain)}
+          <div className={num(c.gain) >= 0 ? "text-[10px] font-semibold text-emerald-700" : "text-[10px] font-semibold text-red-600"}>
+            {num(c.gain) >= 0 ? "+" : ""}{fmt(c.gain)}
+          </div>
         </div>
       );
     return formatModuleCell("stocks", col, c, record);
@@ -4380,14 +4442,13 @@ export default function AssetManagerApp() {
     "security_name",
     "quantity",
     "current_purchase",
-    "invested",
-    "latest",
     "low_range",
     "high_range",
     "day_change",
     "gain_display",
     "gain_pct",
-    "monthly_gain",
+    "invested",
+    "latest",
   ];
   function bullionHoldingLabel(col: string) {
     const labels: Record<string, React.ReactNode> = {
@@ -4420,13 +4481,12 @@ export default function AssetManagerApp() {
       day_change: <>Increase</>,
       gain_display: (
         <>
-          Overall Gain
-          <br />
           Today's Gain
+          <br />
+          Overall Gain
         </>
       ),
       gain_pct: <>Gain %</>,
-      monthly_gain: <>Monthly Gain</>,
     };
     return labels[col] || pretty(col);
   }
@@ -4435,7 +4495,6 @@ export default function AssetManagerApp() {
     if (col === "low_range") return num(c.day_low);
     if (col === "high_range") return num(c.day_high);
     if (col === "gain_display") return num(c.gain);
-    if (col === "monthly_gain") return num(c.monthly_gain);
     if (["account_name", "security_name"].includes(col))
       return String(c[col] || "").toLowerCase();
     return num(c[col]);
@@ -4471,18 +4530,12 @@ export default function AssetManagerApp() {
     if (col === "gain_display")
       return (
         <div className="grid justify-items-end gap-1 tabular-nums">
-          <div className={num(c.gain) >= 0 ? "text-emerald-700 font-semibold" : "text-red-600 font-semibold"}>
-            {fmt(c.gain)}
-          </div>
-          <div className="text-[10px] font-semibold text-gray-500">
+          <div className={num(c.today_gain) >= 0 ? "text-emerald-700 font-semibold" : "text-red-600 font-semibold"}>
             {num(c.today_gain) >= 0 ? "+" : ""}{fmt(c.today_gain)}
           </div>
-        </div>
-      );
-    if (col === "monthly_gain")
-      return (
-        <div className={num(c.monthly_gain) >= 0 ? "text-emerald-700 font-semibold" : "text-red-600 font-semibold"}>
-          {num(c.monthly_gain) >= 0 ? "+" : ""}{fmt(c.monthly_gain)}
+          <div className={num(c.gain) >= 0 ? "text-[10px] font-semibold text-emerald-700" : "text-[10px] font-semibold text-red-600"}>
+            {num(c.gain) >= 0 ? "+" : ""}{fmt(c.gain)}
+          </div>
         </div>
       );
     return formatModuleCell("bullion", col, c, record);
@@ -4566,11 +4619,12 @@ export default function AssetManagerApp() {
     );
   return (
     <div
-      className={`app-shell app-theme-${appearance.theme} grid min-h-screen grid-cols-[280px_1fr] max-lg:grid-cols-1`}
+      className={`app-shell app-theme-${appearance.theme} ${sidebarCollapsed ? "sidebar-collapsed" : ""}`}
       style={
         {
           fontFamily: appearance.font,
           fontSize: `${appearance.fontSize}px`,
+          "--sidebar-width": `${sidebarWidth}px`,
         } as any
       }
     >
@@ -5689,7 +5743,7 @@ export default function AssetManagerApp() {
           position: fixed;
           left: 0;
           top: 0;
-          width: 280px;
+          width: var(--sidebar-width, 280px);
           height: 3px;
           background: linear-gradient(90deg, var(--lux-plum), var(--lux-gold), transparent);
           z-index: 20;
@@ -6262,17 +6316,37 @@ export default function AssetManagerApp() {
           border-radius: 999px;
         }
       `}</style>
-      <aside className="desktop-sidebar sticky top-0 h-screen overflow-x-hidden overflow-y-auto border-r border-[#e3dccc] bg-[#FFFFFF]/90 p-4 backdrop-blur-xl">
-        <div className="mb-6 flex items-center gap-3">
+      {sidebarCollapsed && (
+        <button
+          type="button"
+          className="sidebar-reopen"
+          onClick={() => setSidebarCollapsed(false)}
+          aria-label="Show side panel"
+          title="Show side panel"
+        >
+          <ChevronRight size={20} />
+        </button>
+      )}
+      <aside className="desktop-sidebar">
+        <div className="mb-6 flex items-start gap-3">
           <div className="flex h-12 w-12 items-center justify-center rounded-3xl bg-sage text-lg font-semibold text-white shadow-soft">
             PF
           </div>
-          <div>
+          <div className="min-w-0 flex-1">
             <h1 className="font-semibold leading-none">Asset Manager Cloud</h1>
             <p className="mt-1 text-xs font-semibold text-gray-500">
               {isAdmin ? "Admin access" : "Normal access"}
             </p>
           </div>
+          <button
+            type="button"
+            className="sidebar-collapse"
+            onClick={() => setSidebarCollapsed(true)}
+            aria-label="Hide side panel"
+            title="Hide side panel"
+          >
+            <ChevronLeft size={18} />
+          </button>
         </div>
         {workspaces.length > 0 && (
           <div className="mb-5">
@@ -6306,8 +6380,47 @@ export default function AssetManagerApp() {
             </div>
           ))}
         </nav>
+        <div
+          className="sidebar-resizer"
+          role="separator"
+          tabIndex={0}
+          aria-label="Resize side panel"
+          aria-orientation="vertical"
+          aria-valuemin={220}
+          aria-valuemax={420}
+          aria-valuenow={sidebarWidth}
+          title="Drag to resize side panel"
+          onKeyDown={(event) => {
+            if (event.key === "ArrowLeft") {
+              event.preventDefault();
+              setSidebarWidth((width) => Math.max(220, width - 10));
+            }
+            if (event.key === "ArrowRight") {
+              event.preventDefault();
+              setSidebarWidth((width) => Math.min(420, width + 10));
+            }
+          }}
+          onPointerDown={(event) => {
+            event.preventDefault();
+            const startX = event.clientX;
+            const startWidth = sidebarWidth;
+            const onMove = (moveEvent: PointerEvent) => {
+              setSidebarWidth(
+                Math.min(420, Math.max(220, startWidth + moveEvent.clientX - startX)),
+              );
+            };
+            const onUp = () => {
+              document.body.classList.remove("resizing-sidebar");
+              window.removeEventListener("pointermove", onMove);
+              window.removeEventListener("pointerup", onUp);
+            };
+            document.body.classList.add("resizing-sidebar");
+            window.addEventListener("pointermove", onMove);
+            window.addEventListener("pointerup", onUp);
+          }}
+        />
       </aside>
-      <main className="min-w-0 max-w-full overflow-x-hidden p-6 max-lg:p-0">
+      <main className="desktop-main min-w-0 max-w-full overflow-x-hidden p-6 max-lg:p-0">
         <div className="mobile-appbar">
           <div>
             <div className="text-[11px] font-semibold uppercase tracking-widest text-[#4f675b]">
@@ -6406,8 +6519,8 @@ export default function AssetManagerApp() {
             </header>
           )}
           {view === "dashboard" && dashboardModern()}
-          {view === "accounts" && accountsView()}
           {view === "purchaseCalculator" && bullionCalculatorPanel()}
+          {view === "watchlist" && utilityWatchlistView()}
           {view === "household" && householdView()}
           {view === "settings" && settings()}
           {view === "admin" && adminConsole()}
@@ -10225,10 +10338,19 @@ export default function AssetManagerApp() {
           showsDailyChange(r.module_key) ? s + todayGainFor(r.module_key, r) : s,
         0,
       ),
-      monthlyGain = assetRecords.reduce(
-        (s, r) => s + monthlyGainFor(r.module_key, r),
-        0,
+      calendar = istCalendar(),
+      monthKey = `${calendar.year}-${String(calendar.month).padStart(2, "0")}`,
+      monthStartSnapshot = records.find(
+        (record) =>
+          record.module_key === INVESTMENT_PERIOD_SNAPSHOT_MODULE &&
+          record.data?.snapshot_type === "month_start" &&
+          record.data?.period_key === monthKey,
       ),
+      monthStartNet = monthStartSnapshot
+        ? num(monthStartSnapshot.data?.net)
+        : totals.net,
+      monthMove = totals.net - monthStartNet,
+      monthMovePct = monthStartNet ? (monthMove / monthStartNet) * 100 : 0,
       yearlyGain = totals.gain;
     return (
       <div className="space-y-5">
@@ -10243,9 +10365,9 @@ export default function AssetManagerApp() {
                 todayGain >= 0 ? "text-emerald-700" : "text-red-700",
               ],
               [
-                "Monthly Gain",
-                monthlyGain,
-                monthlyGain >= 0 ? "text-emerald-700" : "text-red-700",
+                "Month Start Value",
+                monthStartNet,
+                "text-[#17382b]",
               ],
               [
                 "Yearly Gain",
@@ -10273,6 +10395,36 @@ export default function AssetManagerApp() {
                 </div>
               </div>
             ))}
+          </div>
+        </section>
+        <section className="rounded-2xl border border-[#ded6c4] bg-white/90 p-4 shadow-[0_8px_22px_rgba(15,23,42,0.04)]">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h3 className="font-semibold text-[#17382b]">
+                Monthly Portfolio Analysis
+              </h3>
+              <p className="mt-1 text-xs text-gray-600">
+                Overall portfolio excluding Watchlist. Baseline captured{" "}
+                {monthStartSnapshot?.data?.snapshot_date
+                  ? new Date(
+                      `${monthStartSnapshot.data.snapshot_date}T00:00:00`,
+                    ).toLocaleDateString("en-IN")
+                  : "when this dashboard loaded"}
+                .
+              </p>
+            </div>
+            <div
+              className={`text-right ${monthMove >= 0 ? "text-emerald-700" : "text-red-700"}`}
+            >
+              <div className="text-xl font-semibold tabular-nums">
+                {monthMove >= 0 ? "+" : ""}
+                {fmt(monthMove)}
+              </div>
+              <div className="text-xs font-semibold tabular-nums">
+                {monthMovePct >= 0 ? "+" : ""}
+                {pct(monthMovePct)} since baseline
+              </div>
+            </div>
           </div>
         </section>
         {portfolioSummaryTable()}
@@ -12124,7 +12276,6 @@ export default function AssetManagerApp() {
           )
         : null;
     const hasDailyChange = showsDailyChange(k),
-      monthlyGain = filtered.reduce((s, r) => s + monthlyGainFor(k, r), 0),
       moduleToday = hasDailyChange
         ? k === "bullion"
           ? grouped.reduce(
@@ -12348,75 +12499,71 @@ export default function AssetManagerApp() {
         {k === "bullion" && bullionRatePanel()}
         {k === "stocks" && <div className="mb-4">{marketTodayHeader()}</div>}
         {isInvestment && (
-          <div className="mb-4 grid grid-cols-5 gap-3 max-xl:grid-cols-3 max-lg:grid-cols-2 max-md:grid-cols-1">
-            {k === "fixedIncome" && fixedTotals ? (
-              <>
-                {kpi(
-                  "Invested",
-                  fmt(tabTotals.invested),
-                  "text-[#17382b]",
-                  "Cost basis",
-                )}
-                {kpi(
-                  "Interest This FY",
-                  fmt(fixedTotals.interest),
-                  "text-emerald-700",
-                  "Accrued till date from FY start or investment date",
-                )}
-                {kpi(
-                  "Monthly Gain",
-                  fmt(monthlyGain),
-                  monthlyGain >= 0 ? "text-emerald-700" : "text-red-700",
-                  "Saved, month-start, this-month, or accrual estimate",
-                )}
-                {kpi(
-                  "Overall Gain",
-                  fmt(tabTotals.gain),
-                  tabTotals.gain >= 0 ? "text-emerald-700" : "text-red-700",
-                  "Current value - invested",
-                )}
-                {kpi(
-                  "Current Worth",
-                  fmt(fixedTotals.current),
-                  "text-emerald-700",
-                  "Value including interest incurred this FY",
-                )}
-              </>
-            ) : (
-              <>
-                {kpi(
-                  "Invested",
-                  fmt(tabTotals.invested),
-                  "text-[#17382b]",
-                  "Cost basis",
-                )}
-                {hasDailyChange &&
-                  kpi(
-                    "Today Gain",
-                    fmt(moduleToday),
-                    moduleToday >= 0 ? "text-emerald-700" : "text-red-700",
-                    "Calculated from this investment tab",
-                  )}
-                {kpi(
-                  "Monthly Gain",
-                  fmt(monthlyGain),
-                  monthlyGain >= 0 ? "text-emerald-700" : "text-red-700",
-                  "Saved, month-start, this-month, or accrual estimate",
-                )}
-                {kpi(
-                  "Overall Gain",
-                  fmt(tabTotals.gain),
-                  tabTotals.gain >= 0 ? "text-emerald-700" : "text-red-700",
-                  "Current value - invested",
-                )}
-                {kpi(
-                  "Current Value",
-                  fmt(tabTotals.assets),
-                  "text-emerald-700",
-                  `${selected} investment particulars: ${filtered.length} rows / ${rows.length} grouped`,
-                )}
-              </>
-            )}
+          <div className="investment-summary-float" aria-label={`${def.title} investment summary`}>
+            {(k === "fixedIncome" && fixedTotals
+              ? [
+                  {
+                    label: "Invested",
+                    value: tabTotals.invested,
+                    color: "text-[#17382b]",
+                  },
+                  {
+                    label: "Interest This FY",
+                    value: fixedTotals.interest,
+                    color: "text-emerald-700",
+                  },
+                  {
+                    label: "Overall Gain",
+                    value: tabTotals.gain,
+                    color:
+                      tabTotals.gain >= 0
+                        ? "text-emerald-700"
+                        : "text-red-700",
+                  },
+                  {
+                    label: "Current Worth",
+                    value: fixedTotals.current,
+                    color: "text-emerald-700",
+                  },
+                ]
+              : [
+                  {
+                    label: "Invested",
+                    value: tabTotals.invested,
+                    color: "text-[#17382b]",
+                  },
+                  {
+                    label: "Today Gain",
+                    value: moduleToday,
+                    color:
+                      moduleToday >= 0 ? "text-emerald-700" : "text-red-700",
+                    unavailable: !hasDailyChange,
+                  },
+                  {
+                    label: "Overall Gain",
+                    value: tabTotals.gain,
+                    color:
+                      tabTotals.gain >= 0
+                        ? "text-emerald-700"
+                        : "text-red-700",
+                  },
+                  {
+                    label: "Current Value",
+                    value: tabTotals.assets,
+                    color: "text-emerald-700",
+                  },
+                ]
+            ).map((metric) => (
+              <div className="investment-summary-metric" key={metric.label}>
+                <div className="investment-summary-label">{metric.label}</div>
+                <div
+                  className={`investment-summary-value ${metric.color}`}
+                  title={metric.unavailable ? "Daily change is not available for this investment type" : fmt(metric.value)}
+                >
+                  {metric.unavailable ? "—" : fmt(metric.value)}
+                </div>
+              </div>
+            ))}
           </div>
         )}
         {k === "fixedIncome" && reviewRows.length > 0 && (
@@ -12952,68 +13099,286 @@ export default function AssetManagerApp() {
       </div>
     );
   }
+  function utilityWatchlistView() {
+    const q = query.trim().toLowerCase();
+    const rows = records
+      .filter((record) => record.module_key === "watchlist")
+      .map((record) => {
+        const data = record.data || {};
+        const match = findStock(data.security_name || data.ticker_symbol || "");
+        const last = num(data.current_price || data.live_price);
+        const change = num(data.day_change);
+        const previousClose = num(data.previous_close) || last - change;
+        const changePct = previousClose ? (change / previousClose) * 100 : 0;
+        return {
+          record,
+          data,
+          name: data.security_name || match?.name || "Watch item",
+          symbol: data.ticker_symbol || match?.ticker || "",
+          exchange: data.exchange || match?.exchange || "NSE",
+          sector: data.category || match?.category || "",
+          last,
+          change,
+          changePct,
+          previousClose,
+          dayLow: num(data.day_low),
+          dayHigh: num(data.day_high),
+          target: num(data.target_price),
+          added: num(data.base_price || data.inv_price),
+          addedDate:
+            data.base_price_date ||
+            data.data_uploaded_date ||
+            String(record.created_at || "").slice(0, 10),
+        };
+      })
+      .filter((row) =>
+        `${row.name} ${row.symbol} ${row.exchange} ${row.sector}`
+          .toLowerCase()
+          .includes(q),
+      );
+    const selected =
+      rows.find((row) => row.record.id === selectedWatchlistId) || rows[0];
+
+    return (
+      <section className="utility-watchlist">
+        <div className="utility-watchlist-head">
+          <div>
+            <div className="utility-watchlist-title">
+              Watchlist <span>{rows.length}</span>
+            </div>
+            <p>Live market movement for your saved stock ideas.</p>
+          </div>
+          <div className="utility-watchlist-actions">
+            <button className="btn" onClick={() => refreshWatchlist()}>
+              <RefreshCw size={15} /> Refresh
+            </button>
+            <button
+              className="btn-primary"
+              onClick={() =>
+                setEditing({
+                  moduleKey: "watchlist",
+                  defaults: { exchange: "NSE", quantity: 1 },
+                })
+              }
+            >
+              <Plus size={15} /> Add symbol
+            </button>
+          </div>
+        </div>
+
+        {rows.length ? (
+          <div className="utility-watchlist-layout">
+            <div className="utility-watchlist-table-wrap">
+              <table className="utility-watchlist-table">
+                <thead>
+                  <tr>
+                    <th>Symbol</th>
+                    <th>Last</th>
+                    <th>Chg</th>
+                    <th>Chg%</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.map((row) => {
+                    const active = selected?.record.id === row.record.id;
+                    const movementClass =
+                      row.change > 0
+                        ? "watchlist-positive"
+                        : row.change < 0
+                          ? "watchlist-negative"
+                          : "watchlist-neutral";
+                    return (
+                      <tr
+                        key={row.record.id}
+                        className={active ? "active" : ""}
+                        onClick={() => setSelectedWatchlistId(row.record.id)}
+                      >
+                        <td>
+                          <strong>{row.symbol || row.name}</strong>
+                          <small>
+                            {row.exchange}
+                            {row.sector ? ` · ${row.sector}` : ""}
+                          </small>
+                        </td>
+                        <td className="number-cell">
+                          {row.last ? row.last.toLocaleString("en-IN", {
+                            minimumFractionDigits: 2,
+                            maximumFractionDigits: 2,
+                          }) : "-"}
+                        </td>
+                        <td className={`number-cell ${movementClass}`}>
+                          {row.change > 0 ? "+" : ""}
+                          {row.change.toFixed(2)}
+                        </td>
+                        <td className={`number-cell ${movementClass}`}>
+                          {row.changePct > 0 ? "+" : ""}
+                          {row.changePct.toFixed(2)}%
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            {selected && (
+              <aside className="utility-watchlist-detail">
+                <div className="utility-watchlist-detail-top">
+                  <div>
+                    <span>{selected.exchange}</span>
+                    <h3>{selected.symbol || selected.name}</h3>
+                    <p>{selected.name}</p>
+                  </div>
+                  <button
+                    className="btn"
+                    onClick={() =>
+                      setDetail({
+                        moduleKey: "watchlist",
+                        record: selected.record,
+                        computed: computeRecord("watchlist", selected.data),
+                        cols: MODULES.watchlist?.cols || [],
+                      })
+                    }
+                  >
+                    Manage
+                  </button>
+                </div>
+                <div className="utility-watchlist-price">
+                  {selected.last ? fmtPrice(selected.last) : "-"}
+                  <span
+                    className={
+                      selected.change >= 0
+                        ? "watchlist-positive"
+                        : "watchlist-negative"
+                    }
+                  >
+                    {selected.change > 0 ? "+" : ""}
+                    {selected.change.toFixed(2)}{" "}
+                    {selected.changePct > 0 ? "+" : ""}
+                    {selected.changePct.toFixed(2)}%
+                  </span>
+                </div>
+                <div className="utility-watchlist-status">
+                  <i /> Latest available quote
+                </div>
+                <dl className="utility-watchlist-stats">
+                  <div>
+                    <dt>Previous close</dt>
+                    <dd>{selected.previousClose ? fmtPrice(selected.previousClose) : "-"}</dd>
+                  </div>
+                  <div>
+                    <dt>Day range</dt>
+                    <dd>
+                      {selected.dayLow ? fmtPrice(selected.dayLow) : "-"} –{" "}
+                      {selected.dayHigh ? fmtPrice(selected.dayHigh) : "-"}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>Added price</dt>
+                    <dd>{selected.added ? fmtPrice(selected.added) : "-"}</dd>
+                  </div>
+                  <div>
+                    <dt>Target</dt>
+                    <dd>{selected.target ? fmtPrice(selected.target) : "-"}</dd>
+                  </div>
+                </dl>
+                <div className="utility-watchlist-added">
+                  Added {selected.addedDate || "date unavailable"}
+                </div>
+              </aside>
+            )}
+          </div>
+        ) : (
+          <Empty text="No saved watchlist yet. Add a symbol to start tracking market movement." />
+        )}
+      </section>
+    );
+  }
   function settings() {
     return (
       <div className="grid gap-4">
-        <div className="rounded-[26px] border border-[#ded6c4] bg-white/90 p-5 shadow-[0_14px_34px_rgba(15,23,42,0.05)]">
-          <h3 className="text-xl font-semibold tracking-tight">Profile</h3>
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              saveProfile(new FormData(e.currentTarget));
-            }}
-            className="mt-4 grid grid-cols-2 gap-3 max-md:grid-cols-1"
-          >
-            <div>
-              <label className="field-label">Name</label>
-              <input
-                name="full_name"
-                className="field-input"
-                defaultValue={profile?.full_name || ""}
-              />
-            </div>
-            <div>
-              <label className="field-label">Email</label>
-              <input
-                className="field-input"
-                value={profile?.email || user?.email || ""}
-                readOnly
-              />
-            </div>
-            <div>
-              <label className="field-label">Phone</label>
-              <input
-                name="phone"
-                className="field-input"
-                defaultValue={profile?.phone || ""}
-              />
-            </div>
-            <div>
-              <label className="field-label">City</label>
-              <input
-                name="city"
-                className="field-input"
-                defaultValue={profile?.city || ""}
-              />
-            </div>
-            <div>
-              <label className="field-label">Access Role</label>
-              <input
-                className="field-input"
-                value={isAdmin ? "Admin" : "Normal"}
-                readOnly
-              />
-            </div>
-            <div className="flex items-end">
-              <button className="btn-primary w-full">Save Profile</button>
-            </div>
-          </form>
-          <p className="mt-4 rounded-2xl bg-[#eef5ee] p-3 text-sm text-gray-700">
-            <Shield size={16} className="mr-1 inline" /> Admin can delete
-            accounts/records. Normal can add/edit but destructive actions are
-            blocked.
-          </p>
+        <div className="flex gap-2 overflow-auto rounded-2xl border border-[#e3dccc] bg-white p-1">
+          {[
+            ["profile", "Profile"],
+            ["accounts", "Accounts"],
+          ].map(([id, label]) => (
+            <button
+              key={id}
+              type="button"
+              onClick={() => setSettingsTab(id as "profile" | "accounts")}
+              className={`shrink-0 rounded-xl px-4 py-2 text-sm font-semibold transition ${
+                settingsTab === id
+                  ? "bg-sage text-white shadow-sm"
+                  : "text-[#17382b] hover:bg-[#eef5ee]"
+              }`}
+            >
+              {label}
+            </button>
+          ))}
         </div>
+        {settingsTab === "accounts" ? (
+          accountsView()
+        ) : (
+          <div className="rounded-[26px] border border-[#ded6c4] bg-white/90 p-5 shadow-[0_14px_34px_rgba(15,23,42,0.05)]">
+            <h3 className="text-xl font-semibold tracking-tight">Profile</h3>
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                saveProfile(new FormData(e.currentTarget));
+              }}
+              className="mt-4 grid grid-cols-2 gap-3 max-md:grid-cols-1"
+            >
+              <div>
+                <label className="field-label">Name</label>
+                <input
+                  name="full_name"
+                  className="field-input"
+                  defaultValue={profile?.full_name || ""}
+                />
+              </div>
+              <div>
+                <label className="field-label">Email</label>
+                <input
+                  className="field-input"
+                  value={profile?.email || user?.email || ""}
+                  readOnly
+                />
+              </div>
+              <div>
+                <label className="field-label">Phone</label>
+                <input
+                  name="phone"
+                  className="field-input"
+                  defaultValue={profile?.phone || ""}
+                />
+              </div>
+              <div>
+                <label className="field-label">City</label>
+                <input
+                  name="city"
+                  className="field-input"
+                  defaultValue={profile?.city || ""}
+                />
+              </div>
+              <div>
+                <label className="field-label">Access Role</label>
+                <input
+                  className="field-input"
+                  value={isAdmin ? "Admin" : "Normal"}
+                  readOnly
+                />
+              </div>
+              <div className="flex items-end">
+                <button className="btn-primary w-full">Save Profile</button>
+              </div>
+            </form>
+            <p className="mt-4 rounded-2xl bg-[#eef5ee] p-3 text-sm text-gray-700">
+              <Shield size={16} className="mr-1 inline" /> Admin can delete
+              accounts/records. Normal can add/edit but destructive actions are
+              blocked.
+            </p>
+          </div>
+        )}
       </div>
     );
   }

@@ -49,11 +49,20 @@ body {
 .app-shell {
   display: grid;
   min-height: 100vh;
+  grid-template-columns: var(--sidebar-width, 280px) minmax(0, 1fr);
+  transition: grid-template-columns 180ms ease;
+}
+
+.app-shell.sidebar-collapsed {
+  grid-template-columns: 0 minmax(0, 1fr);
 }
 
 .desktop-sidebar {
-  position: sticky;
+  position: fixed;
   top: 0;
+  left: 0;
+  z-index: 30;
+  width: var(--sidebar-width, 280px);
   align-self: start;
   height: 100vh;
   height: 100dvh;
@@ -69,6 +78,137 @@ body {
   background: rgba(255, 253, 248, 0.9);
   padding: 1rem 0.65rem 2rem 1rem;
   backdrop-filter: blur(20px);
+}
+
+.desktop-main {
+  grid-column: 2;
+  overflow-x: clip !important;
+}
+
+.sidebar-collapsed .desktop-sidebar {
+  visibility: hidden;
+  transform: translateX(-100%);
+  pointer-events: none;
+}
+
+.sidebar-collapsed .desktop-main {
+  grid-column: 1 / -1;
+}
+
+.sidebar-collapse,
+.sidebar-reopen {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  flex: 0 0 auto;
+  border: 1px solid rgba(121, 15, 70, 0.18);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.86);
+  color: #790f46;
+  box-shadow: 0 8px 22px rgba(75, 8, 42, 0.12);
+  cursor: pointer;
+}
+
+.sidebar-collapse:hover,
+.sidebar-reopen:hover {
+  background: #fff;
+  transform: translateY(-1px);
+}
+
+.sidebar-reopen {
+  position: fixed;
+  top: 1rem;
+  left: 0.75rem;
+  z-index: 45;
+}
+
+.sidebar-resizer {
+  position: absolute;
+  top: 0;
+  right: -4px;
+  width: 9px;
+  height: 100%;
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.sidebar-resizer::after {
+  content: "";
+  position: absolute;
+  top: 42%;
+  right: 3px;
+  width: 3px;
+  height: 58px;
+  border-radius: 999px;
+  background: rgba(121, 15, 70, 0.2);
+  transition: background 120ms ease;
+}
+
+.sidebar-resizer:hover::after,
+.resizing-sidebar .sidebar-resizer::after {
+  background: rgba(121, 15, 70, 0.65);
+}
+
+.resizing-sidebar {
+  cursor: col-resize;
+  user-select: none;
+}
+
+.resizing-sidebar .app-shell {
+  transition: none;
+}
+
+.sidebar-resizer:focus-visible::after {
+  background: rgba(121, 15, 70, 0.75);
+}
+
+.investment-summary-float {
+  position: sticky;
+  top: 0;
+  z-index: 24;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(150px, 1fr));
+  margin: 0 0 1rem;
+  overflow-x: auto;
+  overflow-y: hidden;
+  border: 1px solid #dfe4ea;
+  border-radius: 17px;
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 10px 28px rgba(15, 23, 42, 0.1);
+  backdrop-filter: blur(18px) saturate(145%);
+}
+
+.investment-summary-metric {
+  min-width: 0;
+  padding: 0.75rem 1rem;
+  border-right: 1px solid #e5e7eb;
+}
+
+.investment-summary-metric:last-child {
+  border-right: 0;
+}
+
+.investment-summary-label {
+  overflow: hidden;
+  color: #737b87;
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.investment-summary-value {
+  margin-top: 0.4rem;
+  overflow: hidden;
+  font-size: 1rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .desktop-sidebar::-webkit-scrollbar {
@@ -100,6 +240,256 @@ body {
 
 .desktop-content {
   display: block;
+}
+
+.utility-watchlist {
+  overflow: hidden;
+  border: 1px solid #ded6c4;
+  border-radius: 26px;
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 14px 34px rgba(15, 23, 42, 0.05);
+}
+
+.utility-watchlist-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1rem 1.15rem;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.utility-watchlist-title {
+  font-size: 1.05rem;
+  font-weight: 750;
+  color: #111827;
+}
+
+.utility-watchlist-title span {
+  color: #6b7280;
+  font-size: 0.8rem;
+}
+
+.utility-watchlist-head p {
+  margin: 0.2rem 0 0;
+  color: #6b7280;
+  font-size: 0.78rem;
+}
+
+.utility-watchlist-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.utility-watchlist-layout {
+  display: grid;
+  grid-template-columns: minmax(500px, 1fr) minmax(270px, 0.38fr);
+  min-height: 560px;
+}
+
+.utility-watchlist-table-wrap {
+  overflow: auto;
+  border-right: 1px solid #e5e7eb;
+}
+
+.utility-watchlist-table {
+  width: 100%;
+  border-collapse: collapse;
+  color: #111827;
+  font-size: 0.82rem;
+}
+
+.utility-watchlist-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 0.7rem 0.85rem;
+  border-bottom: 1px solid #e5e7eb;
+  background: #fff;
+  color: #6b7280;
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-align: right;
+}
+
+.utility-watchlist-table th:first-child {
+  text-align: left;
+}
+
+.utility-watchlist-table td {
+  padding: 0.72rem 0.85rem;
+  border-bottom: 1px solid #edf0f2;
+}
+
+.utility-watchlist-table tbody tr {
+  cursor: pointer;
+  transition: background 120ms ease;
+}
+
+.utility-watchlist-table tbody tr:hover,
+.utility-watchlist-table tbody tr.active {
+  background: #f3f7f5;
+}
+
+.utility-watchlist-table tbody tr.active td:first-child {
+  box-shadow: inset 3px 0 #115c45;
+}
+
+.utility-watchlist-table strong,
+.utility-watchlist-table small {
+  display: block;
+}
+
+.utility-watchlist-table small {
+  margin-top: 0.15rem;
+  color: #8a929d;
+  font-size: 0.64rem;
+}
+
+.number-cell {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.watchlist-positive {
+  color: #009688 !important;
+}
+
+.watchlist-negative {
+  color: #ef3340 !important;
+}
+
+.watchlist-neutral {
+  color: #6b7280 !important;
+}
+
+.utility-watchlist-detail {
+  position: sticky;
+  top: 0;
+  align-self: start;
+  padding: 1.25rem;
+  color: #111827;
+}
+
+.utility-watchlist-detail-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.utility-watchlist-detail-top span {
+  color: #6b7280;
+  font-size: 0.65rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.utility-watchlist-detail h3 {
+  margin: 0.15rem 0 0;
+  font-size: 1rem;
+  font-weight: 750;
+}
+
+.utility-watchlist-detail p {
+  margin: 0.15rem 0 0;
+  color: #6b7280;
+  font-size: 0.75rem;
+}
+
+.utility-watchlist-price {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.75rem;
+  margin-top: 2.5rem;
+  font-size: 2rem;
+  font-weight: 750;
+  font-variant-numeric: tabular-nums;
+}
+
+.utility-watchlist-price span {
+  font-size: 0.86rem;
+  font-weight: 700;
+}
+
+.utility-watchlist-status {
+  margin-top: 0.2rem;
+  color: #059669;
+  font-size: 0.72rem;
+}
+
+.utility-watchlist-status i {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-right: 0.35rem;
+  border-radius: 999px;
+  background: #10b981;
+}
+
+.utility-watchlist-stats {
+  display: grid;
+  gap: 0;
+  margin: 2rem 0 0;
+  border-top: 1px solid #e5e7eb;
+}
+
+.utility-watchlist-stats div {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.75rem 0;
+  border-bottom: 1px solid #edf0f2;
+  font-size: 0.76rem;
+}
+
+.utility-watchlist-stats dt {
+  color: #6b7280;
+}
+
+.utility-watchlist-stats dd {
+  margin: 0;
+  font-weight: 650;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.utility-watchlist-added {
+  margin-top: 1rem;
+  color: #8a929d;
+  font-size: 0.7rem;
+}
+
+@media (max-width: 950px) {
+  .utility-watchlist-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .utility-watchlist-table-wrap {
+    border-right: 0;
+  }
+
+  .utility-watchlist-detail {
+    position: static;
+    border-top: 1px solid #e5e7eb;
+  }
+}
+
+@media (max-width: 640px) {
+  .utility-watchlist-head {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .utility-watchlist-layout {
+    min-height: 0;
+  }
+
+  .utility-watchlist-table {
+    min-width: 520px;
+  }
 }
 
 button,
@@ -497,6 +887,7 @@ form,
   }
 
   .desktop-sidebar,
+  .sidebar-reopen,
   .desktop-header,
   .desktop-content {
     display: none !important;

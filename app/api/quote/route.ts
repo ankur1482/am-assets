@@ -4,7 +4,9 @@ import { getUpstoxAccessToken } from "@/lib/upstox";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-export const revalidate = 0;
+
+const RESPONSE_CACHE_CONTROL =
+  "public, s-maxage=300, stale-while-revalidate=600";
 
 type Provider = "upstox" | "twelvedata" | "alphavantage" | "polygon" | "yahoo";
 type Quote = {
@@ -481,7 +483,7 @@ export async function GET(request: Request) {
         cached: true,
         time: new Date().toISOString(),
       },
-      { headers: { "Cache-Control": "no-store, max-age=0" } },
+      { headers: { "Cache-Control": RESPONSE_CACHE_CONTROL } },
     );
   }
 
@@ -492,7 +494,7 @@ export async function GET(request: Request) {
       quoteCache.set(cacheKey, { quote, attempted: [...attempted], savedAt: Date.now() });
       return NextResponse.json(
         { ...quote, attempted, time: new Date().toISOString() },
-        { headers: { "Cache-Control": "no-store, max-age=0" } },
+        { headers: { "Cache-Control": RESPONSE_CACHE_CONTROL } },
       );
     } catch (error: any) {
       attempted.push(`${provider}: ${error?.message || "failed"}`);
@@ -509,7 +511,7 @@ export async function GET(request: Request) {
         warning: "Showing last quote because providers are rate-limited or unavailable",
         time: new Date().toISOString(),
       },
-      { headers: { "Cache-Control": "no-store, max-age=0" } },
+      { headers: { "Cache-Control": RESPONSE_CACHE_CONTROL } },
     );
   }
 
