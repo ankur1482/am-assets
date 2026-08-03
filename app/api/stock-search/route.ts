@@ -17,11 +17,12 @@ export async function GET(request:Request){
     const data=await res.json();
     const seen=new Set<string>();
     const stocks=(data?.quotes||[])
-      .filter((x:any)=>x?.quoteType==='EQUITY'&&(x.exchange==='NSI'||x.exchange==='BSE'||String(x.symbol||'').endsWith('.NS')||String(x.symbol||'').endsWith('.BO')))
+      .filter((x:any)=>['EQUITY','ETF'].includes(x?.quoteType)&&(x.exchange==='NSI'||x.exchange==='BSE'||String(x.symbol||'').endsWith('.NS')||String(x.symbol||'').endsWith('.BO')))
       .map((x:any)=>{
         const exchange=x.exchange==='BSE'||String(x.symbol||'').endsWith('.BO')?'BSE':'NSE';
         const ticker=cleanTicker(x.symbol,exchange);
-        return {name:x.longname||x.shortname||ticker,ticker,exchange,category:x.sectorDisp||x.sector||x.industryDisp||x.industry||'Equity'};
+        const asset_type=x.quoteType==='ETF'?'ETF':'Stock';
+        return {name:x.longname||x.shortname||ticker,ticker,exchange,asset_type,category:asset_type==='ETF'?'ETF':x.sectorDisp||x.sector||x.industryDisp||x.industry||'Equity'};
       })
       .filter((x:any)=>{
         const id=`${x.exchange}-${x.ticker}`;

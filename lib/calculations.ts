@@ -3,10 +3,86 @@ export const fmt=(v:any)=>'₹'+Math.round(num(v)).toLocaleString('en-IN');
 export const fmtInr=(v:any,decimals=2)=>num(v).toLocaleString('en-IN',{minimumFractionDigits:decimals,maximumFractionDigits:decimals});
 export const pct=(v:any)=>`${num(v).toFixed(2)}%`;
 
+export type IndianGratuityInput={
+  dateOfJoining:string;
+  calculationDate?:string;
+  monthlyBasicSalary:number|string;
+  monthlyDA?:number|string;
+  coveredUnderAct?:boolean|string;
+};
+
+export type IndianGratuityResult={
+  dateOfJoining:string;
+  calculationDate:string;
+  serviceYears:number;
+  serviceMonths:number;
+  serviceDays:number;
+  completedYears:number;
+  eligibleYears:number;
+  salaryBasis:number;
+  gratuityPerYear:number;
+  totalGratuity:number;
+  taxExemptGratuity:number;
+  taxableGratuity:number;
+  monthlyCtcAccrual:number;
+  annualCtcAccrual:number;
+  coveredUnderAct:boolean;
+  eligible:boolean;
+  eligibilityMessage:string;
+};
+
+const dateIsoIndia=(date:Date)=>{
+  const parts=new Intl.DateTimeFormat('en-US',{timeZone:'Asia/Kolkata',year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(date),part=(type:string)=>parts.find(item=>item.type===type)?.value||'';
+  return `${part('year')}-${part('month')}-${part('day')}`;
+};
+
+function strictLocalDate(value:string,label:string){
+  const text=String(value||'').trim();
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(text))throw new Error(`${label} is required.`);
+  const [year,month,day]=text.split('-').map(Number),date=new Date(year,month-1,day);
+  if(date.getFullYear()!==year||date.getMonth()!==month-1||date.getDate()!==day)throw new Error(`${label} must be a valid date.`);
+  return date;
+}
+
+function addCalendarYears(date:Date,count:number){
+  const result=new Date(date.getFullYear()+count,date.getMonth(),1),lastDay=new Date(result.getFullYear(),result.getMonth()+1,0).getDate();
+  result.setDate(Math.min(date.getDate(),lastDay));
+  return result;
+}
+
+function addCalendarMonths(date:Date,count:number){
+  const result=new Date(date.getFullYear(),date.getMonth()+count,1),lastDay=new Date(result.getFullYear(),result.getMonth()+1,0).getDate();
+  result.setDate(Math.min(date.getDate(),lastDay));
+  return result;
+}
+
+/** Calculates Indian gratuity using the Payment of Gratuity Act 15/26 basis. */
+export function calculateIndianGratuity(input:IndianGratuityInput):IndianGratuityResult{
+  const today=dateIsoIndia(new Date()),dateOfJoining=String(input.dateOfJoining||'').trim(),calculationDate=String(input.calculationDate||today).trim(),
+    start=strictLocalDate(dateOfJoining,'Date of Joining'),end=strictLocalDate(calculationDate,'Calculation date'),
+    basic=num(input.monthlyBasicSalary),da=num(input.monthlyDA),coveredUnderAct=input.coveredUnderAct===undefined||input.coveredUnderAct===true||/^(yes|true)$/i.test(String(input.coveredUnderAct));
+  if(start>end)throw new Error('Date of Joining cannot be after Calculation Date.');
+  if(basic<=0)throw new Error('Monthly Basic Salary must be greater than 0.');
+  if(da<0)throw new Error('Monthly DA cannot be negative.');
+  let serviceYears=end.getFullYear()-start.getFullYear();
+  if(addCalendarYears(start,serviceYears)>end)serviceYears--;
+  const afterYears=addCalendarYears(start,serviceYears);
+  let serviceMonths=(end.getFullYear()-afterYears.getFullYear())*12+end.getMonth()-afterYears.getMonth();
+  if(addCalendarMonths(afterYears,serviceMonths)>end)serviceMonths--;
+  const afterMonths=addCalendarMonths(afterYears,serviceMonths),serviceDays=Math.round((end.getTime()-afterMonths.getTime())/86400000),
+    completedYears=Math.max(0,serviceYears),roundUp=serviceMonths>6||(serviceMonths===6&&serviceDays>0),eligible=completedYears>=5,
+    eligibleYears=eligible?completedYears+(roundUp?1:0):0,salaryBasis=basic+da,
+    gratuityPerYear=Math.round(salaryBasis*15/26),totalGratuity=eligible?Math.round(salaryBasis*15/26*eligibleYears):0,
+    taxExemptGratuity=Math.min(totalGratuity,2000000),taxableGratuity=Math.max(0,totalGratuity-taxExemptGratuity),
+    monthlyCtcAccrual=Math.round(salaryBasis*0.0481),annualCtcAccrual=Math.round(salaryBasis*0.0481*12);
+  return{dateOfJoining,calculationDate,serviceYears:completedYears,serviceMonths,serviceDays,completedYears,eligibleYears,salaryBasis,gratuityPerYear,totalGratuity,taxExemptGratuity,taxableGratuity,monthlyCtcAccrual,annualCtcAccrual,coveredUnderAct,eligible,eligibilityMessage:eligible?'Eligible for gratuity.':'Not eligible for gratuity, except in case of death or disability.'};
+}
+
 const months=(a:Date,b:Date)=>Math.max(1,(b.getFullYear()-a.getFullYear())*12+b.getMonth()-a.getMonth());
 const years=(d:any)=>{const start=d?new Date(d):new Date();if(Number.isNaN(start.getTime()))return 0;const now=new Date();let y=now.getFullYear()-start.getFullYear();if(now.getMonth()<start.getMonth()||(now.getMonth()===start.getMonth()&&now.getDate()<start.getDate()))y--;return Math.max(0,y)}
 const monthSpan=(d:any)=>{const start=d?new Date(d):new Date();if(Number.isNaN(start.getTime()))return 0;const now=new Date();return Math.max(0,(now.getFullYear()-start.getFullYear())*12+now.getMonth()-start.getMonth())}
 const typeKey=(r:any)=>String(r.category||'').toLowerCase();
+const isGratuity=(r:any)=>/gratuity/.test(typeKey(r));
 const isAnnualAccount=(r:any)=>/ppf|sukanya|gratuity/.test(typeKey(r));
 const isPf=(r:any)=>/^epf$|^pf$|company\s*pf|provident/.test(typeKey(r));
 const isCompanyPf=(r:any)=>/^pf$|company\s*pf/.test(typeKey(r));
@@ -103,7 +179,14 @@ export function fixedIncomeWorthTillDate(r:any){return isPf(r)?pfMonthlyFyProjec
 export function fixedIncomeYearEndValue(r:any){if(isPf(r))return pfYearEndValue(r);const current=fixedIncomeWorthTillDate(r),rate=num(r.interest_rate)/100;return current*Math.pow(1+rate,yearEndFraction())}
 export function fixedIncomeMaturityValue(r:any){if(isCompanyPf(r))return 0;const current=fixedIncomeWorthTillDate(r),rate=num(r.interest_rate)/100,maturity=fixedIncomeMaturityDate(r),period=maturity?yearsUntil(maturity):(num(r.lock_in_years)||years(fiBaseDate(r)));return current*Math.pow(1+rate,period)||num(r.maturity_value)}
 
-function fixedIncomeRecord(r:any){const elapsed=years(fiBaseDate(r));if(isCompanyPf(r))r.broker='Govt';r.maturity_date=isCompanyPf(r)?'':fixedIncomeMaturityDate(r)||r.maturity_date;r.invested=fixedIncomeInvested(r,elapsed);r.interest_incurred_fy=fixedIncomeInterestIncurredFy(r);r.worth_till_date=fixedIncomeWorthTillDate(r);r.latest=r.worth_till_date;r.maturity_value=isCompanyPf(r)?'':fixedIncomeMaturityValue(r);r.year_end_maturity_value=fixedIncomeYearEndValue(r);r.locked_until=r.maturity_date||'';return r}
+function fixedIncomeRecord(r:any){
+  if(isGratuity(r)&&r.purchase_date&&num(r.monthly_basic_salary)>0){
+    const result=calculateIndianGratuity({dateOfJoining:r.purchase_date,calculationDate:r.last_working_date||undefined,monthlyBasicSalary:r.monthly_basic_salary,monthlyDA:r.monthly_da,coveredUnderAct:r.covered_under_gratuity_act});
+    Object.assign(r,{calculation_date:result.calculationDate,total_service:`${result.serviceYears} years, ${result.serviceMonths} months, ${result.serviceDays} days`,service_years:result.serviceYears,service_months:result.serviceMonths,service_days:result.serviceDays,eligible_years:result.eligibleYears,salary_basis:result.salaryBasis,gratuity_per_year:result.gratuityPerYear,gratuity_value:result.totalGratuity,tax_exempt_gratuity:result.taxExemptGratuity,taxable_gratuity:result.taxableGratuity,monthly_ctc_gratuity:result.monthlyCtcAccrual,annual_ctc_gratuity:result.annualCtcAccrual,gratuity_eligible:result.eligible,eligibility_message:result.eligibilityMessage,invested:0,interest_incurred_fy:0,current_value_today:result.totalGratuity,worth_till_date:result.totalGratuity,latest:result.totalGratuity,year_end_maturity_value:result.totalGratuity,maturity_value:result.totalGratuity,maturity_date:'',locked_until:''});
+    return r;
+  }
+  const elapsed=years(fiBaseDate(r));if(isCompanyPf(r))r.broker='Govt';r.maturity_date=isCompanyPf(r)?'':fixedIncomeMaturityDate(r)||r.maturity_date;r.invested=fixedIncomeInvested(r,elapsed);r.interest_incurred_fy=fixedIncomeInterestIncurredFy(r);r.worth_till_date=fixedIncomeWorthTillDate(r);r.latest=r.worth_till_date;r.maturity_value=isCompanyPf(r)?'':fixedIncomeMaturityValue(r);r.year_end_maturity_value=fixedIncomeYearEndValue(r);r.locked_until=r.maturity_date||'';return r
+}
 
 function projectLoanFuture(r:any){
   const balance=num(r.loan_balance),rate=num(r.loan_interest_rate)/100/12,tenure=num(r.loan_tenure_months)||num(r.emis_left)||0;
@@ -112,30 +195,32 @@ function projectLoanFuture(r:any){
   return{remaining:balance,emiFuture:emi*tenure,totalInterest,monthlyEmi:emi,monthsLeft:tenure};
 }
 
-function insurancePremiumYears(r:any,asOf=new Date()){
-  const start=localDate(r.policy_start_date);
-  if(!start)return num(r.annual_premium)?1:0;
-  const today=new Date(asOf.getFullYear(),asOf.getMonth(),asOf.getDate());
-  if(start>today)return 0;
-  let completed=today.getFullYear()-start.getFullYear();
-  if(today.getMonth()<start.getMonth()||(today.getMonth()===start.getMonth()&&today.getDate()<start.getDate()))completed--;
-  return Math.max(1,completed+1);
-}
-
-function insuranceCurrentValue(r:any){
-  const insurer=String(r.broker||r.insurer||'').toLowerCase(),
-    lic=/\blic\b|life insurance corporation/.test(insurer),
-    closed=String(r.status||'').toLowerCase()==='closed',
-    deathCoverActive=String(r.death_cover_after_closure||'').toLowerCase()==='yes';
-  r.death_cover_value=closed&&deathCoverActive?num(r.sum_assured):0;
-  if(closed){r.policy_years_paid=0;r.premiums_paid_to_date=0;r.yearly_bonus=0;r.lic_bonus=0;return 0}
-  r.policy_years_paid=insurancePremiumYears(r);
-  r.premiums_paid_to_date=num(r.annual_premium)*r.policy_years_paid;
-  r.yearly_bonus=lic?num(r.sum_assured)*0.06:0;
-  r.lic_bonus=r.yearly_bonus*r.policy_years_paid;
-  if(lic)return r.premiums_paid_to_date+r.lic_bonus;
-  const hasCurrentValue=r.current_value_including_bonus!==null&&r.current_value_including_bonus!==undefined&&String(r.current_value_including_bonus).trim()!=='';
-  return hasCurrentValue?num(r.current_value_including_bonus):num(r.payout_value);
+function insuranceRecord(r:any){
+  const policy=normalizeInsurancePolicy(r),calculated=calculateInsurance(policy);
+  Object.assign(r,policy,{
+    policy_type:calculated.policyType,
+    category:calculated.policyTypeLabel,
+    annual_premium:calculated.annualPremium,
+    premiums_paid_to_date:calculated.premiumsPaidTillDate,
+    completed_policy_years:calculated.completedPolicyYears,
+    policy_years_paid:calculated.premiumYearsPaid,
+    premium_years_paid:calculated.premiumYearsPaid,
+    bonus_accrued_till_date:calculated.bonusAccruedTillDate,
+    lic_bonus:calculated.bonusAccruedTillDate,
+    current_value:calculated.currentValue,
+    current_value_including_bonus:calculated.currentValue,
+    latest:calculated.currentValue,
+    death_cover:calculated.deathCover,
+    death_cover_value:calculated.deathCover,
+    health_cover:calculated.healthCover,
+    critical_illness_cover:calculated.criticalIllnessCover,
+    maturity_value:calculated.maturityValue,
+    money_back_received:calculated.moneyBackReceived,
+    next_premium_due_date:calculated.nextPremiumDueDate,
+    premium_status:calculated.premiumStatus,
+    invested:calculated.premiumsPaidTillDate,
+  });
+  return r;
 }
 
 function isDateOnOrBeforeToday(v:any,asOf=new Date()){
@@ -170,10 +255,10 @@ function stockRecord(r:any){
     actionActive=Boolean(action&&isDateOnOrBeforeToday(exDate)),
     adjustedQty=actionActive?qty*Number(action?.factor||1):qty,
     live=num(r.live_price||r.current_price),
-    latest=num(r.latest_value)||adjustedQty*live,
+    latest=live&&adjustedQty?adjustedQty*live:num(r.latest_value),
     exBase=num(r.ex_base_price||r.ex_day_start_price||r.ex_open_price||r.day_start_price||r.open_price),
     basePrice=actionActive&&exBase?exBase:num(r.inv_price),
-    invested=actionActive&&exBase?adjustedQty*basePrice:(num(r.investment_amount)||(adjustedQty*basePrice));
+    invested=basePrice&&adjustedQty?adjustedQty*basePrice:num(r.investment_amount);
   r.quantity=adjustedQty;
   r.original_quantity=actionActive?qty:r.original_quantity;
   r.adjusted_quantity=actionActive?adjustedQty:r.adjusted_quantity;
@@ -194,5 +279,6 @@ function stockRecord(r:any){
   r.latest=latest;
 }
 
-export function computeRecord(k:string,r0:any){const r={...r0};if(k==='stocks'){stockRecord(r)}else if(k==='mutualFunds'){r.invested=num(r.investment_amount)||num(r.quantity)*num(r.nav);r.latest=num(r.latest_value)||num(r.quantity)*num(r.live_nav)}else if(k==='bullion'){const tracked=num(r.metal_cost)+num(r.making_charges)+num(r.gst_paid)+num(r.other_costs);r.invested=num(r.purchase_price)||tracked;r.purchase_price=r.invested;r.latest=num(r.latest_value)||r.invested}else if(['nsel','otherAssets'].includes(k)){r.invested=num(r.purchase_price);r.latest=num(r.latest_value)||r.invested}else if(k==='property'){r.invested=num(r.purchase_price);r.latest=num(r.latest_value)||r.invested;r.balance=num(r.loan_balance)||(num(r.loan_amount)-num(r.principal_paid));r.loan_balance=r.balance;const lf=projectLoanFuture(r);r.emiFuture=lf.emiFuture;r.monthly_emi=lf.monthlyEmi;r.interest_rate=num(r.loan_interest_rate);r.emis_left=lf.monthsLeft}else if(k==='fixedIncome'){fixedIncomeRecord(r)}else if(k==='ulips'){r.invested=num(r.investment_amount)||num(r.premium_amount);r.latest=num(r.latest_value)||r.invested}else if(k==='insurance'){r.latest=insuranceCurrentValue(r);r.invested=num(r.premiums_paid_to_date)}else if(['loans','borrowings'].includes(k)){r.balance=num(r.loan_balance)||(num(r.loan_amount)-num(r.principal_paid));r.loan_balance=r.balance;r.latest=r.balance}else if(k==='goals'){r.gap=Math.max(0,num(r.target_amount)-num(r.current_value));r.monthly_required=r.gap/months(new Date(),new Date(r.target_date||new Date()))}r.gain=k==='insurance'?0:num(r.latest)-num(r.invested);r.gain_pct=k==='insurance'?0:num(r.invested)?r.gain/num(r.invested)*100:0;return r}
+export function computeRecord(k:string,r0:any){const r={...r0};if(k==='stocks'){stockRecord(r)}else if(k==='mutualFunds'){r.invested=num(r.investment_amount)||num(r.quantity)*num(r.nav);r.latest=num(r.latest_value)||num(r.quantity)*num(r.live_nav)}else if(k==='bullion'){const tracked=num(r.metal_cost)+num(r.making_charges)+num(r.gst_paid)+num(r.other_costs);r.invested=num(r.purchase_price)||tracked;r.purchase_price=r.invested;r.latest=num(r.latest_value)||r.invested}else if(['nsel','otherAssets'].includes(k)){r.invested=num(r.purchase_price);r.latest=num(r.latest_value)||r.invested}else if(k==='property'){r.invested=num(r.purchase_price);r.latest=num(r.latest_value)||r.invested;r.balance=num(r.loan_balance)||(num(r.loan_amount)-num(r.principal_paid));r.loan_balance=r.balance;const lf=projectLoanFuture(r);r.emiFuture=lf.emiFuture;r.monthly_emi=lf.monthlyEmi;r.interest_rate=num(r.loan_interest_rate);r.emis_left=lf.monthsLeft}else if(k==='fixedIncome'){fixedIncomeRecord(r)}else if(k==='ulips'){r.invested=num(r.investment_amount)||num(r.premium_amount);r.latest=num(r.latest_value)||r.invested}else if(k==='insurance'){insuranceRecord(r)}else if(['loans','borrowings'].includes(k)){r.balance=num(r.loan_balance)||(num(r.loan_amount)-num(r.principal_paid));r.loan_balance=r.balance;r.latest=r.balance}else if(k==='goals'){r.gap=Math.max(0,num(r.target_amount)-num(r.current_value));r.monthly_required=r.gap/months(new Date(),new Date(r.target_date||new Date()))}r.gain=k==='insurance'?0:num(r.latest)-num(r.invested);r.gain_pct=k==='insurance'?0:num(r.invested)?r.gain/num(r.invested)*100:0;return r}
 export function computeTotals(records:any[]){let assets=0,liabilities=0,invested=0,gain=0;records.forEach(rec=>{const k=rec.module_key,c=computeRecord(k,rec.data); if(['stocks','mutualFunds','ulips','bullion','nsel','fixedIncome','property','otherAssets'].includes(k)){assets+=num(c.latest);invested+=num(c.invested);gain+=num(c.gain)} if(k==='insurance')assets+=num(c.latest);if(['loans','borrowings'].includes(k))liabilities+=num(c.balance);if(k==='property')liabilities+=num(c.balance)});return{assets,liabilities,net:assets-liabilities,invested,gain}}
+import { calculateInsurance, normalizeInsurancePolicy } from './insurance';

@@ -1,4 +1,4 @@
-import {cookies} from 'next/headers';
+import {readOAuthCredential} from '@/lib/oauthCredentials';
 
 export const UPSTOX_TOKEN_COOKIE='am_upstox_access_token';
 export const UPSTOX_STATE_COOKIE='am_upstox_oauth_state';
@@ -22,9 +22,12 @@ export function clearUpstoxCookieOptions(){
   return {httpOnly:true,secure:true,sameSite:'lax' as const,path:'/',maxAge:0};
 }
 
-export async function getUpstoxAccessToken(){
-  const store=await cookies();
-  return store.get(UPSTOX_TOKEN_COOKIE)?.value||process.env.UPSTOX_ACCESS_TOKEN?.trim()||'';
+export async function getUpstoxAccessToken(userId?:string){
+  if(userId){
+    const stored=await readOAuthCredential<{access_token?:string}>(userId,'upstox');
+    if(stored?.access_token)return stored.access_token;
+  }
+  return process.env.UPSTOX_ACCESS_TOKEN?.trim()||'';
 }
 
 export async function fetchUpstoxProfile(token:string){

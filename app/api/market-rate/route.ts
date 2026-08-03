@@ -5,7 +5,7 @@ export const runtime = "edge";
 export const preferredRegion = "bom1";
 
 const RESPONSE_CACHE_CONTROL =
-  "public, s-maxage=600, stale-while-revalidate=1800";
+  "public, s-maxage=20, stale-while-revalidate=40";
 const TROY_OZ_GRAMS = 31.1034768;
 const MCX_MARKET_WATCH_URL =
   "https://www.mcxindia.com/market-data/market-watch";

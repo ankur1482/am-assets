@@ -54,12 +54,25 @@ create table if not exists public.asset_documents (
   updated_at timestamptz not null default now()
 );
 
+-- Server-only encrypted OAuth credentials. No client RLS policies are created;
+-- application API routes access this table with the service role after auth.
+create table if not exists public.oauth_credentials (
+  user_id uuid not null references auth.users(id) on delete cascade,
+  provider text not null check (provider in ('upstox','google-drive')),
+  encrypted_value text not null,
+  expires_at timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  primary key (user_id,provider)
+);
+
 create index if not exists idx_accounts_user_id on public.accounts(user_id);
 create index if not exists idx_records_user_id on public.records(user_id);
 create index if not exists idx_records_user_module on public.records(user_id,module_key);
 create index if not exists idx_records_data_gin on public.records using gin(data);
 create index if not exists idx_asset_documents_user_id on public.asset_documents(user_id);
 create index if not exists idx_asset_documents_record_id on public.asset_documents(record_id);
+create index if not exists idx_oauth_credentials_user_id on public.oauth_credentials(user_id);
 
 create or replace function public.set_updated_at()
 returns trigger language plpgsql as $$
@@ -75,6 +88,8 @@ drop trigger if exists records_set_updated_at on public.records;
 create trigger records_set_updated_at before update on public.records for each row execute function public.set_updated_at();
 drop trigger if exists asset_documents_set_updated_at on public.asset_documents;
 create trigger asset_documents_set_updated_at before update on public.asset_documents for each row execute function public.set_updated_at();
+drop trigger if exists oauth_credentials_set_updated_at on public.oauth_credentials;
+create trigger oauth_credentials_set_updated_at before update on public.oauth_credentials for each row execute function public.set_updated_at();
 
 create or replace function public.is_admin()
 returns boolean language sql security definer set search_path = public as $$
@@ -99,6 +114,7 @@ alter table public.user_roles enable row level security;
 alter table public.accounts enable row level security;
 alter table public.records enable row level security;
 alter table public.asset_documents enable row level security;
+alter table public.oauth_credentials enable row level security;
 
 insert into storage.buckets (id, name, public, file_size_limit)
 values ('asset-documents', 'asset-documents', false, 52428800)

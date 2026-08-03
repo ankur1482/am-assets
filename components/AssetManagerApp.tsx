@@ -8,6 +8,7 @@ import {
   BarChart3,
   Bell,
   BriefcaseBusiness,
+  Building2,
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
@@ -22,10 +23,12 @@ import {
   Menu,
   MoreHorizontal,
   Paperclip,
+  PieChart,
   Plus,
   RefreshCw,
   Search,
   Shield,
+  Sparkles,
   Trash2,
   UploadCloud,
   UserX,
@@ -35,6 +38,7 @@ import {
 import { supabase } from "@/lib/supabase";
 import { ACCOUNT_TYPES, MODULES, RELATIONS } from "@/lib/modules";
 import {
+  calculateIndianGratuity,
   computeRecord,
   computeTotals,
   fixedIncomeMaturityDate,
@@ -49,6 +53,11 @@ import {
   parseDelimited,
   readRowsFromFile,
 } from "@/lib/imports";
+import {
+  insurancePolicyType,
+  normalizeInsurancePolicy,
+  validateInsurancePolicy,
+} from "@/lib/insurance";
 
 type Account = {
   id: string;
@@ -244,22 +253,10 @@ const DEFAULT_SOURCE_PREFS = Object.fromEntries(
 ) as Record<string, string>;
 const APP_THEMES = [
   {
-    id: "classic",
-    name: "Classic Sage",
-    note: "Calm ivory and green",
-    swatches: ["#F8F3EA", "#115C45", "#C89A36"],
-  },
-  {
-    id: "midnight",
-    name: "Midnight Ledger",
-    note: "Dark analytical workspace",
-    swatches: ["#0F172A", "#1D4ED8", "#22C55E"],
-  },
-  {
-    id: "graphite",
-    name: "Graphite Desk",
-    note: "Neutral high-contrast admin",
-    swatches: ["#F3F4F6", "#111827", "#64748B"],
+    id: "amazon",
+    name: "Marketplace",
+    note: "Amazon.in-inspired navy, search orange and action yellow",
+    swatches: ["#131921", "#232F3E", "#FF9900", "#FFD814"],
   },
   {
     id: "plum",
@@ -281,14 +278,15 @@ const APP_THEMES = [
   },
 ];
 const APP_FONTS = [
+  { label: "Arial", value: "Arial, Helvetica, ui-sans-serif, system-ui, sans-serif" },
   { label: "Inter", value: "Inter, ui-sans-serif, system-ui, sans-serif" },
   { label: "System", value: "ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, sans-serif" },
   { label: "Serif", value: "Georgia, Cambria, 'Times New Roman', serif" },
   { label: "Mono", value: "'SFMono-Regular', Consolas, 'Liberation Mono', monospace" },
 ];
 const DEFAULT_APPEARANCE = {
-  theme: "classic",
-  font: APP_FONTS[0].value,
+  theme: "amazon",
+  font: "Arial, Helvetica, ui-sans-serif, system-ui, sans-serif",
   fontSize: 16,
 };
 const STOCKS = [
@@ -344,6 +342,7 @@ const STOCKS = [
   ticker,
   exchange,
   category,
+  asset_type: "Stock",
 }));
 const key = (v: string) =>
   String(v || "")
@@ -427,6 +426,7 @@ const BSE_STOCKS = [
   ticker,
   exchange,
   category,
+  asset_type: "Stock",
 }));
 const ALL_STOCKS = [...STOCKS, ...BSE_STOCKS];
 function moneycontrolHref(stock: any) {
@@ -488,6 +488,28 @@ const FIXED_INCOME_LABELS: Record<string, string> = {
   year_end_maturity_value: "Year-End Value",
   maturity_value: "Maturity Value",
   maturity_date: "Maturity Date",
+  last_working_date: "Last Working Date",
+  calculation_date: "Calculation Date",
+  total_service: "Total Service",
+  eligible_years: "Eligible Years Used",
+  salary_basis: "Monthly Basic + DA Used",
+  gratuity_per_year: "Gratuity Per Completed Year",
+  gratuity_value: "Total Gratuity Payable",
+  tax_exempt_gratuity: "Tax-Exempt Gratuity",
+  taxable_gratuity: "Taxable Gratuity",
+  monthly_ctc_gratuity: "Monthly Gratuity CTC Accrual",
+  annual_ctc_gratuity: "Annual Gratuity CTC Accrual",
+  eligibility_message: "Eligibility",
+};
+const INSURANCE_LABELS: Record<string, string> = {
+  account_name: "Account / Life Insured", category: "Policy Type",
+  security_name: "Policy Name", broker: "Insurer", annual_premium: "Annual Premium",
+  premium_frequency: "Frequency", premium_years_paid: "Years Paid",
+  premium_end_date: "Premium End", policy_end_date: "Cover End",
+  death_cover: "Death Cover", health_cover: "Health Cover",
+  critical_illness_cover: "Critical Illness", latest: "Current Value",
+  bonus_accrued_till_date: "Bonus Accrued", money_back_received: "Money Back",
+  maturity_value: "Maturity Value", next_premium_due_date: "Next Premium Due",
 };
 const fixedIncomeColWidth = (col: string) =>
   col === "account_name"
@@ -515,6 +537,14 @@ const fixedIncomeColWidth = (col: string) =>
                         : col === "maturity_date"
                           ? "96px"
                           : "96px";
+const insuranceColWidth = (col: string) =>
+  ["account_name", "category", "security_name", "broker"].includes(col)
+    ? "125px"
+    : ["annual_premium", "death_cover", "health_cover", "critical_illness_cover", "latest", "bonus_accrued_till_date", "money_back_received", "maturity_value"].includes(col)
+      ? "120px"
+      : ["premium_end_date", "policy_end_date", "next_premium_due_date"].includes(col)
+        ? "105px"
+        : "92px";
 const fieldLabel = (moduleKey: string, field: string) =>
   moduleKey === "property" && field === "broker"
     ? "Community"
@@ -542,6 +572,8 @@ const fieldLabel = (moduleKey: string, field: string) =>
       ? "52 Week High"
     : moduleKey === "stocks" && field === "fifty_two_week_low"
       ? "52 Week Low"
+    : moduleKey === "insurance" && INSURANCE_LABELS[field]
+      ? INSURANCE_LABELS[field]
     : moduleKey === "insurance" && field === "lic_bonus"
       ? "Bonus Accrued Till Date"
     : moduleKey === "insurance" && field === "yearly_bonus"
@@ -594,6 +626,14 @@ const moneyCols = [
   "yearly_investment",
   "employee_contribution",
   "company_contribution",
+  "monthly_basic_salary",
+  "monthly_da",
+  "salary_basis",
+  "gratuity_per_year",
+  "tax_exempt_gratuity",
+  "taxable_gratuity",
+  "monthly_ctc_gratuity",
+  "annual_ctc_gratuity",
   "gratuity_value",
   "maturity_value",
   "year_end_maturity_value",
@@ -608,6 +648,27 @@ const moneyCols = [
   "premiums_paid_to_date",
   "death_cover_value",
   "annual_premium",
+  "premium_amount",
+  "sum_assured",
+  "additional_rider_cover",
+  "base_health_cover",
+  "super_topup_cover",
+  "no_claim_bonus",
+  "deductible",
+  "accidental_death_cover",
+  "permanent_disability_cover",
+  "temporary_disability_cover",
+  "critical_illness_cover",
+  "maturity_sum_assured",
+  "bonus_accrued_till_date",
+  "final_additional_bonus",
+  "money_back_received",
+  "next_money_back_amount",
+  "surrender_value",
+  "fund_value",
+  "death_cover",
+  "health_cover",
+  "maturity_value",
   "current_value",
   "target_amount",
   "gap",
@@ -660,7 +721,7 @@ const isCompanyPfType = (value: any) =>
   /^(companypf|pf)$/.test(key(String(value || "")));
 const NET_WORTH_SNAPSHOT_MODULE = "netWorthSnapshot";
 const INVESTMENT_PERIOD_SNAPSHOT_MODULE = "investmentPeriodSnapshot";
-const AUTO_REFRESH_MS = 5 * 60 * 1000;
+const AUTO_REFRESH_MS = 60 * 1000;
 const LIVE_DISPLAY_REFRESH_MS = AUTO_REFRESH_MS;
 const SAVED_RATE_REFRESH_MS = AUTO_REFRESH_MS;
 const IST_TIME_ZONE = "Asia/Kolkata";
@@ -777,6 +838,13 @@ const numericFieldNames = new Set(
     "tenure_months",
     "emis_left",
     "emiFuture",
+    "premium_paying_years",
+    "premium_paying_till_age",
+    "premium_years_paid",
+    "bonus_rate",
+    "co_pay",
+    "units",
+    "nav",
     "latitude",
     "longitude",
   ]),
@@ -825,6 +893,7 @@ function Empty({ text }: { text: string }) {
 export default function AssetManagerApp() {
   const [session, setSession] = useState<any>(null),
     [loading, setLoading] = useState(true),
+    [refreshing, setRefreshing] = useState(false),
     [email, setEmail] = useState(""),
     [password, setPassword] = useState(""),
     [authMode, setAuthMode] = useState<"signin" | "signup">("signin"),
@@ -858,6 +927,7 @@ export default function AssetManagerApp() {
     }),
     [query, setQuery] = useState(""),
     [selectedWatchlistId, setSelectedWatchlistId] = useState(""),
+    [watchlistAssetTab, setWatchlistAssetTab] = useState<"Stock" | "ETF">("Stock"),
     [watchlistSort, setWatchlistSort] = useState<{
       key:
         | "name"
@@ -906,7 +976,14 @@ export default function AssetManagerApp() {
         const saved =
           JSON.parse(localStorage.getItem("asset-manager-appearance") || "{}") ||
           {};
-        return { ...DEFAULT_APPEARANCE, ...saved };
+        return {
+          ...DEFAULT_APPEARANCE,
+          ...saved,
+          // Retire removed themes safely; existing users land on Marketplace.
+          theme: APP_THEMES.some((theme) => theme.id === saved.theme)
+            ? saved.theme
+            : "amazon",
+        };
       } catch {
         return DEFAULT_APPEARANCE;
       }
@@ -932,6 +1009,10 @@ export default function AssetManagerApp() {
       "weekly" | "monthly" | "ytd"
     >("weekly"),
     [performanceModule, setPerformanceModule] = useState("all"),
+    [projectionYears, setProjectionYears] = useState(10),
+    [projectionMonthlyInput, setProjectionMonthlyInput] = useState(""),
+    [projectionReturnInput, setProjectionReturnInput] = useState(""),
+    [projectionHistoryRates, setProjectionHistoryRates] = useState({ shares: 12, gold: 10, loaded: false }),
     [historicalPerformance, setHistoricalPerformance] = useState<
       { date: string; invested: number; current: number; type: string }[]
     >([]),
@@ -979,6 +1060,11 @@ export default function AssetManagerApp() {
     [stockResults, setStockResults] = useState<typeof ALL_STOCKS>([]),
     [stockOpen, setStockOpen] = useState(false),
     [fixedIncomeType, setFixedIncomeType] = useState(""),
+    [insuranceType, setInsuranceType] = useState(""),
+    [insurancePremiumFrequency, setInsurancePremiumFrequency] = useState(""),
+    [insurancePremiumTerm, setInsurancePremiumTerm] = useState(""),
+    [insuranceReturnPremium, setInsuranceReturnPremium] = useState(""),
+    [gratuityPreview, setGratuityPreview] = useState<any>(null),
     [accountTabs, setAccountTabs] = useState<Record<string, string>>(() => {
       if (typeof window === "undefined") return {};
       try {
@@ -1049,12 +1135,37 @@ export default function AssetManagerApp() {
   }, []);
   useEffect(() => {
     if (typeof window === "undefined") return;
-    const mq = window.matchMedia("(max-width: 768px)"),
+    const mq = window.matchMedia("(max-width: 1024px)"),
       sync = () => setPhoneMode(mq.matches);
     sync();
-    mq.addEventListener?.("change", sync);
-    return () => mq.removeEventListener?.("change", sync);
+    if (mq.addEventListener) mq.addEventListener("change", sync);
+    else mq.addListener(sync);
+    return () => {
+      if (mq.removeEventListener) mq.removeEventListener("change", sync);
+      else mq.removeListener(sync);
+    };
   }, []);
+  useEffect(() => {
+    if (!session) return;
+    let cancelled = false;
+    const cagr = (points: any[]) => {
+      const first = points?.[0], last = points?.[points.length - 1];
+      const years = first && last ? (Date.parse(last.date) - Date.parse(first.date)) / (365.25 * 86400000) : 0;
+      return years > 0 && first.value > 0 && last.value > 0 ? (Math.pow(last.value / first.value, 1 / years) - 1) * 100 : 0;
+    };
+    Promise.all([
+      fetch("/api/market-trend?asset=shares-history&range=10y").then((r) => r.ok ? r.json() : Promise.reject()),
+      fetch("/api/market-trend?asset=gold-history&range=10y").then((r) => r.ok ? r.json() : Promise.reject()),
+    ]).then(([shares, gold]) => {
+      if (cancelled) return;
+      setProjectionHistoryRates({
+        shares: Math.max(-10, Math.min(25, cagr(shares.points) || 12)),
+        gold: Math.max(-10, Math.min(25, cagr(gold.points) || 10)),
+        loaded: true,
+      });
+    }).catch(() => undefined);
+    return () => { cancelled = true; };
+  }, [session]);
   useEffect(() => {
     if (user?.id) loadHousehold();
     else {
@@ -1109,8 +1220,47 @@ export default function AssetManagerApp() {
         ? fixedIncomeCategoryLabel(editing.record?.data?.category || "")
         : "",
     );
+    if (editing?.moduleKey === "insurance") {
+      const policy = normalizeInsurancePolicy(
+        editing.record?.data || editing.defaults || {},
+      );
+      setInsuranceType(policy.category || "");
+      setInsurancePremiumFrequency(policy.premium_frequency || "Yearly");
+      setInsurancePremiumTerm(
+        String(policy.premium_paying_term_type || "Till Maturity"),
+      );
+      setInsuranceReturnPremium(String(policy.return_of_premium || "No"));
+    } else {
+      setInsuranceType("");
+      setInsurancePremiumFrequency("");
+      setInsurancePremiumTerm("");
+      setInsuranceReturnPremium("");
+    }
     setStockResults([]);
     setStockOpen(false);
+    if (
+      editing?.moduleKey === "fixedIncome" &&
+      key(editing.record?.data?.category || "") === "gratuity"
+    ) {
+      try {
+        setGratuityPreview(
+          calculateIndianGratuity({
+            dateOfJoining: editing.record?.data?.purchase_date || "",
+            calculationDate:
+              editing.record?.data?.last_working_date || undefined,
+            monthlyBasicSalary:
+              editing.record?.data?.monthly_basic_salary,
+            monthlyDA: editing.record?.data?.monthly_da,
+            coveredUnderAct:
+              editing.record?.data?.covered_under_gratuity_act || "Yes",
+          }),
+        );
+      } catch (error: any) {
+        setGratuityPreview({
+          error: error?.message || "Enter gratuity details.",
+        });
+      }
+    } else setGratuityPreview(null);
   }, [editing]);
   useEffect(() => {
     if (
@@ -1692,6 +1842,10 @@ export default function AssetManagerApp() {
       ? `&provider=${encodeURIComponent(provider)}`
       : "";
   };
+  const quoteFetch = (url: string) =>
+    fetch(url, {
+      headers: { Authorization: `Bearer ${session?.access_token || ""}` },
+    });
   const bullionSourceParam = () =>
     `&source=${encodeURIComponent(sourceFor("bullion"))}`;
   const setSourcePref = (moduleKey: string, source: string) =>
@@ -1872,7 +2026,7 @@ export default function AssetManagerApp() {
     let price = num(d.current_price || d.live_price);
     if (!price && d.ticker_symbol) {
       try {
-          const res = await fetch(
+          const res = await quoteFetch(
             `/api/quote?symbol=${encodeURIComponent(d.ticker_symbol)}&exchange=${encodeURIComponent(d.exchange || "NSE")}&name=${encodeURIComponent(d.security_name || "")}${quoteProviderParam()}`,
           ),
           q = await res.json();
@@ -1927,7 +2081,9 @@ export default function AssetManagerApp() {
   }
   async function refreshGoogleDriveStatus() {
     try {
-      const res = await fetch("/api/google-drive/status");
+      const res = await fetch("/api/google-drive/status", {
+        headers: { Authorization: `Bearer ${session?.access_token || ""}` },
+      });
       const json = await res.json();
       setGoogleDriveConnected(!!json.connected);
     } catch {
@@ -1965,7 +2121,12 @@ export default function AssetManagerApp() {
       });
       setLocalBullionRate(localRes?.ok ? local : null);
       setBullionPriceStatus(goldRes.ok || silverRes.ok ? "ready" : "error");
-    } catch {
+      if (!goldRes.ok && !silverRes.ok) {
+        setToast(
+          gold?.error || silver?.error || "Could not refresh gold/silver rates",
+        );
+      }
+    } catch (e: any) {
       setBullionMarket({
         gold: null,
         silver: null,
@@ -1973,6 +2134,7 @@ export default function AssetManagerApp() {
       });
       setLocalBullionRate(null);
       setBullionPriceStatus("error");
+      setToast(e?.message || "Could not refresh gold/silver rates");
     }
   }
   async function refreshMarketToday() {
@@ -1986,7 +2148,7 @@ export default function AssetManagerApp() {
       const indexRows = [];
       for (const [name, symbol] of indices) {
         try {
-          const res = await fetch(
+          const res = await quoteFetch(
               `/api/quote?symbol=${encodeURIComponent(symbol)}&exchange=INDEX${quoteProviderParam()}`,
             ),
             q = await res.json();
@@ -2015,7 +2177,7 @@ export default function AssetManagerApp() {
         fetch(`/api/market-rate?asset=gold${bullionSourceParam()}`),
         fetch(`/api/market-rate?asset=silver${bullionSourceParam()}`),
         fetch(`/api/market-rate?asset=crude`),
-        fetch(
+        quoteFetch(
           `/api/quote?symbol=${encodeURIComponent("USDINR=X")}&exchange=INDEX${quoteProviderParam()}`,
         ),
       ]);
@@ -2148,9 +2310,42 @@ export default function AssetManagerApp() {
     }
   }
   async function disconnectGoogleDrive() {
-    await fetch("/api/google-drive/status", { method: "DELETE" });
+    await fetch("/api/google-drive/status", {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${session?.access_token || ""}` },
+    });
     setGoogleDriveConnected(false);
     setToast("Google Drive disconnected");
+  }
+
+  async function refreshCurrentScreen() {
+    if (refreshing) return;
+    setRefreshing(true);
+    try {
+      if (view === "watchlist") await refreshWatchlist(true);
+      else if (["stocks", "mutualFunds", "bullion", "nsel"].includes(view))
+        await refreshModuleRates(view, true, true);
+      else await loadAll(true);
+      setToast("Current screen refreshed");
+    } catch (caught: any) {
+      setToast(caught?.message || "Could not refresh the current screen");
+    } finally {
+      setRefreshing(false);
+    }
+  }
+  async function signOutSafely() {
+    const authorization = `Bearer ${session?.access_token || ""}`;
+    await Promise.allSettled([
+      fetch("/api/google-drive/status", {
+        method: "DELETE",
+        headers: { Authorization: authorization },
+      }),
+      fetch("/api/upstox/status", {
+        method: "DELETE",
+        headers: { Authorization: authorization },
+      }),
+    ]);
+    await supabase.auth.signOut();
   }
   async function uploadDocs(
     moduleKey: string,
@@ -2234,16 +2429,25 @@ export default function AssetManagerApp() {
       const closed = String(data.status || "").toLowerCase() === "closed",
         wasClosed =
           String(record?.data?.status || "").toLowerCase() === "closed";
-      if (closed && (!wasClosed || !data.death_cover_after_closure)) {
+      if (
+        closed &&
+        (!wasClosed ||
+          (!data.death_cover_after_premium_closure &&
+            !data.death_cover_after_closure))
+      ) {
         const deathCoverActive = confirm(
           "This insurance policy is closed. Is the sum assured still payable on death?\n\nOK = Yes, keep death cover active.\nCancel = No, no death cover remains.",
         );
         data = {
           ...data,
+          death_cover_after_premium_closure: deathCoverActive ? "Yes" : "No",
           death_cover_after_closure: deathCoverActive ? "Yes" : "No",
         };
       } else if (!closed) {
-        data = { ...data, death_cover_after_closure: "" };
+        data = {
+          ...data,
+          death_cover_after_closure: "",
+        };
       }
     }
     data = withSystemDates(computedData(moduleKey, data), record);
@@ -2455,7 +2659,7 @@ export default function AssetManagerApp() {
         continue;
       }
       try {
-        const res = await fetch(
+        const res = await quoteFetch(
           `/api/quote?symbol=${encodeURIComponent(d.ticker_symbol)}&exchange=${encodeURIComponent(d.exchange || "NSE")}&name=${encodeURIComponent(d.security_name || "")}${quoteProviderParam()}`,
         );
         const q = await res.json();
@@ -2493,7 +2697,7 @@ export default function AssetManagerApp() {
       if (!quotes.has(quoteKey))
         quotes.set(
           quoteKey,
-          fetch(
+          quoteFetch(
             `/api/quote?symbol=${encodeURIComponent(symbol)}&exchange=${encodeURIComponent(exchange)}&name=${encodeURIComponent(name)}${quoteProviderParam()}`,
           ).then(async (res) => {
             const q = await res.json();
@@ -2554,7 +2758,7 @@ export default function AssetManagerApp() {
         continue;
       }
       try {
-        const res = await fetch(
+        const res = await quoteFetch(
           `/api/quote?symbol=${encodeURIComponent(d.ticker_symbol)}&exchange=${encodeURIComponent(d.exchange || "NSE")}&name=${encodeURIComponent(d.security_name || "")}${quoteProviderParam()}`,
         );
         const q = await res.json();
@@ -2772,6 +2976,16 @@ export default function AssetManagerApp() {
           : d.lockInYears,
       );
       set("rate_year", d.period);
+      if (key(type) === "gratuity") {
+        const clear = (name: string) => {
+          const el = form.querySelector<HTMLInputElement>(`[name="${name}"]`);
+          if (el) el.value = "";
+        };
+        set("covered_under_gratuity_act", "Yes");
+        ["interest_rate", "lock_in_years", "maturity_value", "maturity_date"].forEach(clear);
+        setToast("Gratuity calculator ready");
+        return;
+      }
       if (isCompanyPfType(type)) {
         set("broker", "Govt");
         const lock = form.querySelector<HTMLInputElement>(
@@ -2796,6 +3010,26 @@ export default function AssetManagerApp() {
   }
   function showFixedIncomeField(name: string) {
     const t = key(fixedIncomeType);
+    if (t === "gratuity")
+      return [
+        "account_name",
+        "category",
+        "purchase_date",
+        "last_working_date",
+        "monthly_basic_salary",
+        "monthly_da",
+        "covered_under_gratuity_act",
+        "notes",
+      ].includes(name);
+    if (
+      [
+        "last_working_date",
+        "monthly_basic_salary",
+        "monthly_da",
+        "covered_under_gratuity_act",
+      ].includes(name)
+    )
+      return false;
     if (
       isCompanyPfType(t) &&
       ["lock_in_years", "maturity_value", "maturity_date"].includes(name)
@@ -2807,6 +3041,151 @@ export default function AssetManagerApp() {
       return t === "epf" || t === "companypf" || t === "pf";
     if (name === "gratuity_value") return t === "gratuity";
     return true;
+  }
+  function showInsuranceField(name: string, source?: Record<string, any>) {
+    const type = insurancePolicyType(
+        source?.policy_type || source?.category || insuranceType,
+        source?.broker,
+      ),
+      frequency = key(
+        source?.premium_frequency || insurancePremiumFrequency || "Yearly",
+      ),
+      term = key(
+        source?.premium_paying_term_type ||
+          insurancePremiumTerm ||
+          "Till Maturity",
+      ),
+      single = frequency === "single" || term === "singlepay",
+      common = new Set([
+        "account_name", "life_insured", "security_name", "category", "broker",
+        "insurance_broker", "status", "policy_start_date", "policy_end_date",
+        "nominee", "notes",
+      ]),
+      premium = new Set([
+        "premium_amount", "premium_frequency", "premium_paying_term_type",
+        "premium_paying_years", "premium_paying_till_age", "premium_end_date",
+        "premium_due_date", "premium_years_paid", "single_premium_paid",
+      ]),
+      byType: Record<string, string[]> = {
+        TERM_PLAN: ["cover_end_date", "sum_assured", "additional_rider_cover", "return_of_premium", "death_cover_after_premium_closure"],
+        HEALTH_INSURANCE: ["covered_members", "base_health_cover", "super_topup_cover", "no_claim_bonus", "deductible", "co_pay", "room_rent_limit", "waiting_period"],
+        LIFE_INSURANCE: ["sum_assured", "additional_rider_cover", "maturity_sum_assured", "bonus_rate", "bonus_accrued_till_date", "final_additional_bonus", "money_back_received", "surrender_value", "current_value", "maturity_value", "death_cover_after_premium_closure", "benefits_continue_after_maturity"],
+        ENDOWMENT: ["sum_assured", "additional_rider_cover", "maturity_sum_assured", "bonus_rate", "bonus_accrued_till_date", "final_additional_bonus", "money_back_received", "surrender_value", "current_value", "maturity_value", "death_cover_after_premium_closure", "benefits_continue_after_maturity"],
+        MONEY_BACK: ["sum_assured", "maturity_sum_assured", "money_back_received", "next_money_back_date", "next_money_back_amount", "bonus_rate", "bonus_accrued_till_date", "final_additional_bonus", "surrender_value", "maturity_value"],
+        ULIP: ["sum_assured", "fund_value", "units", "nav"],
+        ACCIDENT_COVER: ["accidental_death_cover", "permanent_disability_cover", "temporary_disability_cover"],
+        CRITICAL_ILLNESS: ["critical_illness_cover", "covered_illnesses", "waiting_period", "survival_period"],
+        OTHER: ["sum_assured", "current_value", "maturity_value"],
+      };
+    if (
+      type === "TERM_PLAN" &&
+      ["current_value", "maturity_value"].includes(name) &&
+      /^(yes|true|1)$/i.test(
+        String(source?.return_of_premium || insuranceReturnPremium || ""),
+      )
+    )
+      return true;
+    if (common.has(name)) return true;
+    if (premium.has(name)) {
+      if (type === "OTHER") return false;
+      if (["premium_amount", "premium_frequency"].includes(name)) return true;
+      if (single) return name === "single_premium_paid";
+      if (["HEALTH_INSURANCE", "ACCIDENT_COVER", "CRITICAL_ILLNESS"].includes(type))
+        return name === "premium_due_date";
+      if (name === "single_premium_paid") return false;
+      if (name === "premium_paying_term_type") return true;
+      if (name === "premium_paying_years") return term === "limitedyears";
+      if (name === "premium_paying_till_age") return term === "untilage";
+      if (name === "premium_end_date")
+        return ["limitedyears", "untilage", "tillmaturity"].includes(term);
+      if (["premium_due_date", "premium_years_paid"].includes(name)) return true;
+      return false;
+    }
+    return (byType[type] || byType.OTHER).includes(name);
+  }
+  function updateInsurancePremiumMode(
+    form: HTMLFormElement | null,
+    name: string,
+    value: string,
+  ) {
+    if (name === "premium_frequency") {
+      setInsurancePremiumFrequency(value);
+      if (key(value) === "single") {
+        setInsurancePremiumTerm("Single Pay");
+        const term = form?.querySelector<HTMLSelectElement>(
+            '[name="premium_paying_term_type"]',
+          ),
+          paid = form?.querySelector<HTMLSelectElement>(
+            '[name="single_premium_paid"]',
+          );
+        if (term) term.value = "Single Pay";
+        if (paid) paid.value = "Yes";
+      }
+    }
+    if (name === "premium_paying_term_type") {
+      setInsurancePremiumTerm(value);
+      if (key(value) === "singlepay") {
+        setInsurancePremiumFrequency("Single");
+        const frequency = form?.querySelector<HTMLSelectElement>(
+          '[name="premium_frequency"]',
+        );
+        if (frequency) frequency.value = "Single";
+      }
+    }
+  }
+  function showInsuranceDetailField(
+    name: string,
+    source: Record<string, any>,
+  ) {
+    if (MODULES.insurance.fields.some((field) => field.name === name))
+      return showInsuranceField(name, source);
+    const type = insurancePolicyType(
+        source.policy_type || source.category,
+        source.broker,
+      ),
+      single = key(source.premium_frequency) === "single";
+    if (["data_uploaded_date", "data_uploaded_at", "last_updated_date", "last_updated_at"].includes(name))
+      return true;
+    if (["annual_premium", "premiums_paid_to_date", "premium_status"].includes(name))
+      return type !== "OTHER";
+    if (["policy_years_paid", "premium_years_paid"].includes(name))
+      return type !== "OTHER" && !single;
+    if (name === "next_premium_due_date") return type !== "OTHER" && !single;
+    if (name === "death_cover" || name === "death_cover_value")
+      return ["TERM_PLAN", "LIFE_INSURANCE", "ENDOWMENT", "MONEY_BACK", "ULIP", "ACCIDENT_COVER", "OTHER"].includes(type);
+    if (name === "health_cover") return type === "HEALTH_INSURANCE";
+    if (name === "critical_illness_cover") return type === "CRITICAL_ILLNESS";
+    if (["bonus_accrued_till_date", "lic_bonus", "yearly_bonus"].includes(name))
+      return ["LIFE_INSURANCE", "ENDOWMENT", "MONEY_BACK"].includes(type);
+    if (name === "money_back_received")
+      return ["LIFE_INSURANCE", "ENDOWMENT", "MONEY_BACK"].includes(type);
+    if (name === "latest")
+      return ["LIFE_INSURANCE", "ENDOWMENT", "MONEY_BACK", "ULIP", "OTHER"].includes(type) ||
+        (type === "TERM_PLAN" && /^(yes|true|1)$/i.test(String(source.return_of_premium || "")));
+    return true;
+  }
+  function gratuityFromForm(form: HTMLFormElement | null) {
+    const value = (name: string) =>
+      (
+        form?.querySelector(`[name="${name}"]`) as
+          | HTMLInputElement
+          | HTMLSelectElement
+          | null
+      )?.value || "";
+    return calculateIndianGratuity({
+      dateOfJoining: value("purchase_date"),
+      calculationDate: value("last_working_date") || undefined,
+      monthlyBasicSalary: value("monthly_basic_salary"),
+      monthlyDA: value("monthly_da"),
+      coveredUnderAct: value("covered_under_gratuity_act") || "Yes",
+    });
+  }
+  function updateGratuityPreview(form: HTMLFormElement | null) {
+    try {
+      setGratuityPreview(gratuityFromForm(form));
+    } catch (error: any) {
+      setGratuityPreview({ error: error?.message || "Enter gratuity details." });
+    }
   }
   function fixedIncomeFormData(form: HTMLFormElement | null) {
     const get = (n: string) =>
@@ -3021,15 +3400,25 @@ export default function AssetManagerApp() {
             {},
           ),
         })),
-      heads = [
-        ...new Set([
-          ...def.fields.map((f) => f.name),
-          ...def.cols,
-          ...systemCols,
-        ]),
+      insuranceHeads = [
+        "account_name", "category", "security_name", "broker", "status",
+        "annual_premium", "premium_frequency", "premium_years_paid",
+        "premiums_paid_to_date", "premium_end_date", "policy_end_date",
+        "death_cover", "health_cover", "critical_illness_cover", "latest",
+        "bonus_accrued_till_date", "money_back_received", "maturity_value",
+        "nominee", "notes",
       ],
+      heads = k === "insurance"
+        ? insuranceHeads
+        : [
+            ...new Set([
+              ...def.fields.map((f) => f.name),
+              ...def.cols,
+              ...systemCols,
+            ]),
+          ],
       csv = [
-        heads.join(","),
+        heads.map((head) => csvEscape(fieldLabel(k, head))).join(","),
         ...rows.map((r) => heads.map((h) => csvEscape(r[h])).join(",")),
       ].join("\n");
     download(`${k}-export.csv`, csv, "text/csv");
@@ -3183,7 +3572,10 @@ export default function AssetManagerApp() {
         );
       const response = await fetch("/api/investment-history", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session?.access_token || ""}`,
+        },
         body: JSON.stringify({
           from: performanceFrom,
           to: performanceTo,
@@ -3380,6 +3772,27 @@ export default function AssetManagerApp() {
     .filter(([, ids]: any) => ids.length);
   const navButton = (id: string, compact = false) => {
     const meta = allViews.find((v) => v[0] === id);
+    const NavIcon = ({
+      dashboard: PieChart,
+      stocks: BarChart3,
+      mutualFunds: BriefcaseBusiness,
+      ulips: Shield,
+      bullion: Sparkles,
+      nsel: BarChart3,
+      fixedIncome: FolderOpen,
+      insurance: Shield,
+      property: Building2,
+      otherAssets: FolderOpen,
+      loans: ArrowDown,
+      borrowings: ArrowUpDown,
+      goals: CheckCircle2,
+      watchlist: Eye,
+      alerts: Bell,
+      purchaseCalculator: BarChart3,
+      household: Users,
+      settings: KeyRound,
+      admin: Shield,
+    } as Record<string, any>)[id] || BriefcaseBusiness;
     return (
       <button
         key={id}
@@ -3390,6 +3803,7 @@ export default function AssetManagerApp() {
             : `flex w-full items-center rounded-2xl px-3 py-2 text-left text-sm font-bold transition ${view === id ? "bg-sage text-white shadow-md" : "hover:bg-[#eef5ee]"}`
         }
       >
+        <NavIcon size={17} aria-hidden="true" />
         <span>{meta?.[2]}</span>
       </button>
     );
@@ -3438,7 +3852,7 @@ export default function AssetManagerApp() {
                   .filter(Boolean),
               ),
             ),
-            ...(mobileAccountMenu === "stocks" ? ["Watchlist"] : []),
+            ...(mobileAccountMenu === "stocks" ? ["Watchlist", "ETFs"] : []),
           ]
         : [];
   function selectMobileTab(id: string) {
@@ -3646,7 +4060,7 @@ export default function AssetManagerApp() {
                 )}
                 {todayItem && (
                   <div className="phone-pair-line">
-                    <span>Today Gain</span>
+                    <span>Today's Gain</span>
                     <b className={todayItem.cls || ""}>{todayItem.value}</b>
                   </div>
                 )}
@@ -3699,7 +4113,17 @@ export default function AssetManagerApp() {
       };
     return (
       <article className="phone-stock-card">
-        <button type="button" className="phone-stock-card-top" onClick={openHolding}>
+        <button
+          type="button"
+          className="phone-stock-card-top"
+          onClick={() => {
+            if (moduleKey === "watchlist") {
+              window.open(moneycontrolHref(c), "_blank", "noopener,noreferrer");
+              return;
+            }
+            openHolding();
+          }}
+        >
           <div className="min-w-0">
             <div className="phone-stock-name">{shortName}</div>
             <div className="phone-stock-meta">
@@ -3711,23 +4135,28 @@ export default function AssetManagerApp() {
           </div>
         </button>
         <div className="phone-stock-top-stats phone-pair-row">
-          <div className="phone-pair-cell">
-            <div className="phone-pair-line">
-              <span>Invested</span>
-              <b>{fmt(x.invested)}</b>
+          {moduleKey !== "watchlist" && (
+            <div className="phone-pair-cell">
+              <div className="phone-pair-line">
+                <span>Invested</span>
+                <b>{fmt(x.invested)}</b>
+              </div>
+              <div className="phone-pair-line">
+                <span>Total</span>
+                <b>{fmt(x.latest)}</b>
+              </div>
             </div>
-            <div className="phone-pair-line">
-              <span>Total</span>
-              <b>{fmt(x.latest)}</b>
-            </div>
-          </div>
-          <div className={`phone-pair-cell phone-gain-cell ${x.gain >= 0 ? "phone-gain-up" : "phone-gain-down"}`}>
+          )}
+          <div
+            className={`phone-pair-cell phone-gain-cell ${x.gain >= 0 ? "phone-gain-up" : "phone-gain-down"}`}
+            style={moduleKey === "watchlist" ? { gridColumn: "1 / -1" } : undefined}
+          >
             <div className="phone-pair-line">
               <span>Overall Gain</span>
               <b className={x.gain >= 0 ? "phone-green" : "phone-red"}>{fmt(x.gain)}</b>
             </div>
             <div className="phone-pair-line">
-              <span>Today Gain</span>
+              <span>Today's Gain</span>
               <b className={x.today >= 0 ? "phone-green" : "phone-red"}>{fmt(x.today)}</b>
             </div>
           </div>
@@ -3825,7 +4254,7 @@ export default function AssetManagerApp() {
               <b className={x.gain >= 0 ? "phone-green" : "phone-red"}>{fmt(x.gain)}</b>
             </div>
             <div className="phone-pair-line">
-              <span>Today Gain</span>
+              <span>Today's Gain</span>
               <b className={x.today >= 0 ? "phone-green" : "phone-red"}>{fmt(x.today)}</b>
             </div>
           </div>
@@ -3854,6 +4283,61 @@ export default function AssetManagerApp() {
           </span>
         </a>
       </article>
+    );
+  }
+  function phonePropertyHoldingCard(x: any, onClick: () => void) {
+    const c = x.c || {},
+      currentValue = num(c.latest || c.latest_value),
+      purchaseValue = num(c.invested || c.purchase_price),
+      gain = num(c.gain),
+      loanBalance = num(c.loan_balance),
+      netEquity = Math.max(0, currentValue - loanBalance),
+      location = String(c.location || c.broker || "Location not entered"),
+      usage = String(c.category || "Property"),
+      account = String(c.account_name || "Unassigned");
+    return (
+      <button
+        type="button"
+        className="phone-property-card"
+        onClick={onClick}
+        aria-label={`Open ${x.title} at ${location}`}
+      >
+        <div className="phone-property-head">
+          <div className="min-w-0">
+            <div className="phone-property-title">{x.title}</div>
+            <div className="phone-property-location">{location}</div>
+          </div>
+          <span className="phone-property-status">{usage}</span>
+        </div>
+        <div className="phone-property-values">
+          <div>
+            <span>Current value</span>
+            <strong>{fmt(currentValue)}</strong>
+          </div>
+          <div>
+            <span>Purchase price</span>
+            <strong>{fmt(purchaseValue)}</strong>
+          </div>
+          <div>
+            <span>Overall gain</span>
+            <strong className={gain >= 0 ? "phone-green" : "phone-red"}>
+              {fmt(gain)}
+            </strong>
+          </div>
+          <div>
+            <span>Net equity</span>
+            <strong>{fmt(netEquity)}</strong>
+          </div>
+        </div>
+        <div className="phone-property-foot">
+          <span>{account}</span>
+          <span>
+            {loanBalance
+              ? `Loan ${fmt(loanBalance)}${num(c.emis_left) ? ` · ${num(c.emis_left)} EMIs left` : ""}`
+              : "No linked loan"}
+          </span>
+        </div>
+      </button>
     );
   }
   function phoneMarketValue(x: any) {
@@ -3958,9 +4442,12 @@ export default function AssetManagerApp() {
       return <div className="phone-screen">{bullionCalculatorPanel()}</div>;
 
     const selectedAccount = accountTab("__phone"),
-      isPhoneStockWatchlist = view === "stocks" && selectedAccount === "Watchlist",
+      isPhoneEtfWatchlist = view === "stocks" && selectedAccount === "ETFs",
+      isPhoneStockWatchlist =
+        view === "stocks" &&
+        (selectedAccount === "Watchlist" || isPhoneEtfWatchlist),
       accountFiltered = (rs: Rec[]) =>
-        selectedAccount === "All" || selectedAccount === "Watchlist" || isPhoneStockWatchlist
+        selectedAccount === "All" || isPhoneStockWatchlist
           ? rs
           : rs.filter(
               (r) =>
@@ -3969,6 +4456,11 @@ export default function AssetManagerApp() {
             ),
       moduleDef = MODULES[view],
       phoneModuleKey = isPhoneStockWatchlist ? "watchlist" : view,
+      phoneModuleTitle = isPhoneStockWatchlist
+        ? isPhoneEtfWatchlist
+          ? "ETF Watchlist"
+          : "Stock Watchlist"
+        : moduleDef?.title,
       phoneRecords = accountFiltered(records),
       assetRows = Object.entries(MODULES)
         .filter(([k, d]) => d.kind === "asset" || k === "insurance")
@@ -4014,7 +4506,13 @@ export default function AssetManagerApp() {
         .filter((x) => x.latest || x.invested || x.rs.length),
       rawModuleRows = moduleDef
         ? phoneRecords
-            .filter((r) => r.module_key === phoneModuleKey)
+            .filter(
+              (r) =>
+                r.module_key === phoneModuleKey &&
+                (!isPhoneStockWatchlist ||
+                  (String(r.data?.asset_type || "Stock").toUpperCase() === "ETF") ===
+                    isPhoneEtfWatchlist),
+            )
             .map((r) => {
               const c = computeLiveRecord(phoneModuleKey, r.data),
                 title = String(
@@ -4051,7 +4549,9 @@ export default function AssetManagerApp() {
         rawModuleRows
           .reduce((m, x) => {
               const id = key(
-                  `${x.title}|${x.c.ticker_symbol || x.c.scheme_code || x.c.category || ""}`,
+                  phoneModuleKey === "property"
+                    ? `${x.title}|${x.c.location || x.r.id}`
+                    : `${x.title}|${x.c.ticker_symbol || x.c.scheme_code || x.c.category || ""}`,
                 ),
               g = m.get(id) || { ...x, key: `${phoneModuleKey}|${id}`, records: [] as Rec[], lots: 0 };
             g.records.push(x.r);
@@ -4148,37 +4648,49 @@ export default function AssetManagerApp() {
             }}
           >
             <div className="phone-module-main col-span-2 min-w-0 overflow-hidden">
-              <div className="phone-eyebrow">{moduleDef.title}</div>
+              <div className="phone-eyebrow">
+                {isPhoneStockWatchlist
+                  ? `${phoneModuleTitle} · Overall Gain`
+                  : phoneModuleTitle}
+              </div>
               <div className="phone-hero-value">
-                {fmt(moduleRows.reduce((s, x) => s + x.latest, 0))}
+                {fmt(
+                  moduleRows.reduce(
+                    (s, x) => s + (isPhoneStockWatchlist ? x.gain : x.latest),
+                    0,
+                  ),
+                )}
               </div>
               <div className="phone-hero-sub flex flex-wrap gap-x-2 gap-y-1">
                 <span>{moduleRows.length} names</span>
                 <span>{rawModuleRows.length} lots</span>
-                <span>
-                  Invested {fmt(moduleRows.reduce((s, x) => s + x.invested, 0))}
-                </span>
+                {!isPhoneStockWatchlist && (
+                  <span>
+                    Invested {fmt(moduleRows.reduce((s, x) => s + x.invested, 0))}
+                  </span>
+                )}
               </div>
             </div>
             {showsDailyChange(view) &&
               phoneStat(
-                "Today",
+                "Today's Gain",
                 fmt(moduleRows.reduce((s, x) => s + x.today, 0)),
                 moduleRows.reduce((s, x) => s + x.today, 0) >= 0
                   ? "phone-green"
                   : "phone-red",
               )}
-            {phoneStat(
-              "Gain",
-              fmt(moduleRows.reduce((s, x) => s + x.gain, 0)),
-              moduleRows.reduce((s, x) => s + x.gain, 0) >= 0
-                ? "phone-green"
-                : "phone-red",
-            )}
+            {!isPhoneStockWatchlist &&
+              phoneStat(
+                "Gain",
+                fmt(moduleRows.reduce((s, x) => s + x.gain, 0)),
+                moduleRows.reduce((s, x) => s + x.gain, 0) >= 0
+                  ? "phone-green"
+                  : "phone-red",
+              )}
           </section>
           {phoneAccountStrip()}
           <h3 className="phone-section-title">Consolidated Holdings</h3>
-          <div className="phone-list">
+          <div className={`phone-list ${view === "property" ? "phone-property-list" : ""}`}>
             {moduleRows.length ? (
               moduleRows.map((x) =>
                 <div key={`${view}-phone-group-${x.key}`} className="phone-group">
@@ -4186,6 +4698,16 @@ export default function AssetManagerApp() {
                     ? phoneStockHoldingCard(x)
                     : view === "bullion"
                       ? phoneBullionHoldingCard(x)
+                      : view === "property"
+                        ? phonePropertyHoldingCard(x, () =>
+                            setDetail({
+                              moduleKey: "property",
+                              record: x.records[0],
+                              computed: x.c,
+                              cols: moduleDef.cols || [],
+                              linkedProperty: true,
+                            }),
+                          )
                       : phoneRow(
                         x.title,
                         `${String(x.c.broker || x.c.account_name || moduleDef.title)} | ${x.lots} lot${x.lots > 1 ? "s" : ""}${x.lots > 1 ? ` | ${expandedLots[x.key] ? "Tap to hide" : "Tap to open"}` : ""}`,
@@ -4195,7 +4717,7 @@ export default function AssetManagerApp() {
                           ...(showsDailyChange(view)
                             ? [
                                 [
-                                  "Today",
+                                  "Today's Gain",
                                   fmt(x.today),
                                   x.today >= 0 ? "phone-green" : "phone-red",
                                 ],
@@ -4250,7 +4772,7 @@ export default function AssetManagerApp() {
         <div className="phone-stats">
           {phoneStat("Invested", fmt(scopedTotals.invested))}
           {phoneStat(
-            "Today",
+            "Today's Gain",
             fmt(todayTotal),
             todayTotal >= 0 ? "phone-green" : "phone-red",
           )}
@@ -4277,7 +4799,7 @@ export default function AssetManagerApp() {
                 ...(showsDailyChange(x.k)
                   ? [
                       [
-                        "Today",
+                        "Today's Gain",
                         fmt(x.today),
                         x.today >= 0 ? "phone-green" : "phone-red",
                       ],
@@ -4337,20 +4859,21 @@ export default function AssetManagerApp() {
   const stockHoldingColumns = [
     "account_name",
     "security_name",
+    "asset_type",
     "quantity",
     "current_purchase",
     "low_range",
     "high_range",
-    "day_change",
-    "gain_display",
-    "gain_pct",
     "invested",
+    "today_gain_display",
+    "gain_display",
     "latest",
   ];
   function stockHoldingLabel(col: string) {
     const labels: Record<string, React.ReactNode> = {
       account_name: <>Account Name</>,
       security_name: <>Security Name</>,
+      asset_type: <>Asset Type</>,
       quantity: <>Quantity</>,
       current_purchase: (
         <>
@@ -4360,7 +4883,7 @@ export default function AssetManagerApp() {
         </>
       ),
       invested: <>Invested</>,
-      latest: <>Total Value</>,
+      latest: <>Current Value</>,
       low_range: (
         <>
           Day Low
@@ -4375,15 +4898,20 @@ export default function AssetManagerApp() {
           52W High
         </>
       ),
-      day_change: <>Increase</>,
-      gain_display: (
+      today_gain_display: (
         <>
           Today's Gain
           <br />
-          Overall Gain
+          Today % Gain
         </>
       ),
-      gain_pct: <>Gain %</>,
+      gain_display: (
+        <>
+          Overall Gain
+          <br />
+          Overall % Gain
+        </>
+      ),
     };
     return labels[col] || pretty(col);
   }
@@ -4391,6 +4919,7 @@ export default function AssetManagerApp() {
     if (col === "current_purchase") return num(c.live_price);
     if (col === "low_range") return num(c.day_low);
     if (col === "high_range") return num(c.day_high);
+    if (col === "today_gain_display") return num(c.today_gain);
     if (col === "gain_display") return num(c.gain);
     if (["account_name", "security_name"].includes(col))
       return String(c[col] || "").toLowerCase();
@@ -4424,14 +4953,30 @@ export default function AssetManagerApp() {
           </div>
         </div>
       );
-    if (col === "gain_display")
+    if (col === "today_gain_display") {
+      const previousClose = num(c.live_price) - num(c.day_change);
+      const todayGainPct = previousClose
+        ? (num(c.day_change) / previousClose) * 100
+        : 0;
       return (
         <div className="grid justify-items-end gap-1 tabular-nums">
           <div className={num(c.today_gain) >= 0 ? "text-emerald-700 font-semibold" : "text-red-600 font-semibold"}>
             {num(c.today_gain) >= 0 ? "+" : ""}{fmt(c.today_gain)}
           </div>
-          <div className={num(c.gain) >= 0 ? "text-[10px] font-semibold text-emerald-700" : "text-[10px] font-semibold text-red-600"}>
+          <div className={todayGainPct >= 0 ? "text-[10px] font-semibold text-emerald-700" : "text-[10px] font-semibold text-red-600"}>
+            {todayGainPct >= 0 ? "+" : ""}{todayGainPct.toFixed(2)}%
+          </div>
+        </div>
+      );
+    }
+    if (col === "gain_display")
+      return (
+        <div className="grid justify-items-end gap-1 tabular-nums">
+          <div className={num(c.gain) >= 0 ? "text-emerald-700 font-semibold" : "text-red-600 font-semibold"}>
             {num(c.gain) >= 0 ? "+" : ""}{fmt(c.gain)}
+          </div>
+          <div className={num(c.gain_pct) >= 0 ? "text-[10px] font-semibold text-emerald-700" : "text-[10px] font-semibold text-red-600"}>
+            {num(c.gain_pct) >= 0 ? "+" : ""}{num(c.gain_pct).toFixed(2)}%
           </div>
         </div>
       );
@@ -4548,17 +5093,17 @@ export default function AssetManagerApp() {
     );
   if (!session)
     return (
-      <main className="flex min-h-screen items-center justify-center p-4">
-        <div className="card w-full max-w-md p-6">
+      <main className="auth-shell flex min-h-screen items-center justify-center p-4">
+        <div className="auth-card card w-full max-w-md p-6">
           <div className="mb-6">
-            <div className="mb-3 flex h-14 w-14 items-center justify-center rounded-3xl bg-sage text-xl font-semibold text-white">
-              PF
+            <div className="auth-brand-mark mb-3 flex h-14 w-14 items-center justify-center rounded-3xl bg-sage text-xl font-semibold text-white">
+              <PieChart size={28} aria-hidden="true" />
             </div>
             <h1 className="text-3xl font-semibold tracking-tight">
-              Portfolio Cloud
+              Asset Manager
             </h1>
             <p className="mt-2 text-sm text-gray-600">
-              Email based access for your portfolio.
+              Sign in to track your complete financial portfolio.
             </p>
           </div>
           <form
@@ -4672,32 +5217,6 @@ export default function AssetManagerApp() {
             radial-gradient(circle at 94% 0%, rgba(122, 18, 72, .13), transparent 26rem),
             linear-gradient(180deg, #FFFFFF 0%, var(--am-bg) 100%) !important;
         }
-        .app-theme-midnight {
-          --am-bg: #0F172A;
-          --am-bg-2: #111827;
-          --am-surface: #172033;
-          --am-surface-2: #1E293B;
-          --am-ink: #E5E7EB;
-          --am-muted: #AAB6C7;
-          --am-line: rgba(148, 163, 184, .22);
-          --am-plum: #2563EB;
-          --am-plum-2: #1D4ED8;
-          --am-plum-3: #38BDF8;
-          --am-gold: #22C55E;
-        }
-        .app-theme-graphite {
-          --am-bg: #F3F4F6;
-          --am-bg-2: #FFFFFF;
-          --am-surface: #FFFFFF;
-          --am-surface-2: #E5E7EB;
-          --am-ink: #111827;
-          --am-muted: #4B5563;
-          --am-line: rgba(17, 24, 39, .14);
-          --am-plum: #111827;
-          --am-plum-2: #374151;
-          --am-plum-3: #64748B;
-          --am-gold: #0F766E;
-        }
         .app-theme-plum {
           --am-bg: #FFF7ED;
           --am-bg-2: #FFF1E4;
@@ -4730,32 +5249,6 @@ export default function AssetManagerApp() {
           --am-red: #FF3030;
           --am-shadow: 0 1px 2px rgba(15,23,42,.06);
           --am-soft-shadow: 0 1px 2px rgba(15,23,42,.05);
-        }
-        .app-theme-midnight,
-        .app-theme-midnight main {
-          color: var(--am-ink) !important;
-          background:
-            radial-gradient(circle at 12% 0%, rgba(37,99,235,.22), transparent 27rem),
-            linear-gradient(180deg, #0F172A, #111827) !important;
-        }
-        .app-theme-midnight .card,
-        .app-theme-midnight section,
-        .app-theme-midnight .investment-table,
-        .app-theme-midnight .bg-white,
-        .app-theme-midnight .bg-white\/90 {
-          background: rgba(23, 32, 51, .92) !important;
-          color: var(--am-ink) !important;
-          border-color: var(--am-line) !important;
-        }
-        .app-theme-midnight p,
-        .app-theme-midnight .text-gray-500,
-        .app-theme-midnight .text-gray-600,
-        .app-theme-midnight .text-slate-500 {
-          color: var(--am-muted) !important;
-        }
-        .app-theme-graphite,
-        .app-theme-graphite main {
-          background: linear-gradient(180deg, #FFFFFF, #F3F4F6) !important;
         }
         .app-theme-plum,
         .app-theme-plum main {
@@ -6328,14 +6821,14 @@ export default function AssetManagerApp() {
         </button>
       )}
       <aside className="desktop-sidebar">
-        <div className="mb-6 flex items-start gap-3">
-          <div className="flex h-12 w-12 items-center justify-center rounded-3xl bg-sage text-lg font-semibold text-white shadow-soft">
-            PF
+        <div className="sidebar-brand mb-6 flex items-start gap-3">
+          <div className="brand-mark flex h-12 w-12 items-center justify-center rounded-3xl bg-sage text-lg font-semibold text-white shadow-soft">
+            <PieChart size={24} aria-hidden="true" />
           </div>
           <div className="min-w-0 flex-1">
-            <h1 className="font-semibold leading-none">Asset Manager Cloud</h1>
+            <h1 className="font-semibold leading-none">asset manager</h1>
             <p className="mt-1 text-xs font-semibold text-gray-500">
-              {isAdmin ? "Admin access" : "Normal access"}
+              {isAdmin ? "Admin portfolio" : "Your portfolio"}
             </p>
           </div>
           <button
@@ -6422,13 +6915,23 @@ export default function AssetManagerApp() {
       </aside>
       <main className="desktop-main min-w-0 max-w-full overflow-x-hidden p-6 max-lg:p-0">
         <div className="mobile-appbar">
-          <div>
+          <div className="mobile-brand-copy">
             <div className="text-[11px] font-semibold uppercase tracking-widest text-[#4f675b]">
-              Asset Manager Cloud
+              asset manager
             </div>
             <h2>{allViews.find((v) => v[0] === view)?.[2]}</h2>
           </div>
           <div className="flex gap-2">
+            <button
+              type="button"
+              className="mobile-icon-btn"
+              onClick={refreshCurrentScreen}
+              disabled={refreshing}
+              aria-label="Refresh current screen"
+              title="Refresh current screen"
+            >
+              <RefreshCw size={18} className={refreshing ? "animate-spin" : ""} />
+            </button>
             {MODULES[view] && view !== "dashboard" && (
               <button
                 className="btn-primary phone-add-btn"
@@ -6458,7 +6961,7 @@ export default function AssetManagerApp() {
               </section>
             ))}
             <div className="mobile-menu-actions">
-              <button className="btn" onClick={() => supabase.auth.signOut()}>
+              <button className="btn" onClick={signOutSafely}>
                 <LogOut size={16} /> Sign out
               </button>
             </div>
@@ -6494,16 +6997,26 @@ export default function AssetManagerApp() {
         <div className="desktop-content">
           {view !== "stocks" && (
             <header className="desktop-header mb-5 flex items-start justify-between gap-4 max-md:flex-col">
-              <div>
+              <div className="desktop-heading-copy">
                 <h2 className="text-3xl font-semibold tracking-tight">
                   {allViews.find((v) => v[0] === view)?.[2]}
                 </h2>
                 <p className="mt-1 text-sm text-gray-600">
-                  Cloud synced through Supabase. Hosted on Vercel.
+                  Track, compare and manage your complete portfolio.
                 </p>
               </div>
-              <div className="flex flex-wrap items-center justify-end gap-2">
-                <div className="flex items-center gap-2 rounded-full border border-[#e3dccc] bg-white px-3 py-2">
+              <div className="desktop-header-actions flex flex-wrap items-center justify-end gap-2">
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={refreshCurrentScreen}
+                  disabled={refreshing}
+                  aria-label="Refresh current screen"
+                >
+                  <RefreshCw size={16} className={refreshing ? "animate-spin" : ""} />
+                  {refreshing ? "Refreshing..." : "Refresh"}
+                </button>
+                <div className="header-search flex items-center gap-2 rounded-full border border-[#e3dccc] bg-white px-3 py-2">
                   <Search size={16} />
                   <input
                     className="w-56 bg-transparent text-sm outline-none"
@@ -6512,7 +7025,7 @@ export default function AssetManagerApp() {
                     onChange={(e) => setQuery(e.target.value)}
                   />
                 </div>
-                <button className="btn" onClick={() => supabase.auth.signOut()}>
+                <button className="btn header-signout" onClick={signOutSafely}>
                   <LogOut size={16} className="inline" /> Sign out
                 </button>
               </div>
@@ -7054,7 +7567,7 @@ export default function AssetManagerApp() {
         {scope !== "stocks" && bullion.length > 0 && (
           <div className="mt-4">
             {simpleTable(
-              ["Bullion Holding", "Today", "Current Value", "Signal"],
+              ["Bullion Holding", "Today's Gain", "Current Value", "Signal"],
               bullion
                 .slice(0, 5)
                 .map((x) => [
@@ -7996,6 +8509,7 @@ export default function AssetManagerApp() {
     };
   }
   function computeModuleTotals(k: string, rs: Rec[]) {
+    if (k === "stocks") return computeLiveTotals(rs);
     if (k !== "bullion") return computeTotals(rs);
     let assets = 0,
       invested = 0;
@@ -8223,7 +8737,7 @@ export default function AssetManagerApp() {
                   Investments
                 </th>
                 <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-widest text-[#40584c]">
-                  Todays Gain
+                  Today's Gain
                 </th>
                 <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-widest text-[#40584c]">
                   Overall Gain
@@ -8416,6 +8930,109 @@ export default function AssetManagerApp() {
       </section>
     );
   }
+  function recurringMonthlyInvestment() {
+    return records
+      .filter((r) => MODULES[r.module_key]?.kind === "asset" && r.module_key !== "fixedIncome")
+      .reduce((sum, r) => {
+        const d = r.data || {};
+        const direct = Math.max(
+          num(d.monthly_contribution),
+          num(d.sip_amount),
+          num(d.monthly_investment),
+          num(d.monthly_premium),
+        );
+        const payroll = num(d.employee_contribution) + num(d.company_contribution);
+        return sum + (direct || payroll || num(d.yearly_investment) / 12);
+      }, 0);
+  }
+  function futureNetWorthPanel() {
+    const inferredMonthly = recurringMonthlyInvestment();
+    const monthly = Math.max(0, projectionMonthlyInput === "" ? inferredMonthly : num(projectionMonthlyInput));
+    const annualRate = Math.max(-20, Math.min(30, projectionReturnInput === "" ? projectionHistoryRates.shares : num(projectionReturnInput)));
+    const base = totals.net;
+    const moduleValue = (keys: string[]) => records
+      .filter((r) => keys.includes(r.module_key))
+      .reduce((sum, r) => sum + num(computeLiveRecord(r.module_key, r.data).latest), 0);
+    const sharesBase = moduleValue(["stocks", "mutualFunds", "ulips"]);
+    const goldBase = moduleValue(["bullion"]);
+    const fixedRecords = records.filter((r) => r.module_key === "fixedIncome").map((r) => computeLiveRecord("fixedIncome", r.data));
+    const fixedBase = fixedRecords.reduce((sum, r) => sum + num(r.latest), 0);
+    const otherBase = base - sharesBase - goldBase - fixedBase;
+    const project = (starting: number, years: number, contribution: number, annualPct: number) => {
+      const months = years * 12;
+      const rate = annualPct / 100 / 12;
+      if (!rate) return starting + contribution * months;
+      return starting * Math.pow(1 + rate, months) + contribution * ((Math.pow(1 + rate, months) - 1) / rate);
+    };
+    const fixedProjection = (years: number, includeContributions: boolean) => fixedRecords.reduce((sum, r) => {
+      const monthlyDeposit = includeContributions
+        ? num(r.employee_contribution) + num(r.company_contribution) + num(r.yearly_investment) / 12
+        : 0;
+      return sum + project(num(r.latest), years, monthlyDeposit, num(r.interest_rate));
+    }, 0);
+    const projectionAt = (year: number, continueInvesting: boolean) =>
+      project(sharesBase, year, 0, projectionHistoryRates.shares) +
+      project(goldBase, year, 0, projectionHistoryRates.gold) +
+      fixedProjection(year, continueInvesting) +
+      project(otherBase, year, continueInvesting ? monthly : 0, annualRate);
+    const points = Array.from({ length: projectionYears + 1 }, (_, year) => ({ year, continueValue: projectionAt(year, true), trendValue: projectionAt(year, false) }));
+    const future = points[points.length - 1];
+    const fixedMonthly = fixedRecords.reduce((sum, r) => sum + num(r.employee_contribution) + num(r.company_contribution) + num(r.yearly_investment) / 12, 0);
+    const investedMore = (monthly + fixedMonthly) * projectionYears * 12;
+    const wealthCreated = future.continueValue - base - investedMore;
+    const values = points.flatMap((p) => [p.continueValue, p.trendValue]);
+    const minValue = Math.min(0, ...values), maxValue = Math.max(1, ...values), range = Math.max(1, maxValue - minValue);
+    const chartPoint = (value: number, index: number) => `${(index / Math.max(1, points.length - 1)) * 100},${92 - ((value - minValue) / range) * 84}`;
+    const continuePath = points.map((p, i) => chartPoint(p.continueValue, i)).join(" ");
+    const trendPath = points.map((p, i) => chartPoint(p.trendValue, i)).join(" ");
+    return (
+      <section className="overflow-hidden rounded-[26px] border border-[#cddfd4] bg-[linear-gradient(135deg,#f4fbf7_0%,#ffffff_50%,#f7f2ff_100%)] shadow-[0_18px_46px_rgba(23,56,43,0.09)]">
+        <div className="grid gap-6 p-6 lg:grid-cols-[minmax(0,1.35fr)_minmax(310px,.65fr)]">
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <div className="mb-2 inline-flex items-center gap-2 rounded-full bg-[#17382b] px-3 py-1 text-[11px] font-semibold uppercase tracking-[.14em] text-white"><Sparkles size={13} /> Future wealth outlook</div>
+                <h3 className="text-2xl font-semibold tracking-tight text-[#17382b]">What could my net worth become?</h3>
+                <p className="mt-1 max-w-2xl text-sm text-gray-600">Compare your present trajectory with continuing regular investments.</p>
+              </div>
+              <div className="rounded-2xl border border-emerald-200 bg-white/80 px-4 py-3 text-right shadow-sm">
+                <div className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">In {projectionYears} years</div>
+                <div className="text-2xl font-semibold tabular-nums text-emerald-700">{fmt(future.continueValue)}</div>
+              </div>
+            </div>
+            <div className="mt-5 rounded-2xl border border-white/80 bg-white/70 p-4">
+              <div className="mb-3 flex flex-wrap items-center justify-between gap-2 text-xs font-semibold">
+                <div className="flex flex-wrap gap-4"><span className="flex items-center gap-2 text-emerald-700"><i className="h-2.5 w-2.5 rounded-full bg-emerald-500" />Continue investing</span><span className="flex items-center gap-2 text-violet-700"><i className="h-2.5 w-2.5 rounded-full bg-violet-500" />Current trend only</span></div>
+                <span className="text-gray-500">Today {fmt(base)}</span>
+              </div>
+              <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="h-52 w-full overflow-visible" role="img" aria-label="Projected net worth chart">
+                {[8, 29, 50, 71, 92].map((y) => <line key={y} x1="0" x2="100" y1={y} y2={y} stroke="#dfe7e2" strokeWidth=".4" />)}
+                <polyline points={trendPath} fill="none" stroke="#7c3aed" strokeWidth="2" vectorEffect="non-scaling-stroke" strokeDasharray="5 4" />
+                <polyline points={continuePath} fill="none" stroke="#16a34a" strokeWidth="3" vectorEffect="non-scaling-stroke" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+              <div className="flex justify-between text-[11px] font-semibold text-gray-500"><span>Today</span><span>{Math.round(projectionYears / 2)} years</span><span>{projectionYears} years</span></div>
+            </div>
+          </div>
+          <div className="space-y-4">
+            <div className="rounded-2xl border border-[#ded6c4] bg-white/90 p-4 shadow-sm">
+              <div className="text-xs font-semibold uppercase tracking-wider text-gray-500">Adjust assumptions</div>
+              <label className="mt-4 block text-xs font-semibold text-[#40584c]">Time horizon: {projectionYears} years</label>
+              <input className="mt-2 w-full accent-emerald-700" type="range" min="1" max="30" value={projectionYears} onChange={(e) => setProjectionYears(Number(e.target.value))} />
+              <label className="mt-4 block text-xs font-semibold text-[#40584c]">Other monthly investment</label>
+              <input className="input mt-2 w-full" inputMode="decimal" value={projectionMonthlyInput} placeholder={String(Math.round(inferredMonthly))} onChange={(e) => setProjectionMonthlyInput(e.target.value)} />
+              <label className="mt-4 block text-xs font-semibold text-[#40584c]">Other/new investment return</label>
+              <div className="relative mt-2"><input className="input w-full pr-9" inputMode="decimal" value={projectionReturnInput} placeholder={annualRate.toFixed(1)} onChange={(e) => setProjectionReturnInput(e.target.value)} /><span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm font-semibold text-gray-500">%</span></div>
+              <p className="mt-3 text-[11px] leading-relaxed text-gray-500">Shares use 10-year NIFTY history, gold uses 10-year Gold BeES history, and every fixed-income record uses its own interest and deposits.</p>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              {[["Current trend", future.trendValue, "text-violet-700"], ["Extra invested", investedMore, "text-[#17382b]"], ["Growth earned", wealthCreated, wealthCreated >= 0 ? "text-emerald-700" : "text-red-700"], ["Shares · 10Y", `${projectionHistoryRates.shares.toFixed(1)}%`, "text-[#17382b]"], ["Gold · 10Y", `${projectionHistoryRates.gold.toFixed(1)}%`, "text-amber-700"], ["Fixed income", "Own rates", "text-blue-700"]].map(([label, value, color]) => <div key={String(label)} className="rounded-2xl border border-white bg-white/75 p-3"><div className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">{label}</div><div className={`mt-1 text-base font-semibold tabular-nums ${color}`}>{typeof value === "number" ? fmt(value) : value}</div></div>)}
+            </div>
+          </div>
+        </div>
+        <div className="border-t border-[#dce8df] bg-white/55 px-6 py-3 text-[11px] text-gray-500">Illustration only. Historical returns do not guarantee future results. Fixed-income interest and monthly/yearly deposits are compounded monthly; taxes, inflation and future liability changes are not included.</div>
+      </section>
+    );
+  }
   function dashboardFeaturePanels() {
     return (
       <div className="grid grid-cols-2 gap-5 max-xl:grid-cols-1">
@@ -8456,7 +9073,7 @@ export default function AssetManagerApp() {
         .map((k) => {
           const rs = records.filter((r) => r.module_key === k),
             latest =
-              rs.map(recordFreshDate).filter(Boolean).sort().at(-1) || "",
+              rs.map(recordFreshDate).filter(Boolean).sort().slice(-1)[0] || "",
             days = ageDays(latest),
             status = !rs.length
               ? "No data"
@@ -8541,7 +9158,7 @@ export default function AssetManagerApp() {
       max = Math.max(...snaps.map((x) => x.net), totals.net),
       span = Math.max(1, max - min),
       first = snaps[0],
-      last = snaps.at(-1),
+      last = snaps[snaps.length - 1],
       yesterday = nearestSnapshot(snaps, addDaysIso(isoDate(), -1)),
       monthStart = nearestSnapshot(
         snaps,
@@ -8779,10 +9396,10 @@ export default function AssetManagerApp() {
         .sort((a, b) => a.date.localeCompare(b.date)),
       weekly = allPeriodPoints.filter((point) => point.type === "weekly"),
       monthly = allPeriodPoints.filter((point) => point.type === "monthly"),
-      latestWeek = weekly.at(-1),
-      previousWeek = weekly.at(-2),
-      latestMonth = monthly.at(-1),
-      previousMonth = monthly.at(-2),
+      latestWeek = weekly[weekly.length - 1],
+      previousWeek = weekly[weekly.length - 2],
+      latestMonth = monthly[monthly.length - 1],
+      previousMonth = monthly[monthly.length - 2],
       weekMove =
         latestWeek && previousWeek
           ? latestWeek.current - previousWeek.current
@@ -9000,6 +9617,12 @@ export default function AssetManagerApp() {
                 const pointX = x(index),
                   currentY = y(point.current),
                   investedY = y(point.invested),
+                  labelEvery = Math.max(1, Math.ceil(points.length / 6)),
+                  showPointLabel =
+                    points.length <= 8 ||
+                    index === 0 ||
+                    index === points.length - 1 ||
+                    index % labelEvery === 0,
                   currentLabelY =
                     currentY - 10 < plotTop ? currentY + 18 : currentY - 10,
                   investedLabelY =
@@ -9014,7 +9637,7 @@ export default function AssetManagerApp() {
                         {fmt(point.current)}
                       </title>
                     </circle>
-                    <text
+                    {showPointLabel && <text
                       x={pointX}
                       y={currentLabelY}
                       textAnchor="middle"
@@ -9026,14 +9649,14 @@ export default function AssetManagerApp() {
                       strokeWidth="3"
                     >
                       {compactInr(point.current)}
-                    </text>
+                    </text>}
                     <circle cx={pointX} cy={investedY} r="4" fill="#c69632">
                       <title>
                         {point.date} {point.type} cost basis:{" "}
                         {fmt(point.invested)}
                       </title>
                     </circle>
-                    <text
+                    {showPointLabel && <text
                       x={pointX}
                       y={investedLabelY}
                       textAnchor="middle"
@@ -9045,14 +9668,14 @@ export default function AssetManagerApp() {
                       strokeWidth="3"
                     >
                       {compactInr(point.invested)}
-                    </text>
+                    </text>}
                   </g>
                 );
               })}
             </svg>
             <div className="mt-1 flex justify-between text-xs font-semibold text-gray-500">
               <span>{points[0]?.date || today}</span>
-              <span>{points.at(-1)?.date || today}</span>
+              <span>{points[points.length - 1]?.date || today}</span>
             </div>
         </div>
         <div className="mt-4 grid grid-cols-5 gap-3 max-xl:grid-cols-3 max-md:grid-cols-1">
@@ -9393,7 +10016,7 @@ export default function AssetManagerApp() {
                   <th>Holding</th>
                   <th>Section</th>
                   <th className="text-right">Invested</th>
-                  <th className="text-right">Todays Gain</th>
+                  <th className="text-right">Today's Gain</th>
                   <th className="text-right">Overall Gain</th>
                   <th className="text-right">Current Value</th>
                   <th className="p-3">Transaction</th>
@@ -9577,7 +10200,7 @@ export default function AssetManagerApp() {
                   <th className="p-3 text-right">Bid / Ask</th>
                   <th className="p-3">Last Trade</th>
                   <th className="p-3 text-right">Invested</th>
-                  <th className="p-3 text-right">Todays Gain</th>
+                  <th className="p-3 text-right">Today's Gain</th>
                   <th className="p-3 text-right">Overall Gain</th>
                   <th className="p-3 text-right">Current Value</th>
                   <th className="p-3">Transaction</th>
@@ -9771,8 +10394,21 @@ export default function AssetManagerApp() {
   }
   function stockWatchlistTable() {
     const q = query.toLowerCase(),
+      watchlistRecords = records.filter((r) => r.module_key === "watchlist"),
+      stockCount = watchlistRecords.filter(
+        (r) => String(r.data?.asset_type || "Stock").toUpperCase() !== "ETF",
+      ).length,
+      etfCount = watchlistRecords.filter(
+        (r) => String(r.data?.asset_type || "Stock").toUpperCase() === "ETF",
+      ).length,
       rows = records
-        .filter((r) => r.module_key === "watchlist")
+        .filter(
+          (r) =>
+            r.module_key === "watchlist" &&
+            (String(r.data?.asset_type || "Stock").toUpperCase() === "ETF"
+              ? "ETF"
+              : "Stock") === watchlistAssetTab,
+        )
         .map((r) => {
           const d = r.data || {},
             match = findStock(d.security_name || d.ticker_symbol || ""),
@@ -9901,9 +10537,9 @@ export default function AssetManagerApp() {
       <section className="rounded-[26px] border border-[#ded6c4] bg-white/90 p-5 shadow-[0_14px_34px_rgba(15,23,42,0.05)]">
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h3 className="text-xl font-semibold tracking-tight">Stocks Watchlist</h3>
+            <h3 className="text-xl font-semibold tracking-tight">Stocks & ETFs Watchlist</h3>
             <p className="text-sm text-gray-600">
-              Saved stock ideas with date added, added price, current price,
+              Saved stock and ETF ideas with date added, added price, current price,
               movement and paper gain tracking.
             </p>
           </div>
@@ -9916,7 +10552,11 @@ export default function AssetManagerApp() {
               onClick={() =>
                 setEditing({
                   moduleKey: "watchlist",
-                  defaults: { exchange: "NSE", quantity: 1 },
+                  defaults: {
+                    exchange: "NSE",
+                    quantity: 1,
+                    asset_type: watchlistAssetTab,
+                  },
                 })
               }
             >
@@ -9924,15 +10564,28 @@ export default function AssetManagerApp() {
             </button>
           </div>
         </div>
-        <div className="mb-4 grid grid-cols-4 gap-3 max-xl:grid-cols-2 max-md:grid-cols-1">
+        <div className="mb-4 inline-flex rounded-xl border border-[#9bb4d8] bg-[#f4f7fb] p-1">
+          {([
+            ["Stock", `Stocks (${stockCount})`],
+            ["ETF", `ETFs (${etfCount})`],
+          ] as const).map(([tab, label]) => (
+            <button
+              key={tab}
+              type="button"
+              className={`rounded-lg px-4 py-2 text-sm font-semibold transition ${
+                watchlistAssetTab === tab
+                  ? "bg-[#00579b] text-white shadow-sm"
+                  : "text-[#17382b] hover:bg-white"
+              }`}
+              onClick={() => setWatchlistAssetTab(tab)}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        <div className="mb-4 grid grid-cols-2 gap-3 max-md:grid-cols-1">
           {kpi(
-            "Added Value",
-            fmt(total.invested),
-            "text-[#17382b]",
-            "Watchlist added price x quantity",
-          )}
-          {kpi(
-            "Day Gain",
+            "Today's Gain",
             fmt(total.day),
             total.day >= 0 ? "text-emerald-700" : "text-red-700",
             "Quantity x day change",
@@ -9942,12 +10595,6 @@ export default function AssetManagerApp() {
             fmt(total.overall),
             total.overall >= 0 ? "text-emerald-700" : "text-red-700",
             "Latest value - base value",
-          )}
-          {kpi(
-            "Latest Value",
-            fmt(total.latest),
-            "text-emerald-700",
-            "Live price x quantity",
           )}
         </div>
         {rows.length ? (
@@ -9966,11 +10613,7 @@ export default function AssetManagerApp() {
                   )}
                   {sortableHeader(
                     "live",
-                    <>
-                      Current Price
-                      <br />
-                      Added Value
-                    </>,
+                    "Current Price",
                   )}
                   {sortableHeader(
                     "dayLow",
@@ -10000,7 +10643,7 @@ export default function AssetManagerApp() {
                   {sortableHeader(
                     "dayGain",
                     <>
-                      Day's Gain
+                      Today's Gain
                       <br />% Change
                     </>,
                   )}
@@ -10086,9 +10729,6 @@ export default function AssetManagerApp() {
                       </td>
                       <td className="p-3 text-right tabular-nums">
                         <div>{x.live ? fmtPrice(x.live) : "-"}</div>
-                        <div className="mt-1 text-xs font-semibold text-gray-500">
-                          Added {fmt(x.invested)}
-                        </div>
                       </td>
                       <td className="p-3 text-right tabular-nums">
                         <div className="font-semibold text-red-700">
@@ -10176,7 +10816,9 @@ export default function AssetManagerApp() {
             </table>
           </div>
         ) : (
-          <Empty text="No watchlist rows yet. Add stock ideas from the Watchlist tab inside Stocks." />
+          <Empty
+            text={`No ${watchlistAssetTab === "ETF" ? "ETF" : "stock"} watchlist rows yet. Use Add Watch Item to add one.`}
+          />
         )}
       </section>
     );
@@ -10223,7 +10865,7 @@ export default function AssetManagerApp() {
                   <th className="p-3">Broker / Source</th>
                   <th>Holding</th>
                   <th className="text-right">Invested</th>
-                  <th className="text-right">Todays Gain</th>
+                  <th className="text-right">Today's Gain</th>
                   <th className="text-right">Overall Gain</th>
                   <th className="text-right">Current Value</th>
                   <th className="p-3">Transaction</th>
@@ -10360,7 +11002,7 @@ export default function AssetManagerApp() {
             {[
               ["Invested", totals.invested, "text-[#17382b]"],
               [
-                "Today Gain",
+                "Today's Gain",
                 todayGain,
                 todayGain >= 0 ? "text-emerald-700" : "text-red-700",
               ],
@@ -10427,8 +11069,12 @@ export default function AssetManagerApp() {
             </div>
           </div>
         </section>
-        {portfolioSummaryTable()}
+        {executiveAnalyticsPanel()}
+        {futureNetWorthPanel()}
         {portfolioPerformancePanel()}
+        {portfolioSummaryTable()}
+        {dashboardFeaturePanels()}
+        {riskOpportunityPanel()}
       </div>
     );
   }
@@ -11411,7 +12057,7 @@ export default function AssetManagerApp() {
                 <button
                   key={theme.id}
                   type="button"
-                  className={`rounded-2xl border p-4 text-left transition hover:shadow-md ${
+                  className={`theme-option theme-option-${theme.id} rounded-2xl border p-4 text-left transition hover:shadow-md ${
                     appearance.theme === theme.id
                       ? "border-[#115c45] bg-[#eef5ee]"
                       : "border-[#e3dccc] bg-white"
@@ -11431,8 +12077,8 @@ export default function AssetManagerApp() {
                       {theme.swatches.map((color) => (
                         <span
                           key={color}
-                          className="h-5 w-5 rounded-full border border-white shadow-sm"
-                          style={{ backgroundColor: color }}
+                          className="theme-swatch h-5 w-5 rounded-full border border-white shadow-sm"
+                          style={{ "--theme-swatch": color } as any}
                         />
                       ))}
                     </div>
@@ -11688,7 +12334,12 @@ export default function AssetManagerApp() {
   }
   function groupKey(k: string, r: Rec) {
     const d = r.data || {},
-      acct = accountTab(k) === "All" ? "" : key(d.account_name || ""),
+      acct =
+        k === "insurance"
+          ? key(d.account_name || d.life_insured || "")
+          : accountTab(k) === "All"
+            ? ""
+            : key(d.account_name || ""),
       category =
         k === "fixedIncome" ? fixedIncomeCategoryLabel(d.category) : d.category,
       holdingName = k === "bullion" ? bullionDisplayName(d) : d.security_name,
@@ -11856,7 +12507,7 @@ export default function AssetManagerApp() {
       .map((r) => String(r.data?.last_synced || ""))
       .filter(Boolean)
       .sort()
-      .at(-1);
+      .slice(-1)[0];
     if (synced) data.last_synced = synced;
     const todayGain = items.reduce(
       (sum, record) => sum + todayGainFor(k, record),
@@ -11969,9 +12620,7 @@ export default function AssetManagerApp() {
     if (col === "quantity") return "58px";
     if (col === "current_purchase") return "108px";
     if (["low_range", "high_range"].includes(col)) return "102px";
-    if (col === "day_change") return "82px";
-    if (col === "gain_pct") return "64px";
-    if (col === "gain_display") return "102px";
+    if (["today_gain_display", "gain_display"].includes(col)) return "108px";
     if (col === "monthly_gain") return "88px";
     if (["invested", "latest"].includes(col)) return "94px";
     if (col === "gain") return "94px";
@@ -11986,6 +12635,11 @@ export default function AssetManagerApp() {
     }
     if (moduleKey === "fixedIncome") {
       if (["account_name", "category", "broker", "purchase_date", "maturity_date"].includes(col))
+        return "text-left whitespace-nowrap";
+      return "text-right whitespace-nowrap tabular-nums";
+    }
+    if (moduleKey === "property") {
+      if (["account_name", "security_name", "location", "broker"].includes(col))
         return "text-left whitespace-nowrap";
       return "text-right whitespace-nowrap tabular-nums";
     }
@@ -12035,15 +12689,22 @@ export default function AssetManagerApp() {
     if (moduleKey === "stocks" && col === "security_name") {
       const fullName = String(c[col] || ""),
         shortName = compactName(fullName),
+        gain = num(c.gain),
+        positionClass =
+          gain > 0
+            ? "border-emerald-200 bg-emerald-50 text-emerald-950"
+            : gain < 0
+              ? "border-red-200 bg-red-50 text-red-950"
+              : "border-gray-200 bg-gray-50 text-gray-800",
         hasAction =
           !!c.corporate_action_applied ||
           !!c.corporate_action_type ||
           !!c.corporate_action_ratio ||
           !!c.ex_base_price;
       return (
-        <div className="flex min-w-0 items-center gap-2">
+        <div className={`flex min-w-0 items-center gap-2 rounded-lg border px-2 py-1.5 shadow-sm ${positionClass}`}>
           <a
-            className="min-w-0 flex-1 leading-tight text-[#004080] underline decoration-[#004080]/40"
+            className="min-w-0 flex-1 leading-tight text-inherit underline decoration-current/40"
             href={moneycontrolHref(c)}
             target="_blank"
             rel="noopener noreferrer"
@@ -12052,7 +12713,7 @@ export default function AssetManagerApp() {
           >
             <span className="block truncate font-semibold">{shortName}</span>
             {shortName !== fullName && (
-              <span className="block truncate text-[10px] font-medium text-[#6d7c73] no-underline">
+              <span className="block truncate text-[10px] font-medium opacity-70 no-underline">
                 {fullName}
               </span>
             )}
@@ -12153,6 +12814,45 @@ export default function AssetManagerApp() {
       return stockRangeBox(c[col], "rangeLow");
     if (moduleKey === "stocks" && col === "fifty_two_week_high")
       return stockRangeBox(c[col], "rangeHigh");
+    if (["stocks", "watchlist"].includes(moduleKey) && col === "asset_type")
+      return c[col] || "Stock";
+    if (
+      moduleKey === "insurance" &&
+      ["premium_years_paid", "premium_end_date", "next_premium_due_date"].includes(col) &&
+      key(c.premium_frequency) === "single"
+    )
+      return <span className="text-gray-400">—</span>;
+    if (
+      moduleKey === "insurance" &&
+      [
+        "death_cover",
+        "health_cover",
+        "critical_illness_cover",
+        "latest",
+        "bonus_accrued_till_date",
+        "money_back_received",
+        "maturity_value",
+      ].includes(col)
+    ) {
+      const type = insurancePolicyType(c.policy_type || c.category, c.broker),
+        applicable: Record<string, string[]> = {
+          death_cover: ["TERM_PLAN", "LIFE_INSURANCE", "ENDOWMENT", "MONEY_BACK", "ULIP", "ACCIDENT_COVER", "OTHER"],
+          health_cover: ["HEALTH_INSURANCE"],
+          critical_illness_cover: ["CRITICAL_ILLNESS"],
+          latest: ["LIFE_INSURANCE", "ENDOWMENT", "MONEY_BACK", "ULIP", "OTHER"],
+          bonus_accrued_till_date: ["LIFE_INSURANCE", "ENDOWMENT", "MONEY_BACK"],
+          money_back_received: ["LIFE_INSURANCE", "ENDOWMENT", "MONEY_BACK"],
+          maturity_value: ["LIFE_INSURANCE", "ENDOWMENT", "MONEY_BACK", "ULIP", "OTHER"],
+        };
+      if (
+        type === "TERM_PLAN" &&
+        /^(yes|true|1)$/i.test(String(c.return_of_premium || "")) &&
+        ["latest", "maturity_value"].includes(col)
+      )
+        return formatCell(col, c[col]);
+      if (!(applicable[col] || []).includes(type))
+        return <span className="text-gray-400">—</span>;
+    }
     if (col === "security_name") {
       const fullName = String(c[col] || ""),
         shortName = compactName(fullName);
@@ -12303,13 +13003,28 @@ export default function AssetManagerApp() {
         : k === "bullion"
         ? def.cols.filter((c) => c !== "last_synced")
         : def.cols,
-      visibleCols = k === "stocks" ? stockHoldingColumns : k === "bullion" ? bullionHoldingColumns : detailCols;
+      visibleCols =
+        k === "stocks"
+          ? stockHoldingColumns
+          : k === "bullion"
+            ? bullionHoldingColumns
+            : k === "fixedIncome"
+              ? detailCols.filter(
+                  (column) =>
+                    ![
+                      "employee_contribution",
+                      "company_contribution",
+                      "broker",
+                      "purchase_date",
+                    ].includes(column),
+                )
+              : detailCols;
     const lastSynced =
       filtered
         .map((r) => String(r.data?.last_synced || ""))
         .filter(Boolean)
         .sort()
-        .at(-1) || "";
+        .slice(-1)[0] || "";
     const lotRows = (lots: Rec[], groupKey: string) =>
       lots.map((lot, i) => {
         const c = computeLiveRecord(k, lot.data),
@@ -12401,7 +13116,7 @@ export default function AssetManagerApp() {
                   className="btn-primary"
                   onClick={() => setEditing({ moduleKey: "stocks" })}
                 >
-                  <Plus size={16} className="inline" /> Add Stock
+                  <Plus size={16} className="inline" /> Add Stock / ETF
                 </button>
               </div>
             </div>
@@ -12533,7 +13248,7 @@ export default function AssetManagerApp() {
                     color: "text-[#17382b]",
                   },
                   {
-                    label: "Today Gain",
+                    label: "Today's Gain",
                     value: moduleToday,
                     color:
                       moduleToday >= 0 ? "text-emerald-700" : "text-red-700",
@@ -12566,6 +13281,49 @@ export default function AssetManagerApp() {
             ))}
           </div>
         )}
+        {k === "insurance" && (() => {
+          const calculated = filtered.map((record) => ({
+              record,
+              value: computeLiveRecord("insurance", record.data),
+            })),
+            active = calculated.filter(({ value }) =>
+              ["Active", "Paid-up"].includes(String(value.status || "")),
+            ),
+            lifeCover = active
+              .filter(({ value }) => ["TERM_PLAN", "LIFE_INSURANCE", "ENDOWMENT", "MONEY_BACK", "ULIP", "ACCIDENT_COVER"].includes(String(value.policy_type)))
+              .reduce((sum, row) => sum + num(row.value.death_cover), 0),
+            healthCover = active.reduce((sum, row) => sum + num(row.value.health_cover), 0),
+            criticalCover = active.reduce((sum, row) => sum + num(row.value.critical_illness_cover), 0),
+            currentValue = active
+              .filter(({ value }) => ["LIFE_INSURANCE", "ENDOWMENT", "MONEY_BACK", "ULIP"].includes(String(value.policy_type)) || (value.policy_type === "TERM_PLAN" && /^(yes|true|1)$/i.test(String(value.return_of_premium || ""))))
+              .reduce((sum, row) => sum + num(row.value.latest), 0),
+            annualOutflow = active.reduce((sum, row) => sum + num(row.value.annual_premium), 0),
+            todayDate = new Date(isoDate()), dueLimit = new Date(todayDate);
+          dueLimit.setDate(dueLimit.getDate() + 30);
+          const dueSoon = active.filter(({ value }) => {
+            const due = value.next_premium_due_date
+              ? new Date(String(value.next_premium_due_date))
+              : null;
+            return due && !Number.isNaN(due.getTime()) && due >= todayDate && due <= dueLimit;
+          }).length;
+          return (
+            <div className="mb-4 grid grid-cols-6 gap-3 max-2xl:grid-cols-3 max-lg:grid-cols-2 max-md:grid-cols-1">
+              {[
+                ["Total Life Cover", fmt(lifeCover)],
+                ["Total Health Cover", fmt(healthCover)],
+                ["Critical Illness Cover", fmt(criticalCover)],
+                ["Current Insurance Value", fmt(currentValue)],
+                ["Annual Premium Outflow", fmt(annualOutflow)],
+                ["Premium Due Soon", String(dueSoon)],
+              ].map(([label, value]) => (
+                <div key={label} className="rounded-2xl border border-[#ded6c4] bg-white px-4 py-3 shadow-sm">
+                  <div className="text-[10px] font-semibold uppercase tracking-widest text-gray-500">{label}</div>
+                  <div className="mt-1 text-lg font-semibold tabular-nums text-[#17382b]">{value}</div>
+                </div>
+              ))}
+            </div>
+          );
+        })()}
         {k === "fixedIncome" && reviewRows.length > 0 && (
           <div className="mb-4 rounded-3xl border border-amber-200 bg-amber-50 p-4">
             <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-amber-900">
@@ -12652,7 +13410,7 @@ export default function AssetManagerApp() {
         )}
         {rows.length ? (
           <div
-            className={`overflow-auto rounded-[22px] border border-[#ded6c4] bg-white shadow-[0_10px_30px_rgba(15,23,42,0.04)] investment-table ${k === "stocks" ? "stock-holdings-table" : ""} ${k === "bullion" ? "bullion-holdings-table" : ""} ${k === "fixedIncome" ? "fixed-income-table" : ""}`}
+            className={`overflow-auto rounded-[22px] border border-[#ded6c4] bg-white shadow-[0_10px_30px_rgba(15,23,42,0.04)] investment-table ${k === "stocks" ? "stock-holdings-table" : ""} ${k === "bullion" ? "bullion-holdings-table" : ""} ${k === "fixedIncome" ? "fixed-income-table" : ""} ${k === "property" ? "property-holdings-table" : ""}`}
           >
             <table
               className={`border-collapse text-sm ${
@@ -12662,6 +13420,10 @@ export default function AssetManagerApp() {
                       ? "w-[1330px] table-fixed"
                     : k === "bullion"
                       ? "w-[1160px] table-fixed"
+                    : k === "insurance"
+                      ? "w-[2100px] table-fixed"
+                    : k === "property"
+                      ? "w-[1480px] table-fixed"
                     : "w-full min-w-[760px] table-fixed"
               }`}
             >
@@ -12714,6 +13476,22 @@ export default function AssetManagerApp() {
                     />
                   ))}
                   <col style={{ width: "92px" }} />
+                </colgroup>
+              )}
+              {k === "insurance" && (
+                <colgroup>
+                  {visibleCols.map((column) => (
+                    <col key={column} style={{ width: insuranceColWidth(column) }} />
+                  ))}
+                  <col style={{ width: "96px" }} />
+                </colgroup>
+              )}
+              {k === "property" && (
+                <colgroup>
+                  {visibleCols.map((column) => (
+                    <col key={column} style={{ width: propertyColWidth(column) }} />
+                  ))}
+                  <col style={{ width: "100px" }} />
                 </colgroup>
               )}
               <thead className="bg-[#f5efe3] text-left text-xs uppercase tracking-widest">
@@ -12813,7 +13591,7 @@ export default function AssetManagerApp() {
               </thead>
               <tbody>
                 {rows.flatMap(({ r, c, records: lots, key }) => {
-                  const open = !!expandedLots[key];
+                  const open = lots.length > 1 && !!expandedLots[key];
                   return [
                     <tr
                       onClick={() => {
@@ -13099,6 +13877,212 @@ export default function AssetManagerApp() {
       </div>
     );
   }
+  function propertyColWidth(col: string) {
+    if (col === "account_name") return "100px";
+    if (col === "security_name") return "130px";
+    if (col === "location") return "180px";
+    if (col === "broker") return "150px";
+    if (["invested", "latest", "gain"].includes(col)) return "125px";
+    if (["loan_amount", "loan_balance", "emiFuture"].includes(col)) return "125px";
+    if (col === "loan_interest_rate") return "105px";
+    if (col === "emis_left") return "90px";
+    return "110px";
+  }
+  function executiveAnalyticsPanel() {
+    const moduleRows = Object.entries(MODULES)
+        .filter(
+          ([moduleKey, module]) =>
+            (module.kind === "asset" && moduleKey !== "watchlist") ||
+            moduleKey === "insurance",
+        )
+        .map(([moduleKey, module]) => {
+          const moduleRecords = records.filter((record) => record.module_key === moduleKey),
+            current = moduleRecords.reduce(
+              (sum, record) => sum + num(computeLiveRecord(moduleKey, record.data).latest),
+              0,
+            ),
+            invested = moduleRecords.reduce(
+              (sum, record) => sum + num(computeLiveRecord(moduleKey, record.data).invested),
+              0,
+            );
+          return {
+            key: moduleKey,
+            title: module.title,
+            current,
+            invested,
+            gain: current - invested,
+            weight: totals.assets ? (current / totals.assets) * 100 : 0,
+          };
+        })
+        .filter((row) => row.current || row.invested)
+        .sort((a, b) => b.current - a.current),
+      largest = moduleRows[0],
+      best = [...moduleRows].filter((row) => row.invested).sort((a, b) => b.gain - a.gain)[0],
+      worst = [...moduleRows].filter((row) => row.invested).sort((a, b) => a.gain - b.gain)[0],
+      returnOnCost = totals.invested ? (totals.gain / totals.invested) * 100 : 0,
+      debtRatio = totals.assets ? (totals.liabilities / totals.assets) * 100 : 0,
+      coverageRatio = totals.liabilities ? totals.assets / totals.liabilities : null,
+      valuedRecords = records.filter(
+        (record) =>
+          (MODULES[record.module_key]?.kind === "asset" ||
+            record.module_key === "insurance") &&
+          num(computeLiveRecord(record.module_key, record.data).latest) > 0,
+      ).length,
+      assetRecordCount = records.filter(
+        (record) =>
+          MODULES[record.module_key]?.kind === "asset" ||
+          record.module_key === "insurance",
+      ).length,
+      valuationCoverage = assetRecordCount ? (valuedRecords / assetRecordCount) * 100 : 0,
+      staleClasses = moduleRows.filter((row) => {
+        const latest = records
+          .filter((record) => record.module_key === row.key)
+          .map(recordFreshDate)
+          .filter(Boolean)
+          .sort()
+          .slice(-1)[0];
+        return ageDays(latest || "") > 30;
+      }),
+      actions = [
+        largest && largest.weight > 40
+          ? {
+              tone: "amber",
+              title: `Review ${largest.title} concentration`,
+              detail: `${pct(largest.weight)} of gross assets is in one asset class.`,
+              moduleKey: largest.key,
+            }
+          : {
+              tone: "green",
+              title: "Allocation concentration is controlled",
+              detail: largest
+                ? `Largest asset class is ${largest.title} at ${pct(largest.weight)}.`
+                : "Add asset values to begin concentration monitoring.",
+              moduleKey: largest?.key,
+            },
+        debtRatio > 30
+          ? {
+              tone: "red",
+              title: "Prioritize liability reduction",
+              detail: `Liabilities are ${pct(debtRatio)} of gross assets.`,
+              moduleKey: "loans",
+            }
+          : {
+              tone: "green",
+              title: "Leverage is within the dashboard guardrail",
+              detail: `Liabilities are ${pct(debtRatio)} of gross assets.`,
+              moduleKey: "loans",
+            },
+        staleClasses.length
+          ? {
+              tone: "amber",
+              title: `Refresh ${staleClasses.length} stale asset ${staleClasses.length === 1 ? "class" : "classes"}`,
+              detail: staleClasses.map((row) => row.title).join(", "),
+              moduleKey: staleClasses[0].key,
+            }
+          : {
+              tone: "green",
+              title: "Portfolio data is decision-ready",
+              detail: `${valuedRecords} of ${assetRecordCount} asset records have a current valuation.`,
+              moduleKey: undefined,
+            },
+      ];
+    const metric = (
+      label: string,
+      value: string,
+      note: string,
+      tone: string,
+    ) => (
+      <div className="rounded-2xl border border-[#e3dccc] bg-white p-4">
+        <div className="text-[10px] font-semibold uppercase tracking-[.14em] text-gray-500">
+          {label}
+        </div>
+        <div className={`mt-1 text-2xl font-semibold tabular-nums ${tone}`}>{value}</div>
+        <div className="mt-1 text-xs font-semibold text-gray-500">{note}</div>
+      </div>
+    );
+    return (
+      <section className="rounded-[26px] border border-[#ded6c4] bg-[#f8f5ed] p-5 shadow-[0_14px_34px_rgba(15,23,42,0.05)]">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <div className="text-[10px] font-semibold uppercase tracking-[.18em] text-[#8b6a28]">
+              Executive pulse
+            </div>
+            <h3 className="mt-1 text-xl font-semibold tracking-tight">Portfolio health at a glance</h3>
+            <p className="mt-1 text-sm text-gray-600">
+              Performance, leverage, concentration and data quality translated into decisions.
+            </p>
+          </div>
+          <span className="rounded-full border border-[#d8cba9] bg-white px-3 py-1 text-xs font-semibold text-[#40584c]">
+            As of {new Date().toLocaleDateString("en-IN")}
+          </span>
+        </div>
+        <div className="mt-4 grid grid-cols-4 gap-3 max-xl:grid-cols-2 max-md:grid-cols-1">
+          {metric(
+            "Return on cost",
+            pct(returnOnCost),
+            `${fmt(totals.gain)} cumulative gain`,
+            returnOnCost >= 0 ? "text-emerald-700" : "text-red-700",
+          )}
+          {metric(
+            "Debt / assets",
+            pct(debtRatio),
+            coverageRatio === null ? "No liabilities recorded" : `${coverageRatio.toFixed(1)}x asset coverage`,
+            debtRatio > 30 ? "text-red-700" : debtRatio > 15 ? "text-amber-700" : "text-emerald-700",
+          )}
+          {metric(
+            "Largest allocation",
+            largest ? pct(largest.weight) : "-",
+            largest?.title || "No allocation data",
+            largest && largest.weight > 40 ? "text-amber-700" : "text-[#17382b]",
+          )}
+          {metric(
+            "Valuation coverage",
+            pct(valuationCoverage),
+            `${valuedRecords} of ${assetRecordCount} asset records`,
+            valuationCoverage >= 90 ? "text-emerald-700" : "text-amber-700",
+          )}
+        </div>
+        <div className="mt-4 grid grid-cols-[1.2fr_.8fr] gap-4 max-lg:grid-cols-1">
+          <div className="rounded-2xl border border-[#e3dccc] bg-white p-4">
+            <h4 className="font-semibold text-[#17382b]">Priority actions</h4>
+            <div className="mt-3 space-y-2">
+              {actions.map((action) => (
+                <button
+                  type="button"
+                  key={action.title}
+                  onClick={() => action.moduleKey && openModuleAll(action.moduleKey)}
+                  className={`flex w-full items-start gap-3 rounded-xl border px-3 py-3 text-left transition ${action.tone === "red" ? "border-red-200 bg-red-50 hover:border-red-300" : action.tone === "amber" ? "border-amber-200 bg-amber-50 hover:border-amber-300" : "border-emerald-200 bg-emerald-50 hover:border-emerald-300"}`}
+                >
+                  <span className={`mt-1 h-2.5 w-2.5 shrink-0 rounded-full ${action.tone === "red" ? "bg-red-500" : action.tone === "amber" ? "bg-amber-500" : "bg-emerald-500"}`} />
+                  <span>
+                    <span className="block text-sm font-semibold">{action.title}</span>
+                    <span className="mt-0.5 block text-xs text-gray-600">{action.detail}</span>
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="rounded-2xl border border-[#e3dccc] bg-white p-4">
+            <h4 className="font-semibold text-[#17382b]">Return contributors</h4>
+            <div className="mt-3 space-y-3">
+              <div className="rounded-xl bg-emerald-50 px-3 py-3">
+                <div className="text-[10px] font-semibold uppercase tracking-widest text-emerald-700">Best contributor</div>
+                <div className="mt-1 flex items-center justify-between gap-3 font-semibold">
+                  <span>{best?.title || "-"}</span><span className="tabular-nums text-emerald-700">{best ? fmt(best.gain) : "-"}</span>
+                </div>
+              </div>
+              <div className="rounded-xl bg-red-50 px-3 py-3">
+                <div className="text-[10px] font-semibold uppercase tracking-widest text-red-700">Needs attention</div>
+                <div className="mt-1 flex items-center justify-between gap-3 font-semibold">
+                  <span>{worst?.title || "-"}</span><span className={`tabular-nums ${worst && worst.gain < 0 ? "text-red-700" : "text-emerald-700"}`}>{worst ? fmt(worst.gain) : "-"}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+    );
+  }
   function utilityWatchlistView() {
     const q = query.trim().toLowerCase();
     const rows = records
@@ -13146,7 +14130,7 @@ export default function AssetManagerApp() {
             <div className="utility-watchlist-title">
               Watchlist <span>{rows.length}</span>
             </div>
-            <p>Live market movement for your saved stock ideas.</p>
+            <p>Live market movement for your saved stock and ETF ideas.</p>
           </div>
           <div className="utility-watchlist-actions">
             <button className="btn" onClick={() => refreshWatchlist()}>
@@ -13157,7 +14141,11 @@ export default function AssetManagerApp() {
               onClick={() =>
                 setEditing({
                   moduleKey: "watchlist",
-                  defaults: { exchange: "NSE", quantity: 1 },
+                  defaults: {
+                    exchange: "NSE",
+                    quantity: 1,
+                    asset_type: watchlistAssetTab,
+                  },
                 })
               }
             >
@@ -13396,10 +14384,28 @@ export default function AssetManagerApp() {
         last_updated_at: d.record.data?.last_updated_at,
       },
       computed = { ...d.computed, ...systemData },
+      gratuityFields =
+        d.moduleKey === "fixedIncome" &&
+        key((computed as Record<string, any>).category) === "gratuity"
+          ? [
+              "calculation_date",
+              "total_service",
+              "eligible_years",
+              "salary_basis",
+              "gratuity_per_year",
+              "gratuity_value",
+              "tax_exempt_gratuity",
+              "taxable_gratuity",
+              "monthly_ctc_gratuity",
+              "annual_ctc_gratuity",
+              "eligibility_message",
+            ]
+          : [],
       fields = [
         ...new Set([
           ...d.cols,
           ...def.fields.map((f) => f.name),
+          ...gratuityFields,
           "data_uploaded_date",
           "data_uploaded_at",
           "last_updated_date",
@@ -13410,7 +14416,9 @@ export default function AssetManagerApp() {
         (f) =>
           computed[f] !== undefined &&
           computed[f] !== "" &&
-          computed[f] !== null,
+          computed[f] !== null &&
+          (d.moduleKey !== "insurance" ||
+            showInsuranceDetailField(f, computed as Record<string, any>)),
       ),
       linkedDocs = docs.filter((x) => x.record_id === d.record.id);
     return (
@@ -13576,12 +14584,24 @@ export default function AssetManagerApp() {
     );
   }
   function recordModal() {
+    const simpleStockFields = new Set([
+      "account_name",
+      "asset_type",
+      "security_name",
+      "quantity",
+      "inv_price",
+      "purchase_date",
+      "broker",
+      "notes",
+    ]);
     const def = MODULES[editing!.moduleKey],
       raw = editing!.record?.data || editing!.defaults || {},
       cur = ["stocks", "watchlist"].includes(editing!.moduleKey)
         ? computedData(editing!.moduleKey, raw)
         : editing!.moduleKey === "fixedIncome"
           ? computeRecord("fixedIncome", raw)
+          : editing!.moduleKey === "insurance"
+            ? computeRecord("insurance", raw)
           : raw,
       matches = stockOpen
         ? stockResults.length
@@ -13591,6 +14611,10 @@ export default function AssetManagerApp() {
       fields =
         editing!.moduleKey === "fixedIncome"
           ? def.fields.filter((f) => showFixedIncomeField(f.name))
+          : editing!.moduleKey === "insurance"
+            ? def.fields.filter((f) => showInsuranceField(f.name))
+          : editing!.moduleKey === "stocks"
+            ? def.fields.filter((f) => simpleStockFields.has(f.name))
           : def.fields;
     return (
       <Modal
@@ -13627,18 +14651,79 @@ export default function AssetManagerApp() {
                 ].includes(t.name)
               )
                 recalcFixedIncomeMaturity(e.currentTarget);
+              if (
+                key(
+                  (
+                    e.currentTarget.querySelector(
+                      '[name="category"]',
+                    ) as HTMLSelectElement | null
+                  )?.value || "",
+                ) === "gratuity"
+              )
+                updateGratuityPreview(e.currentTarget);
+            }
+            if (editing!.moduleKey === "insurance") {
+              if (t.name === "category") setInsuranceType(t.value);
+              if (t.name === "return_of_premium")
+                setInsuranceReturnPremium(t.value);
+              if (
+                ["premium_frequency", "premium_paying_term_type"].includes(
+                  t.name,
+                )
+              )
+                updateInsurancePremiumMode(
+                  e.currentTarget,
+                  t.name,
+                  t.value,
+                );
             }
           }}
           onSubmit={(e) => {
             e.preventDefault();
             const fd = new FormData(e.currentTarget),
-              data: any = {};
+              data: any = ["stocks", "insurance"].includes(editing!.moduleKey)
+                ? { ...raw }
+                : {};
             def.fields.forEach((f) => {
+              if (
+                ["stocks", "insurance"].includes(editing!.moduleKey) &&
+                !fd.has(f.name)
+              )
+                return;
               const v = fd.get(f.name) || "";
               data[f.name] = numericFieldNames.has(f.name) ? num(v) : v;
             });
             if (editing!.moduleKey === "fixedIncome") {
               data.category = fixedIncomeCategoryLabel(data.category);
+              if (key(data.category) === "gratuity") {
+                try {
+                  const result = gratuityFromForm(e.currentTarget);
+                  data.covered_under_gratuity_act =
+                    data.covered_under_gratuity_act || "Yes";
+                  Object.assign(data, {
+                    calculation_date: result.calculationDate,
+                    total_service: `${result.serviceYears} years, ${result.serviceMonths} months, ${result.serviceDays} days`,
+                    service_years: result.serviceYears,
+                    service_months: result.serviceMonths,
+                    service_days: result.serviceDays,
+                    eligible_years: result.eligibleYears,
+                    salary_basis: result.salaryBasis,
+                    gratuity_per_year: result.gratuityPerYear,
+                    gratuity_value: result.totalGratuity,
+                    tax_exempt_gratuity: result.taxExemptGratuity,
+                    taxable_gratuity: result.taxableGratuity,
+                    monthly_ctc_gratuity: result.monthlyCtcAccrual,
+                    annual_ctc_gratuity: result.annualCtcAccrual,
+                    gratuity_eligible: result.eligible,
+                    eligibility_message: result.eligibilityMessage,
+                    maturity_date: "",
+                    interest_rate: 0,
+                  });
+                } catch (error: any) {
+                  setToast(error?.message || "Check gratuity details");
+                  return;
+                }
+              }
               if (isCompanyPfType(data.category)) {
                 data.broker = "Govt";
                 data.lock_in_years = "";
@@ -13646,9 +14731,52 @@ export default function AssetManagerApp() {
                 data.maturity_value = "";
               }
             }
+            if (editing!.moduleKey === "insurance") {
+              if (
+                key(data.premium_frequency) === "single" ||
+                key(data.premium_paying_term_type) === "singlepay"
+              ) {
+                data.premium_frequency = "Single";
+                data.premium_paying_term_type = "Single Pay";
+                data.premium_years_paid = 1;
+                data.single_premium_paid = data.single_premium_paid || "Yes";
+                data.premium_end_date = "";
+                data.premium_due_date = "";
+              }
+              const errors = validateInsurancePolicy(data);
+              if (errors.length) {
+                setToast(errors[0]);
+                return;
+              }
+              const normalized = normalizeInsurancePolicy(data);
+              Object.assign(data, normalized, {
+                category: normalized.category,
+                policy_type: normalized.policy_type,
+              });
+            }
             saveRecord(editing!.moduleKey, data, editing!.record);
           }}
         >
+          {editing!.moduleKey === "stocks" && (
+            <div className="col-span-2 grid grid-cols-3 gap-3 rounded-2xl border border-[#e3dccc] bg-[#f7faf6] p-3 text-sm max-md:col-span-1 max-md:grid-cols-1">
+              {[
+                ["Current Price", num(cur.live_price) ? fmtPrice(cur.live_price) : "-"],
+                ["Invested", num(cur.invested) ? fmt(cur.invested) : "-"],
+                [
+                  "Overall Gain",
+                  num(cur.gain) ? `${num(cur.gain) > 0 ? "+" : ""}${fmt(cur.gain)}` : "-",
+                  num(cur.gain) >= 0 ? "text-emerald-700" : "text-red-700",
+                ],
+              ].map(([label, value, cls]) => (
+                <div key={label} className="min-w-0">
+                  <div className="field-label">{label}</div>
+                  <div className={`truncate font-semibold tabular-nums ${cls || "text-[#17382b]"}`}>
+                    {value}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
           {fields.map((f) => (
             <div
               key={f.name}
@@ -13657,7 +14785,13 @@ export default function AssetManagerApp() {
               }
             >
               <div className="flex items-center justify-between gap-2">
-                <label className="field-label">{f.label}</label>
+                <label className="field-label">
+                  {editing!.moduleKey === "fixedIncome" &&
+                  key(fixedIncomeType) === "gratuity" &&
+                  f.name === "purchase_date"
+                    ? "Date of Joining (DOJ)"
+                    : f.label}
+                </label>
                 {editing!.moduleKey === "bullion" && f.name === "city" && (
                   <button
                     type="button"
@@ -13685,6 +14819,16 @@ export default function AssetManagerApp() {
                     editing!.moduleKey === "fixedIncome" &&
                     f.name === "category"
                       ? fixedIncomeCategoryLabel(cur[f.name])
+                      : editing!.moduleKey === "fixedIncome" &&
+                          f.name === "covered_under_gratuity_act"
+                        ? cur[f.name] || "Yes"
+                      : editing!.moduleKey === "insurance" &&
+                          f.name === "single_premium_paid" &&
+                          key(insurancePremiumFrequency) === "single"
+                        ? cur[f.name] || "Yes"
+                      : ["stocks", "watchlist"].includes(editing!.moduleKey) &&
+                          f.name === "asset_type"
+                        ? cur[f.name] || "Stock"
                       : cur[f.name] || ""
                   }
                   onChange={(e) => {
@@ -13698,6 +14842,28 @@ export default function AssetManagerApp() {
                         e.currentTarget.value,
                       );
                     }
+                    if (
+                      editing!.moduleKey === "insurance" &&
+                      f.name === "category"
+                    )
+                      setInsuranceType(e.currentTarget.value);
+                    if (
+                      editing!.moduleKey === "insurance" &&
+                      f.name === "return_of_premium"
+                    )
+                      setInsuranceReturnPremium(e.currentTarget.value);
+                    if (
+                      editing!.moduleKey === "insurance" &&
+                      [
+                        "premium_frequency",
+                        "premium_paying_term_type",
+                      ].includes(f.name)
+                    )
+                      updateInsurancePremiumMode(
+                        e.currentTarget.form,
+                        f.name,
+                        e.currentTarget.value,
+                      );
                   }}
                 >
                   <option value="">Select</option>
@@ -13709,6 +14875,11 @@ export default function AssetManagerApp() {
                   className="field-input"
                   list="account-list"
                   autoComplete="off"
+                  required={
+                    editing!.moduleKey === "fixedIncome" &&
+                    key(fixedIncomeType) === "gratuity" &&
+                    ["purchase_date", "monthly_basic_salary"].includes(f.name)
+                  }
                   defaultValue={cur[f.name] || ""}
                 />
               ) : f.name === "security_name" &&
@@ -13787,6 +14958,82 @@ export default function AssetManagerApp() {
               )}
             </div>
           ))}
+          {editing!.moduleKey === "fixedIncome" &&
+            key(fixedIncomeType) === "gratuity" && (
+              <div className="col-span-2 max-md:col-span-1">
+                <div className="rounded-2xl border border-[#d8cba9] bg-[#fffaf0] p-4">
+                  <div className="flex flex-wrap items-start justify-between gap-2">
+                    <div>
+                      <h4 className="font-semibold text-[#17382b]">
+                        Gratuity calculation
+                      </h4>
+                      <p className="mt-1 text-xs text-gray-600">
+                        Payment of Gratuity Act basis: (Basic + DA) × 15 ÷ 26 × eligible years.
+                      </p>
+                    </div>
+                    {gratuityPreview?.eligible !== undefined && (
+                      <span
+                        className={`rounded-full px-3 py-1 text-xs font-semibold ${
+                          gratuityPreview.eligible
+                            ? "bg-emerald-100 text-emerald-800"
+                            : "bg-amber-100 text-amber-900"
+                        }`}
+                      >
+                        {gratuityPreview.eligible ? "Eligible" : "Not eligible"}
+                      </span>
+                    )}
+                  </div>
+                  {gratuityPreview?.error ? (
+                    <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-900">
+                      {gratuityPreview.error}
+                    </div>
+                  ) : gratuityPreview ? (
+                    <>
+                      <div className="mt-4 grid grid-cols-3 gap-3 max-lg:grid-cols-2 max-md:grid-cols-1">
+                        {[
+                          ["DOJ", gratuityPreview.dateOfJoining],
+                          ["Calculation date", gratuityPreview.calculationDate],
+                          [
+                            "Total service",
+                            `${gratuityPreview.serviceYears} years, ${gratuityPreview.serviceMonths} months, ${gratuityPreview.serviceDays} days`,
+                          ],
+                          ["Eligible years", String(gratuityPreview.eligibleYears)],
+                          ["Monthly Basic + DA", fmt(gratuityPreview.salaryBasis)],
+                          ["Gratuity per year", fmt(gratuityPreview.gratuityPerYear)],
+                          ["Total gratuity payable", fmt(gratuityPreview.totalGratuity)],
+                          ["Tax-exempt amount", fmt(gratuityPreview.taxExemptGratuity)],
+                          ["Taxable amount", fmt(gratuityPreview.taxableGratuity)],
+                          ["Monthly CTC accrual", fmt(gratuityPreview.monthlyCtcAccrual)],
+                          ["Annual CTC accrual", fmt(gratuityPreview.annualCtcAccrual)],
+                          [
+                            "Covered under Act",
+                            gratuityPreview.coveredUnderAct ? "Yes" : "No",
+                          ],
+                        ].map(([label, value]) => (
+                          <div key={label} className="rounded-xl border border-[#e3dccc] bg-white px-3 py-2">
+                            <div className="text-[10px] font-semibold uppercase tracking-widest text-gray-500">
+                              {label}
+                            </div>
+                            <div className="mt-1 font-semibold tabular-nums text-[#17382b]">
+                              {value}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                      <div
+                        className={`mt-3 rounded-xl px-3 py-2 text-sm font-semibold ${
+                          gratuityPreview.eligible
+                            ? "bg-emerald-50 text-emerald-800"
+                            : "bg-amber-50 text-amber-900"
+                        }`}
+                      >
+                        {gratuityPreview.eligibilityMessage}
+                      </div>
+                    </>
+                  ) : null}
+                </div>
+              </div>
+            )}
           <div className="col-span-2 max-md:col-span-1">
             <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
               <label className="field-label m-0">
@@ -13882,8 +15129,9 @@ export default function AssetManagerApp() {
     set("ticker_symbol", s.ticker);
     set("exchange", s.exchange);
     set("category", s.category);
+    set("asset_type", s.asset_type || "Stock");
     try {
-      const res = await fetch(
+      const res = await quoteFetch(
         `/api/quote?symbol=${encodeURIComponent(s.ticker)}&exchange=${encodeURIComponent(s.exchange)}&name=${encodeURIComponent(s.name)}${quoteProviderParam()}`,
       );
       const q = await res.json();

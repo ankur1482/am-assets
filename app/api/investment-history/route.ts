@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { authenticateRequest } from "@/lib/serverAuth";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -10,6 +11,38 @@ type Holding = {
   exchange?: string;
   quantity: number;
 };
+
+const MAX_HOLDINGS=75;
+const MAX_RANGE_DAYS=3660;
+const HISTORY_CONCURRENCY=8;
+const RATE_WINDOW_MS=60_000;
+const RATE_LIMIT=20;
+const requestWindows=new Map<string,{startedAt:number;count:number}>();
+
+function parseDate(value:string){
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(value))return null;
+  const [year,month,day]=value.split('-').map(Number);
+  const date=new Date(Date.UTC(year,month-1,day));
+  return date.getUTCFullYear()===year&&date.getUTCMonth()===month-1&&date.getUTCDate()===day?date:null;
+}
+
+function rateLimited(userId:string){
+  const now=Date.now();
+  if(requestWindows.size>1000){for(const [key,value] of requestWindows)if(now-value.startedAt>=RATE_WINDOW_MS)requestWindows.delete(key)}
+  const current=requestWindows.get(userId);
+  if(!current||now-current.startedAt>=RATE_WINDOW_MS){requestWindows.set(userId,{startedAt:now,count:1});return false}
+  current.count+=1;
+  return current.count>RATE_LIMIT;
+}
+
+async function mapWithConcurrency<T,R>(items:T[],limit:number,mapper:(item:T)=>Promise<R>){
+  const result=new Array<R>(items.length);
+  let next=0;
+  await Promise.all(Array.from({length:Math.min(limit,items.length)},async()=>{
+    while(true){const index=next++;if(index>=items.length)return;result[index]=await mapper(items[index])}
+  }));
+  return result;
+}
 
 function yahooSymbol(holding: Holding) {
   const ticker = String(holding.ticker || "").trim().toUpperCase();
@@ -51,18 +84,24 @@ async function yahooChart(symbol: string, from: string, to: string) {
 
 export async function POST(request: Request) {
   try {
+    const auth=await authenticateRequest(request);
+    if(!auth)return NextResponse.json({error:'Invalid session'},{status:401});
+    if(rateLimited(auth.user.id))return NextResponse.json({error:'Too many historical analytics requests. Try again shortly.'},{status:429,headers:{'Retry-After':'60'}});
     const body = await request.json();
     const from = String(body?.from || "");
     const to = String(body?.to || "");
     const holdings = (Array.isArray(body?.holdings) ? body.holdings : []).slice(
       0,
-      75,
+      MAX_HOLDINGS,
     ) as Holding[];
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(from) || !/^\d{4}-\d{2}-\d{2}$/.test(to))
+    const fromDate=parseDate(from),toDate=parseDate(to);
+    if (!fromDate || !toDate)
       return NextResponse.json({ error: "Valid from/to dates are required" }, { status: 400 });
+    if(fromDate>toDate)return NextResponse.json({error:'The from date must be on or before the to date'},{status:400});
+    const rangeDays=Math.floor((toDate.getTime()-fromDate.getTime())/86400000)+1;
+    if(rangeDays>MAX_RANGE_DAYS)return NextResponse.json({error:'Historical analytics is limited to 10 years'},{status:400});
 
-    const series = await Promise.all(
-      holdings.map(async (holding) => {
+    const series = await mapWithConcurrency(holdings,HISTORY_CONCURRENCY,async (holding) => {
         const symbol = yahooSymbol(holding);
         if (!symbol) return { id: holding.id, points: [], error: "Symbol missing" };
         try {
@@ -77,8 +116,7 @@ export async function POST(request: Request) {
         } catch (error: any) {
           return { id: holding.id, points: [], error: error?.message || "Unavailable" };
         }
-      }),
-    );
+      });
     return NextResponse.json(
       { from, to, series, provider: "Yahoo Finance historical closes" },
       { headers: { "Cache-Control": "no-store, max-age=0" } },

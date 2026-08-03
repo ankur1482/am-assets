@@ -9,6 +9,13 @@ const url=process.env.NEXT_PUBLIC_SUPABASE_URL;
 const anonKey=process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 const serviceRoleKey=process.env.SUPABASE_SERVICE_ROLE_KEY;
 const documentBucket='asset-documents';
+const MAX_DOCUMENT_BYTES=50*1024*1024;
+const ALLOWED_DOCUMENT_MIME_TYPES=new Set([
+  'application/pdf','image/jpeg','image/png','image/webp','image/gif',
+  'text/plain','text/csv','application/json',
+  'application/msword','application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/vnd.ms-excel','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+]);
 
 function jsonError(message:string,status=500,code?:string){
   return NextResponse.json({error:message,code},{status});
@@ -55,6 +62,8 @@ async function requireUser(req:NextRequest){
 
 export async function POST(req:NextRequest){
   try{
+    const contentLength=Number(req.headers.get('content-length')||0);
+    if(contentLength>MAX_DOCUMENT_BYTES+1024*1024)return jsonError('Document must be 50 MB or smaller',413,'DOCUMENT_TOO_LARGE');
     const auth=await requireUser(req);
     if(auth.error)return auth.error;
     const form=await req.formData();
@@ -63,6 +72,8 @@ export async function POST(req:NextRequest){
     const workspaceId=String(form.get('workspaceId')||'');
     const folderParts=parseFolderParts(form.get('folderParts'));
     if(!(file instanceof File))return jsonError('Document file is required',400);
+    if(file.size>MAX_DOCUMENT_BYTES)return jsonError('Document must be 50 MB or smaller',413,'DOCUMENT_TOO_LARGE');
+    if(!ALLOWED_DOCUMENT_MIME_TYPES.has(file.type))return jsonError('This document type is not allowed',415,'DOCUMENT_TYPE_NOT_ALLOWED');
     const buffer=Buffer.from(await file.arrayBuffer());
     if(workspaceId){
       const {data:access,error:accessError}=await auth.supabase.rpc('workspace_access',{target_workspace:workspaceId});
@@ -91,8 +102,8 @@ export async function POST(req:NextRequest){
         }
       });
     }
-    if(hasGoogleDriveOAuth(req)){
-      const uploaded=await uploadOAuthAssetDocument(req,{
+    if(await hasGoogleDriveOAuth(auth.user.id)){
+      const uploaded=await uploadOAuthAssetDocument(auth.user.id,{
         userId:auth.user.id,
         moduleKey,
         fileName:file.name,
@@ -179,7 +190,7 @@ export async function GET(req:NextRequest){
       return NextResponse.redirect(data.signedUrl,307);
     }
     let file;
-    if(hasGoogleDriveOAuth(req))file=await downloadOAuthAssetDocument(req,doc.file_path);
+    if(await hasGoogleDriveOAuth(auth.user.id))file=await downloadOAuthAssetDocument(auth.user.id,doc.file_path);
     else file=await downloadAssetDocument(doc.file_path);
     const encoded=encodeURIComponent(file.name);
     return new NextResponse(file.body,{
@@ -204,10 +215,8 @@ export async function DELETE(req:NextRequest){
     const {data:doc,error}=await auth.supabase.from('asset_documents').select('*').eq('id',id).maybeSingle();
     if(error)throw error;
     if(!doc)return jsonError('Document not found',404);
-    const del=await auth.supabase.from('asset_documents').delete().eq('id',id);
-    if(del.error)throw del.error;
     if(isGoogleDrivePath(doc.file_path)){
-      if(hasGoogleDriveOAuth(req))await deleteOAuthAssetDocument(req,doc.file_path);
+      if(await hasGoogleDriveOAuth(auth.user.id))await deleteOAuthAssetDocument(auth.user.id,doc.file_path);
       else await deleteAssetDocument(doc.file_path);
     }
     else{
@@ -216,6 +225,8 @@ export async function DELETE(req:NextRequest){
       const rm=await serviceClient.storage.from(documentBucket).remove([doc.file_path]);
       if(rm.error)throw rm.error;
     }
+    const del=await auth.supabase.from('asset_documents').delete().eq('id',id);
+    if(del.error)throw del.error;
     return NextResponse.json({ok:true});
   }catch(e:any){
     console.error('Document delete failed',e);

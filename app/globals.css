@@ -6,6 +6,513 @@ body {
   font-weight: 400;
 }
 
+.auth-shell {
+  position: relative;
+  overflow: hidden;
+  color: #0f1111;
+  background:
+    radial-gradient(circle at 18% 10%, rgba(255, 153, 0, .18), transparent 27rem),
+    linear-gradient(145deg, #131921 0%, #232f3e 52%, #37475a 100%) !important;
+  font-family: Arial, Helvetica, ui-sans-serif, system-ui, sans-serif;
+}
+
+.auth-shell::before {
+  content: "";
+  position: absolute;
+  inset: auto -8vw -38vh;
+  height: 62vh;
+  border-radius: 50% 50% 0 0;
+  background: #eaeded;
+  transform: rotate(-3deg);
+}
+
+.auth-card {
+  position: relative;
+  z-index: 1;
+  border: 1px solid #d5d9d9 !important;
+  border-radius: 10px !important;
+  background: #fff !important;
+  box-shadow: 0 18px 52px rgba(0, 0, 0, .32) !important;
+}
+
+.auth-card h1 {
+  color: #0f1111 !important;
+  font-weight: 700 !important;
+  letter-spacing: -.03em !important;
+}
+
+.auth-brand-mark {
+  border: 1px solid #e47911;
+  border-radius: 8px !important;
+  color: #131921 !important;
+  background: #ff9900 !important;
+  box-shadow: none !important;
+}
+
+.auth-card .field-label {
+  color: #0f1111 !important;
+  font-weight: 700 !important;
+  letter-spacing: 0 !important;
+  text-transform: none !important;
+}
+
+.auth-card .field-input {
+  border-color: #888c8c !important;
+  border-radius: 4px !important;
+  background: #fff !important;
+}
+
+.auth-card .field-input:focus {
+  border-color: #e47911 !important;
+  box-shadow: 0 0 0 3px rgba(255, 153, 0, .28) !important;
+}
+
+.auth-card .btn-primary {
+  border-color: #fcd200 !important;
+  border-radius: 999px !important;
+  color: #0f1111 !important;
+  background: #ffd814 !important;
+}
+
+.auth-card .btn-primary:hover {
+  border-color: #f2c200 !important;
+  background: #f7ca00 !important;
+}
+
+.auth-card .btn {
+  border-color: #d5d9d9 !important;
+  border-radius: 999px !important;
+  color: #0f1111 !important;
+  background: #fff !important;
+}
+
+/* Marketplace theme
+   A retail-dashboard visual system: dense navigation, unmistakable actions,
+   and practical data surfaces. It intentionally uses no third-party marks. */
+.app-theme-amazon {
+  --market-ink: #0f1111;
+  --market-navy: #131921;
+  --market-navy-2: #232f3e;
+  --market-orange: #ff9900;
+  --market-orange-dark: #e47911;
+  --market-yellow: #ffd814;
+  --market-bg: #eaeded;
+  --market-line: #d5d9d9;
+  color: var(--market-ink) !important;
+  background: var(--market-bg) !important;
+  font-family: Arial, Helvetica, ui-sans-serif, system-ui, sans-serif !important;
+  letter-spacing: 0 !important;
+}
+
+.app-theme-amazon,
+.app-theme-amazon main,
+.app-theme-amazon .desktop-content,
+.app-theme-amazon .phone-content {
+  background: var(--market-bg) !important;
+}
+
+.app-theme-amazon .desktop-main {
+  padding: 0 1.25rem 1.5rem !important;
+}
+
+.app-theme-amazon .desktop-sidebar {
+  padding: 1rem .7rem 2rem !important;
+  border-right: 0 !important;
+  color: #fff !important;
+  background: var(--market-navy-2) !important;
+  box-shadow: 3px 0 14px rgba(15, 17, 17, .18) !important;
+  backdrop-filter: none !important;
+  scrollbar-color: #66758a var(--market-navy-2) !important;
+}
+
+.app-theme-amazon .desktop-sidebar::before {
+  display: none !important;
+}
+
+.app-theme-amazon .sidebar-brand {
+  margin: -.05rem -.7rem 1rem !important;
+  padding: .15rem .8rem 1rem !important;
+  border-bottom: 1px solid rgba(255, 255, 255, .14) !important;
+}
+
+.app-theme-amazon .brand-mark,
+.app-theme-amazon .desktop-sidebar .bg-sage {
+  border: 1px solid rgba(255, 153, 0, .48) !important;
+  border-radius: 8px !important;
+  color: var(--market-navy) !important;
+  background: var(--market-orange) !important;
+  box-shadow: none !important;
+}
+
+.app-theme-amazon .desktop-sidebar h1 {
+  color: #fff !important;
+  font-size: 1.05rem !important;
+  font-weight: 700 !important;
+  letter-spacing: -.02em !important;
+  text-transform: capitalize;
+}
+
+.app-theme-amazon .desktop-sidebar h1::after {
+  content: "";
+  display: block;
+  width: 62px;
+  height: 3px;
+  margin: 5px 0 0 8px;
+  border-bottom: 2px solid var(--market-orange);
+  border-radius: 50%;
+  transform: rotate(-2deg);
+}
+
+.app-theme-amazon .desktop-sidebar p,
+.app-theme-amazon .desktop-sidebar .text-gray-500 {
+  color: #d5dbdb !important;
+}
+
+.app-theme-amazon .desktop-sidebar nav > div > div:first-child {
+  color: #aeb8c4 !important;
+  font-weight: 700 !important;
+  letter-spacing: .12em !important;
+}
+
+.app-theme-amazon .desktop-sidebar nav button {
+  min-height: 38px !important;
+  gap: .7rem !important;
+  border: 1px solid transparent !important;
+  border-radius: 4px !important;
+  color: #f3f3f3 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  font-weight: 600 !important;
+}
+
+.app-theme-amazon .desktop-sidebar nav button svg {
+  color: #ffb84d !important;
+  stroke-width: 2.1 !important;
+}
+
+.app-theme-amazon .desktop-sidebar nav button:hover {
+  border-color: rgba(255, 255, 255, .3) !important;
+  background: #37475a !important;
+  transform: none !important;
+}
+
+.app-theme-amazon .desktop-sidebar nav button.bg-sage {
+  border-color: rgba(255, 153, 0, .65) !important;
+  color: #fff !important;
+  background: #37475a !important;
+  box-shadow: inset 4px 0 0 var(--market-orange) !important;
+}
+
+.app-theme-amazon .sidebar-collapse,
+.app-theme-amazon .sidebar-reopen {
+  border-color: rgba(255, 255, 255, .25) !important;
+  border-radius: 4px !important;
+  color: #fff !important;
+  background: #37475a !important;
+  box-shadow: none !important;
+}
+
+.app-theme-amazon .sidebar-reopen {
+  border-color: var(--market-orange) !important;
+  background: var(--market-navy-2) !important;
+}
+
+.app-theme-amazon .sidebar-resizer::after {
+  background: rgba(255, 153, 0, .55) !important;
+}
+
+.app-theme-amazon .desktop-header {
+  position: sticky !important;
+  top: 0 !important;
+  z-index: 23 !important;
+  align-items: center !important;
+  min-height: 82px !important;
+  margin: 0 -1.25rem 1.25rem !important;
+  padding: .75rem 1.25rem !important;
+  border: 0 !important;
+  border-bottom: 4px solid var(--market-orange) !important;
+  border-radius: 0 !important;
+  color: #fff !important;
+  background: var(--market-navy) !important;
+  box-shadow: 0 4px 12px rgba(15, 17, 17, .16) !important;
+}
+
+.app-theme-amazon .desktop-header h2 {
+  color: #fff !important;
+  font-size: clamp(1.35rem, 2.2vw, 2rem) !important;
+  font-weight: 700 !important;
+  line-height: 1.05 !important;
+  letter-spacing: -.025em !important;
+}
+
+.app-theme-amazon .desktop-header p {
+  color: #d5dbdb !important;
+}
+
+.app-theme-amazon .desktop-header-actions {
+  flex: 1 1 430px;
+  flex-wrap: nowrap !important;
+  max-width: 720px;
+}
+
+.app-theme-amazon .header-search {
+  flex: 1 1 auto;
+  min-height: 44px;
+  overflow: hidden;
+  padding: 0 0 0 .85rem !important;
+  border: 3px solid transparent !important;
+  border-radius: 8px !important;
+  color: #565959 !important;
+  background: #fff !important;
+  box-shadow: none !important;
+}
+
+.app-theme-amazon .header-search:focus-within {
+  border-color: var(--market-orange) !important;
+}
+
+.app-theme-amazon .header-search input {
+  flex: 1;
+  width: auto !important;
+  min-height: 38px;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: #fff !important;
+  box-shadow: none !important;
+}
+
+.app-theme-amazon .header-search svg {
+  order: 2;
+  box-sizing: content-box;
+  width: 20px;
+  height: 20px;
+  margin-left: .5rem;
+  padding: 11px 14px;
+  color: #111 !important;
+  background: #febd69 !important;
+}
+
+.app-theme-amazon .header-signout {
+  min-height: 44px !important;
+  border: 1px solid rgba(255, 255, 255, .48) !important;
+  border-radius: 4px !important;
+  color: #fff !important;
+  background: transparent !important;
+  white-space: nowrap !important;
+}
+
+.app-theme-amazon .header-signout:hover {
+  border-color: #fff !important;
+  background: #232f3e !important;
+}
+
+.app-theme-amazon .card,
+.app-theme-amazon .card-gradient,
+.app-theme-amazon .kpi-card,
+.app-theme-amazon section,
+.app-theme-amazon .rounded-2xl,
+.app-theme-amazon .rounded-3xl,
+.app-theme-amazon .investment-table,
+.app-theme-amazon .stock-holdings-table,
+.app-theme-amazon .table-smooth,
+.app-theme-amazon .desktop-market-card,
+.app-theme-amazon .utility-watchlist {
+  border-color: var(--market-line) !important;
+  border-radius: 8px !important;
+  background: #fff !important;
+  box-shadow: 0 2px 7px rgba(15, 17, 17, .09) !important;
+  backdrop-filter: none !important;
+}
+
+.app-theme-amazon .card::before,
+.app-theme-amazon .kpi-card::before,
+.app-theme-amazon .kpi-card::after,
+.app-theme-amazon .desktop-market-card::before {
+  display: none !important;
+}
+
+.app-theme-amazon h1,
+.app-theme-amazon h2,
+.app-theme-amazon h3,
+.app-theme-amazon h4,
+.app-theme-amazon .stat-value {
+  color: var(--market-ink) !important;
+  font-weight: 700 !important;
+  letter-spacing: -.02em !important;
+  text-shadow: none !important;
+}
+
+.app-theme-amazon .stat-label,
+.app-theme-amazon .field-label,
+.app-theme-amazon .phone-eyebrow {
+  color: #565959 !important;
+  font-weight: 700 !important;
+  letter-spacing: .06em !important;
+}
+
+.app-theme-amazon .field-input,
+.app-theme-amazon input,
+.app-theme-amazon select,
+.app-theme-amazon textarea {
+  border-color: #888c8c !important;
+  border-radius: 4px !important;
+  color: var(--market-ink) !important;
+  background: #fff !important;
+  box-shadow: inset 0 1px 2px rgba(15, 17, 17, .12) !important;
+}
+
+.app-theme-amazon .field-input:focus,
+.app-theme-amazon input:focus,
+.app-theme-amazon select:focus,
+.app-theme-amazon textarea:focus {
+  border-color: var(--market-orange-dark) !important;
+  box-shadow: 0 0 0 3px rgba(255, 153, 0, .28) !important;
+}
+
+.app-theme-amazon .btn-primary,
+.app-theme-amazon .phone-add-btn {
+  border: 1px solid #fcd200 !important;
+  border-radius: 999px !important;
+  color: #0f1111 !important;
+  background: var(--market-yellow) !important;
+  box-shadow: 0 2px 5px rgba(213, 217, 217, .55) !important;
+  font-weight: 600 !important;
+}
+
+.app-theme-amazon .btn-primary:hover,
+.app-theme-amazon .phone-add-btn:hover {
+  border-color: #f2c200 !important;
+  background: #f7ca00 !important;
+  transform: none !important;
+}
+
+.app-theme-amazon .btn,
+.app-theme-amazon .btn-danger {
+  border: 1px solid #d5d9d9 !important;
+  border-radius: 999px !important;
+  color: #0f1111 !important;
+  background: #fff !important;
+  box-shadow: 0 2px 5px rgba(213, 217, 217, .5) !important;
+  font-weight: 600 !important;
+}
+
+.app-theme-amazon .btn:hover {
+  background: #f7fafa !important;
+  border-color: #b7bcbc !important;
+  transform: none !important;
+}
+
+.app-theme-amazon .pill,
+.app-theme-amazon .badge,
+.app-theme-amazon .chip,
+.app-theme-amazon .tag {
+  border-color: #f3c66b !important;
+  border-radius: 4px !important;
+  color: #8b3e00 !important;
+  background: #fff4df !important;
+  box-shadow: none !important;
+}
+
+.theme-swatch {
+  background: var(--theme-swatch) !important;
+}
+
+.app-theme-amazon .theme-option-amazon {
+  border: 2px solid var(--market-orange) !important;
+  color: #fff !important;
+  background: linear-gradient(135deg, #131921, #232f3e) !important;
+  box-shadow: inset 5px 0 0 var(--market-orange), 0 4px 12px rgba(15, 17, 17, .2) !important;
+}
+
+.app-theme-amazon .theme-option-amazon .text-\[\#17382b\] {
+  color: #fff !important;
+}
+
+.app-theme-amazon .theme-option-amazon .text-gray-500 {
+  color: #d5dbdb !important;
+}
+
+.app-theme-amazon .investment-table thead th,
+.app-theme-amazon .stock-holdings-table thead th,
+.app-theme-amazon .table-smooth thead th,
+.app-theme-amazon .overflow-auto table thead th {
+  color: #0f1111 !important;
+  background: #f0f2f2 !important;
+  border-bottom: 1px solid #c7cccc !important;
+  font-weight: 700 !important;
+  letter-spacing: .035em !important;
+}
+
+.app-theme-amazon .investment-table tbody tr,
+.app-theme-amazon .stock-holdings-table tbody tr,
+.app-theme-amazon .table-smooth tbody tr {
+  background: #fff !important;
+  box-shadow: none !important;
+}
+
+.app-theme-amazon .investment-table tbody tr:nth-child(even),
+.app-theme-amazon .stock-holdings-table tbody tr:nth-child(even) {
+  background: #fafafa !important;
+}
+
+.app-theme-amazon .investment-table tbody tr:hover,
+.app-theme-amazon .stock-holdings-table tbody tr:hover,
+.app-theme-amazon .table-smooth tbody tr:hover {
+  background: #fff8e7 !important;
+  box-shadow: inset 4px 0 0 var(--market-orange) !important;
+}
+
+.app-theme-amazon .mobile-appbar,
+.app-theme-amazon .mobile-menu-panel,
+.app-theme-amazon .mobile-tabbar.mobile-top-nav {
+  border-color: rgba(255, 255, 255, .15) !important;
+  border-radius: 0 !important;
+  color: #fff !important;
+  background: var(--market-navy) !important;
+  box-shadow: 0 3px 10px rgba(15, 17, 17, .2) !important;
+  backdrop-filter: none !important;
+}
+
+.app-theme-amazon .mobile-appbar {
+  border-bottom: 3px solid var(--market-orange) !important;
+}
+
+.app-theme-amazon .mobile-appbar h2,
+.app-theme-amazon .mobile-appbar .mobile-brand-copy > div {
+  color: #fff !important;
+}
+
+.app-theme-amazon .mobile-icon-btn {
+  border-color: rgba(255, 255, 255, .42) !important;
+  border-radius: 4px !important;
+  color: #fff !important;
+  background: var(--market-navy-2) !important;
+  box-shadow: none !important;
+}
+
+.app-theme-amazon .mobile-tabbar button {
+  color: #e7e9ec !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+.app-theme-amazon .mobile-tabbar button.active,
+.app-theme-amazon .mobile-nav-active {
+  color: #111 !important;
+  background: var(--market-orange) !important;
+}
+
+.app-theme-amazon ::selection {
+  color: #111;
+  background: #ffd58c;
+}
+
+@media (max-width: 1023px) {
+  .app-theme-amazon .desktop-main {
+    padding: 0 !important;
+  }
+}
+
 button,
 input,
 select,
@@ -872,7 +1379,7 @@ form,
   }
 }
 
-@media (max-width: 768px) {
+@media (max-width: 1024px) {
   body {
     background: #111219;
   }
@@ -1977,7 +2484,7 @@ body {
    Moves the mobile summary/investment navigation to the top,
    prevents label overlap, and removes the old bottom-bar spacing.
 ========================================================= */
-@media (max-width: 768px) {
+@media (max-width: 1024px) {
   main {
     padding-bottom: calc(env(safe-area-inset-bottom) + 1.25rem) !important;
   }
@@ -2295,7 +2802,7 @@ body {
   background: #fff2d8;
 }
 
-@media (max-width: 768px) {
+@media (max-width: 1024px) {
   .desktop-market-card-grid {
     display: none;
   }
@@ -2322,5 +2829,286 @@ body {
   .phone-content,
   .phone-screen {
     overflow-x: hidden !important;
+  }
+}
+
+/* Tablet layout: use the touch navigation without stretching phone cards edge to edge. */
+.phone-property-card {
+  display: grid;
+  width: 100%;
+  min-width: 0;
+  gap: 0.75rem;
+  overflow: hidden;
+  border: 1px solid rgba(198, 150, 50, 0.28);
+  border-left: 4px solid #790f46;
+  border-radius: 18px !important;
+  background: linear-gradient(145deg, #fffdf8, #fff7e9);
+  padding: 0.9rem;
+  color: #342433;
+  text-align: left;
+  box-shadow: 0 12px 28px rgba(75, 8, 42, 0.08);
+  box-sizing: border-box !important;
+  transform: none !important;
+}
+
+.phone-property-head,
+.phone-property-foot {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.phone-property-title {
+  overflow: hidden;
+  font-size: 0.95rem;
+  font-weight: 950;
+  line-height: 1.15;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.phone-property-location {
+  margin-top: 0.2rem;
+  overflow: hidden;
+  color: #746675;
+  font-size: 0.74rem;
+  font-weight: 750;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.phone-property-status {
+  flex: 0 0 auto;
+  max-width: 42%;
+  overflow: hidden;
+  border: 1px solid #e4c981;
+  border-radius: 999px;
+  background: #fff2c7;
+  padding: 0.3rem 0.55rem;
+  color: #6b173f;
+  font-size: 0.65rem;
+  font-weight: 900;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.phone-property-values {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.5rem;
+}
+
+.phone-property-values > div {
+  min-width: 0;
+  border: 1px solid rgba(198, 150, 50, 0.2);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.78);
+  padding: 0.55rem 0.6rem;
+}
+
+.phone-property-values span {
+  display: block;
+  color: #877586;
+  font-size: 0.6rem;
+  font-weight: 900;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.phone-property-values strong {
+  display: block;
+  margin-top: 0.18rem;
+  overflow: hidden;
+  font-size: 0.82rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 950;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.phone-property-foot {
+  border-top: 1px solid rgba(198, 150, 50, 0.2);
+  padding-top: 0.6rem;
+  color: #746675;
+  font-size: 0.68rem;
+  font-weight: 800;
+}
+
+.phone-property-foot span:last-child {
+  text-align: right;
+}
+
+.property-holdings-table {
+  position: relative;
+  overflow-x: auto !important;
+  overflow-y: hidden;
+  padding-bottom: 4px;
+  scrollbar-width: thin;
+  scrollbar-color: #b8892b #f6ead7;
+  touch-action: pan-x pan-y;
+}
+
+.property-holdings-table::-webkit-scrollbar {
+  display: block !important;
+  height: 10px;
+}
+
+.property-holdings-table::-webkit-scrollbar-track {
+  border-radius: 999px;
+  background: #f6ead7;
+}
+
+.property-holdings-table::-webkit-scrollbar-thumb {
+  border: 2px solid #f6ead7;
+  border-radius: 999px;
+  background: #b8892b;
+}
+
+.property-holdings-table th,
+.property-holdings-table td {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  word-break: normal !important;
+  overflow-wrap: normal !important;
+}
+
+.property-holdings-table th:first-child,
+.property-holdings-table td:first-child {
+  position: sticky;
+  left: 0;
+  z-index: 3;
+  background: #fffdf8;
+  box-shadow: 1px 0 0 rgba(198, 150, 50, 0.24);
+}
+
+.property-holdings-table th:nth-child(2),
+.property-holdings-table td:nth-child(2) {
+  position: sticky;
+  left: 100px;
+  z-index: 2;
+  background: #fffdf8;
+  box-shadow: 8px 0 14px -12px rgba(52, 36, 51, 0.7);
+}
+
+.property-holdings-table thead th:first-child,
+.property-holdings-table thead th:nth-child(2) {
+  z-index: 5;
+  background: linear-gradient(180deg, #f5e9d4, #ead8b7) !important;
+}
+
+@media (min-width: 769px) and (max-width: 1024px) {
+  .desktop-main {
+    width: 100%;
+    min-height: 100vh;
+    min-height: 100dvh;
+    padding: 0 !important;
+  }
+
+  .mobile-appbar {
+    min-height: 76px;
+    padding-right: max(20px, env(safe-area-inset-right)) !important;
+    padding-left: max(20px, env(safe-area-inset-left)) !important;
+  }
+
+  .mobile-appbar h2 {
+    font-size: 1.5rem !important;
+  }
+
+  .mobile-icon-btn,
+  .phone-add-btn {
+    min-width: 44px !important;
+    min-height: 44px !important;
+  }
+
+  .mobile-menu-panel {
+    right: 20px;
+    left: auto;
+    width: min(520px, calc(100vw - 40px));
+    max-height: calc(100vh - 96px);
+    max-height: calc(100dvh - 96px);
+    overflow-y: auto;
+  }
+
+  .mobile-tabbar.mobile-top-nav {
+    width: min(960px, calc(100vw - 40px)) !important;
+    max-width: min(960px, calc(100vw - 40px)) !important;
+  }
+
+  .phone-screen {
+    width: min(960px, 100%);
+    max-width: 960px !important;
+    margin-inline: auto;
+    padding: 16px 20px 36px !important;
+    gap: 0.85rem;
+  }
+
+  .phone-market-strip {
+    margin-right: -20px !important;
+    margin-left: -20px !important;
+    padding-right: 20px !important;
+    padding-left: 20px !important;
+  }
+
+  .phone-stats {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 0.75rem;
+  }
+
+  .phone-list {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: start;
+    gap: 0.85rem;
+  }
+
+  .phone-property-list {
+    grid-template-columns: minmax(0, 1fr) !important;
+    width: 100% !important;
+  }
+
+  .phone-property-list > .phone-group {
+    width: 100% !important;
+    max-width: 100% !important;
+    overflow: visible !important;
+  }
+
+  .phone-property-card {
+    min-height: 0;
+    width: 100% !important;
+    max-width: 100% !important;
+    border-radius: 20px !important;
+    padding: 1rem !important;
+  }
+
+  .phone-property-title {
+    font-size: 1.05rem;
+  }
+
+  .phone-property-values strong {
+    font-size: 0.94rem;
+  }
+
+  .phone-property-values {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .phone-list > :only-child,
+  .phone-list > .phone-group {
+    min-width: 0;
+  }
+
+  .phone-hero,
+  .phone-module-main {
+    padding: 18px !important;
+  }
+
+  .phone-hero-value {
+    font-size: clamp(2rem, 5vw, 2.75rem) !important;
+  }
+
+  .auth-card {
+    padding: 2rem !important;
   }
 }

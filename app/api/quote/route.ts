@@ -1,12 +1,13 @@
 import { NextResponse } from "next/server";
 import { gunzipSync } from "zlib";
 import { getUpstoxAccessToken } from "@/lib/upstox";
+import { authenticateRequest } from "@/lib/serverAuth";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const RESPONSE_CACHE_CONTROL =
-  "public, s-maxage=300, stale-while-revalidate=600";
+  "public, s-maxage=15, stale-while-revalidate=30";
 
 type Provider = "upstox" | "twelvedata" | "alphavantage" | "polygon" | "yahoo";
 type Quote = {
@@ -34,6 +35,7 @@ const DEFAULT_PROVIDER_ORDER: Provider[] = [
 ];
 const QUOTE_CACHE_TTL_MS = 15 * 1000;
 const QUOTE_STALE_TTL_MS = 2 * 60 * 1000;
+const QUOTE_CACHE_MAX_ENTRIES = 500;
 
 type QuoteCacheEntry = {
   quote: Quote;
@@ -43,6 +45,23 @@ type QuoteCacheEntry = {
 
 const quoteCache = new Map<string, QuoteCacheEntry>();
 let upstoxCooldownUntil = 0;
+
+function pruneQuoteCache(now=Date.now()){
+  for(const [key,entry] of quoteCache){
+    if(now-entry.savedAt>=QUOTE_STALE_TTL_MS)quoteCache.delete(key);
+  }
+  while(quoteCache.size>QUOTE_CACHE_MAX_ENTRIES){
+    const oldest=quoteCache.keys().next().value;
+    if(!oldest)break;
+    quoteCache.delete(oldest);
+  }
+}
+
+function cacheQuote(key:string,value:QuoteCacheEntry){
+  quoteCache.delete(key);
+  quoteCache.set(key,value);
+  pruneQuoteCache();
+}
 
 function normalizedExchange(exchange = "NSE") {
   return exchange.trim().toUpperCase() || "NSE";
@@ -236,12 +255,12 @@ function upstoxIndexKey(symbol: string) {
   return found;
 }
 
-async function upstoxQuote(symbol: string, exchange: string) {
+async function upstoxQuote(symbol: string, exchange: string,userId?:string) {
   if (!isIndianExchange(exchange) && !isIndexExchange(exchange))
     throw new Error("unsupported market");
   if (Date.now() < upstoxCooldownUntil)
     throw new Error("rate limited cooldown");
-  const token = await getUpstoxAccessToken();
+  const token = await getUpstoxAccessToken(userId);
   if (!token) throw new Error("not configured");
   const instrumentKey = isIndexExchange(exchange)
     ? upstoxIndexKey(symbol)
@@ -456,8 +475,8 @@ async function yahooQuote(symbol: string, exchange: string) {
   );
 }
 
-async function fetchProvider(provider: Provider, symbol: string, exchange: string) {
-  if (provider === "upstox") return upstoxQuote(symbol, exchange);
+async function fetchProvider(provider: Provider, symbol: string, exchange: string,userId?:string) {
+  if (provider === "upstox") return upstoxQuote(symbol, exchange,userId);
   if (provider === "twelvedata") return twelveDataQuote(symbol, exchange);
   if (provider === "alphavantage") return alphaVantageQuote(symbol, exchange);
   if (provider === "polygon") return polygonQuote(symbol, exchange);
@@ -465,6 +484,8 @@ async function fetchProvider(provider: Provider, symbol: string, exchange: strin
 }
 
 export async function GET(request: Request) {
+  pruneQuoteCache();
+  const auth=await authenticateRequest(request);
   const { searchParams } = new URL(request.url);
   const symbol = searchParams.get("symbol") || "";
   const exchange = searchParams.get("exchange") || "NSE";
@@ -490,8 +511,8 @@ export async function GET(request: Request) {
   const attempted: string[] = [];
   for (const provider of providerOrder(preferredProvider)) {
     try {
-      const quote = await fetchProvider(provider, symbol, exchange);
-      quoteCache.set(cacheKey, { quote, attempted: [...attempted], savedAt: Date.now() });
+      const quote = await fetchProvider(provider, symbol, exchange,auth?.user.id);
+      cacheQuote(cacheKey, { quote, attempted: [...attempted], savedAt: Date.now() });
       return NextResponse.json(
         { ...quote, attempted, time: new Date().toISOString() },
         { headers: { "Cache-Control": RESPONSE_CACHE_CONTROL } },

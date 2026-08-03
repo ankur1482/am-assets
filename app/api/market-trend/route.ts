@@ -4,7 +4,7 @@ export const dynamic='force-dynamic';
 export const revalidate=0;
 
 const TROY_OZ_GRAMS=31.1034768;
-const symbols:Record<string,string>={gold:'GC=F',silver:'SI=F',crude:'CL=F'};
+const symbols:Record<string,string>={gold:'GC=F',silver:'SI=F',crude:'CL=F','gold-history':'GOLDBEES.NS','shares-history':'^NSEI'};
 
 async function yahooChart(symbol:string,range='3mo'){
   const res=await fetch(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1d&range=${encodeURIComponent(range)}`,{headers:{'User-Agent':'Mozilla/5.0 AssetManager/1.0',Accept:'application/json'},cache:'no-store'});
@@ -46,10 +46,11 @@ export async function GET(request:Request){
   const symbol=symbols[asset];
   if(!symbol)return NextResponse.json({error:'Unsupported asset'},{status:400});
   try{
-    const raw=await yahooChart(symbol,range),usdInr=asset==='crude'?1:await yahooPrice('USDINR=X');
-    const points=raw.map(p=>({date:p.date,value:asset==='crude'?p.close:p.close*usdInr/TROY_OZ_GRAMS*(asset==='gold'?10:1000)})).slice(range==='5d'?-5:range==='1mo'?-22:undefined);
+    const historicalProxy=asset.endsWith('-history'),usdInr=asset==='crude'||historicalProxy?1:await yahooPrice('USDINR=X');
+    const raw=await yahooChart(symbol,range);
+    const points=raw.map(p=>({date:p.date,value:asset==='crude'||historicalProxy?p.close:p.close*usdInr/TROY_OZ_GRAMS*(asset==='gold'?10:1000)})).slice(range==='5d'?-5:range==='1mo'?-22:undefined);
     const tone=await newsTone(asset),outlook=forecast(points,tone.score);
-    return NextResponse.json({asset,symbol,currency:asset==='crude'?'USD':'INR',unit:asset==='gold'?'10g':asset==='crude'?'barrel':'kg',market:'Yahoo Finance',points,tone,outlook,time:new Date().toISOString()},{headers:{'Cache-Control':'no-store, max-age=0'}});
+    return NextResponse.json({asset,symbol,currency:asset==='crude'?'USD':'INR',unit:historicalProxy?'index':asset==='gold'?'10g':asset==='crude'?'barrel':'kg',market:'Yahoo Finance',points,tone,outlook,time:new Date().toISOString()},{headers:{'Cache-Control':'no-store, max-age=0'}});
   }catch(e:any){
     return NextResponse.json({error:e?.message||'Trend failed'},{status:500});
   }

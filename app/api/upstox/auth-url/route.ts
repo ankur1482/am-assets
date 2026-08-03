@@ -1,14 +1,17 @@
-import crypto from 'crypto';
 import {NextRequest,NextResponse} from 'next/server';
 import {UPSTOX_AUTH_URL,UPSTOX_STATE_COOKIE,upstoxConfig,upstoxCookieOptions} from '@/lib/upstox';
+import {authenticateRequest} from '@/lib/serverAuth';
+import {createOAuthState} from '@/lib/oauthState';
 
 export const runtime='nodejs';
 export const dynamic='force-dynamic';
 
-export async function GET(_req:NextRequest){
+export async function GET(req:NextRequest){
   try{
+    const auth=await authenticateRequest(req);
+    if(!auth)return NextResponse.json({error:'Invalid session'},{status:401});
     const {clientId,redirectUri}=upstoxConfig();
-    const state=crypto.randomBytes(24).toString('base64url');
+    const state=createOAuthState('upstox',auth.user.id);
     const url=new URL(UPSTOX_AUTH_URL);
     url.searchParams.set('response_type','code');
     url.searchParams.set('client_id',clientId);
