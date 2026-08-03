@@ -7977,33 +7977,41 @@ export default function AssetManagerApp() {
         sourceUrl: string,
       ) => (
         <div className="rounded-2xl border border-[#e3dccc] bg-white p-4">
-          <div className="text-xs font-semibold uppercase tracking-widest text-[#6d7c73]">
-            {title}
-          </div>
-          <div className="mt-2 text-2xl font-semibold text-[#17382b]">
-            {local ? fmt(local) : "Rate unavailable"}
-          </div>
-          <div className="mt-1 text-xs font-semibold text-gray-500">
-            5paisa local rate for {city} | {unit}
-            {asOn ? ` | As on ${asOn}` : ""}
-          </div>
-          <div className="mt-3 rounded-xl bg-[#f5efe3] px-3 py-2 text-sm">
-            <div className="flex justify-between gap-3">
-              <span>MCX / Moneycontrol</span>
-              <b>{benchmark ? fmt(benchmark) : "-"}</b>
+          <div className="flex items-baseline justify-between gap-2">
+            <div className="text-xs font-semibold uppercase tracking-widest text-[#6d7c73]">
+              {title}
             </div>
-            <div className="mt-1 flex justify-between gap-3 text-xs text-gray-600">
-              <span>Local difference (display only)</span>
-              <b>{difference ? fmt(difference) : "-"}</b>
+            <div className="text-[11px] text-gray-500">{unit}</div>
+          </div>
+          <div className="mt-2 flex items-baseline justify-between gap-3">
+            <div>
+              <div className="text-2xl font-semibold text-[#17382b]">
+                {local ? fmt(local) : "MCX rate below"}
+              </div>
+              <div className="text-[11px] text-gray-500">
+                Local · {city}
+                {asOn ? ` · ${asOn}` : ""}
+              </div>
             </div>
-            <div className="mt-2 flex flex-wrap justify-between gap-2 text-[11px] font-semibold text-[#7a1248]">
-              <span>{provider || "Selected bullion source"}</span>
-              {sourceUrl && (
-                <a href={sourceUrl} target="_blank" rel="noreferrer">
-                  Open 5paisa
-                </a>
-              )}
+            <div className="text-right">
+              <div className="text-lg font-semibold text-[#17382b]">
+                {benchmark ? fmt(benchmark) : "-"}
+              </div>
+              <div className="text-[11px] text-gray-500">
+                MCX / Moneycontrol
+                {local && benchmark
+                  ? ` · ${difference >= 0 ? "+" : ""}${fmt(difference)} vs local`
+                  : ""}
+              </div>
             </div>
+          </div>
+          <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-[#eee3cf] pt-2 text-[11px] font-semibold text-[#7a1248]">
+            <span>{provider || "Selected bullion source"}</span>
+            {sourceUrl && (
+              <a href={sourceUrl} target="_blank" rel="noreferrer">
+                Open 5paisa
+              </a>
+            )}
           </div>
         </div>
       );
@@ -8017,9 +8025,26 @@ export default function AssetManagerApp() {
               Moneycontrol. Local rates are display references only.
             </p>
           </div>
-          <button className="btn" onClick={() => refreshBullionMarket()}>
-            <RefreshCw size={14} className="inline" /> Refresh Rates
-          </button>
+          <div className="flex flex-col items-end gap-1">
+            <button
+              className="btn"
+              disabled={bullionPriceStatus === "loading"}
+              onClick={() => refreshModuleRates("bullion", false, true)}
+            >
+              <RefreshCw
+                size={14}
+                className={
+                  bullionPriceStatus === "loading" ? "inline animate-spin" : "inline"
+                }
+              />{" "}
+              {bullionPriceStatus === "loading" ? "Refreshing..." : "Refresh Rates"}
+            </button>
+            {bullionMarket?.time && (
+              <span className="text-[11px] text-gray-500">
+                Last updated {bullionMarket.time}
+              </span>
+            )}
+          </div>
         </div>
         <div className="grid grid-cols-2 gap-3 max-md:grid-cols-1">
           {rateCard(
@@ -13169,7 +13194,7 @@ export default function AssetManagerApp() {
                 {lastSynced ? ` | Last sync: ${lastSynced}` : ""}
               </button>
             )}
-            {isInvestment && (
+            {isInvestment && k !== "bullion" && (
               <button className="btn" onClick={() => refreshModuleRates(k, false, true)}>
                 <RefreshCw size={16} className="inline" /> Refresh Current Rates
               </button>
