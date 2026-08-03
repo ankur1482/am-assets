@@ -1,5 +1,5 @@
 ﻿"use client";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowDown,
   ArrowLeft,
@@ -852,7 +852,7 @@ const numericFieldNames = new Set(
 const requiredReferenceDocModules = new Set<string>();
 const requiresReferenceDoc = (moduleKey: string) =>
   requiredReferenceDocModules.has(moduleKey);
-function Modal({
+const Modal = memo(function Modal({
   title,
   onClose,
   children,
@@ -882,14 +882,14 @@ function Modal({
       </div>
     </div>
   );
-}
-function Empty({ text }: { text: string }) {
+});
+const Empty = memo(function Empty({ text }: { text: string }) {
   return (
     <div className="rounded-3xl border border-dashed border-[#e3dccc] bg-white/60 p-10 text-center text-sm font-semibold text-gray-500">
       {text}
     </div>
   );
-}
+});
 export default function AssetManagerApp() {
   const [session, setSession] = useState<any>(null),
     [loading, setLoading] = useState(true),
@@ -926,6 +926,7 @@ export default function AssetManagerApp() {
         : "profile";
     }),
     [query, setQuery] = useState(""),
+    [debouncedQuery, setDebouncedQuery] = useState(""),
     [selectedWatchlistId, setSelectedWatchlistId] = useState(""),
     [watchlistAssetTab, setWatchlistAssetTab] = useState<"Stock" | "ETF">("Stock"),
     [watchlistSort, setWatchlistSort] = useState<{
@@ -1292,6 +1293,10 @@ export default function AssetManagerApp() {
       return () => clearTimeout(t);
     }
   }, [toast]);
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedQuery(query), 200);
+    return () => clearTimeout(t);
+  }, [query]);
   useEffect(() => {
     if (
       !user?.id ||
@@ -4542,7 +4547,7 @@ export default function AssetManagerApp() {
               return { r, c, title, latest, invested, gain, today, moduleKey: phoneModuleKey };
             })
             .filter((x) =>
-              JSON.stringify(x.c).toLowerCase().includes(query.toLowerCase()),
+              JSON.stringify(x.c).toLowerCase().includes(debouncedQuery.toLowerCase()),
             )
         : [],
       moduleRows = Array.from(
@@ -10137,7 +10142,7 @@ export default function AssetManagerApp() {
     );
   }
   function stockBrokerDetailsTable(title: string, sourceRecords: Rec[]) {
-    const q = query.toLowerCase(),
+    const q = debouncedQuery.toLowerCase(),
       rows = sourceRecords
         .map((r) => {
           const broker =
@@ -10418,7 +10423,7 @@ export default function AssetManagerApp() {
     );
   }
   function stockWatchlistTable() {
-    const q = query.toLowerCase(),
+    const q = debouncedQuery.toLowerCase(),
       watchlistRecords = records.filter((r) => r.module_key === "watchlist"),
       stockCount = watchlistRecords.filter(
         (r) => String(r.data?.asset_type || "Stock").toUpperCase() !== "ETF",
@@ -10849,7 +10854,7 @@ export default function AssetManagerApp() {
     );
   }
   function bullionBrokerDetailsTable(title: string, sourceRecords: Rec[]) {
-    const q = query.toLowerCase(),
+    const q = debouncedQuery.toLowerCase(),
       rows = sourceRecords
         .map((r) => {
           const broker =
@@ -11434,7 +11439,7 @@ export default function AssetManagerApp() {
   }
   function accountsView() {
     const rows = accounts.filter((a) =>
-      JSON.stringify(a).toLowerCase().includes(query.toLowerCase()),
+      JSON.stringify(a).toLowerCase().includes(debouncedQuery.toLowerCase()),
     );
     return (
       <section className="rounded-[26px] border border-[#ded6c4] bg-white/90 p-5 shadow-[0_14px_34px_rgba(15,23,42,0.05)]">
@@ -11588,7 +11593,7 @@ export default function AssetManagerApp() {
           asset: recordTitle(records.find((r) => r.id === d.record_id)),
         })
           .toLowerCase()
-          .includes(query.toLowerCase()),
+          .includes(debouncedQuery.toLowerCase()),
       ),
       driveDocs = docs.filter((d) =>
         String(d.file_path || "").startsWith("gdrive:"),
@@ -11988,7 +11993,7 @@ export default function AssetManagerApp() {
     );
   }
   function adminConsole() {
-    const q = query.toLowerCase(),
+    const q = debouncedQuery.toLowerCase(),
       rows = adminUsers.filter((u) =>
         JSON.stringify(u).toLowerCase().includes(q),
       ),
@@ -12943,9 +12948,12 @@ export default function AssetManagerApp() {
               };
             })()
           : rawTabTotals,
-      matchedRows = grouped.filter((x) =>
-        JSON.stringify(x.c).toLowerCase().includes(query.toLowerCase()),
-      ),
+      normalizedQuery = debouncedQuery.trim().toLowerCase(),
+      matchedRows = normalizedQuery
+        ? grouped.filter((x) =>
+            JSON.stringify(x.c).toLowerCase().includes(normalizedQuery),
+          )
+        : grouped,
       rows =
         k === "stocks"
           ? [...matchedRows].sort((a, b) => {
@@ -14109,7 +14117,7 @@ export default function AssetManagerApp() {
     );
   }
   function utilityWatchlistView() {
-    const q = query.trim().toLowerCase();
+    const q = debouncedQuery.trim().toLowerCase();
     const rows = records
       .filter((record) => record.module_key === "watchlist")
       .map((record) => {
