@@ -729,22 +729,6 @@ const AUTO_REFRESH_MS = 60 * 1000;
 const LIVE_DISPLAY_REFRESH_MS = AUTO_REFRESH_MS;
 const SAVED_RATE_REFRESH_MS = AUTO_REFRESH_MS;
 const IST_TIME_ZONE = "Asia/Kolkata";
-function istMarketClock(date = new Date()) {
-  const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone: IST_TIME_ZONE,
-    weekday: "short",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  }).formatToParts(date);
-  const value = (type: string) => parts.find((p) => p.type === type)?.value || "";
-  const hour = Number(value("hour")) % 24,
-    minute = Number(value("minute"));
-  return {
-    weekday: value("weekday"),
-    minutes: hour * 60 + minute,
-  };
-}
 function istCalendar(date = new Date()) {
   const parts = new Intl.DateTimeFormat("en-CA", {
     timeZone: IST_TIME_ZONE,
@@ -765,13 +749,6 @@ function istCalendar(date = new Date()) {
     weekday: value("weekday"),
     lastDay: new Date(Date.UTC(year, month, 0)).getUTCDate(),
   };
-}
-function isAutoRefreshWindow(kind: "stocks" | "bullion", date = new Date()) {
-  const { weekday, minutes } = istMarketClock(date),
-    weekdayOpen = !["Sat", "Sun"].includes(weekday),
-    start = 9 * 60,
-    end = kind === "stocks" ? 15 * 60 + 45 : 23 * 60 + 45;
-  return weekdayOpen && minutes >= start && minutes <= end;
 }
 function csvEscape(v: any) {
   const s = v == null ? "" : String(v);
@@ -1312,8 +1289,7 @@ export default function AssetManagerApp() {
     )
       return;
     const t = setInterval(() => {
-      if (isAutoRefreshWindow(view as "stocks" | "bullion"))
-        refreshModuleRates(view, true);
+      refreshModuleRates(view, true);
     }, SAVED_RATE_REFRESH_MS);
     return () => clearInterval(t);
   }, [
@@ -1342,17 +1318,15 @@ export default function AssetManagerApp() {
       busy = true;
       try {
         if (view === "dashboard") {
-          const jobs: Promise<any>[] = [];
-          if (isAutoRefreshWindow("stocks")) {
-            jobs.push(refreshStockDisplay(true), refreshMarketToday());
-          }
-          if (isAutoRefreshWindow("bullion")) jobs.push(refreshBullionMarket());
-          if (jobs.length) await Promise.all(jobs);
+          await Promise.all([
+            refreshStockDisplay(true),
+            refreshMarketToday(),
+            refreshBullionMarket(),
+          ]);
         } else if (view === "stocks") {
-          if (isAutoRefreshWindow("stocks"))
-            await Promise.all([refreshStockDisplay(), refreshMarketToday()]);
+          await Promise.all([refreshStockDisplay(), refreshMarketToday()]);
         } else {
-          if (isAutoRefreshWindow("bullion")) await refreshBullionMarket();
+          await refreshBullionMarket();
         }
       } finally {
         busy = false;
@@ -1376,8 +1350,8 @@ export default function AssetManagerApp() {
   useEffect(() => {
     if (!user?.id || !phoneMode || editing || detail || accModal) return;
     const t = setInterval(() => {
-      if (isAutoRefreshWindow("stocks")) refreshMarketToday();
-      if (isAutoRefreshWindow("bullion")) refreshBullionMarket();
+      refreshMarketToday();
+      refreshBullionMarket();
     }, AUTO_REFRESH_MS);
     return () => clearInterval(t);
   }, [user?.id, phoneMode, editing, detail, accModal]);
@@ -1393,14 +1367,11 @@ export default function AssetManagerApp() {
     let cancelled = false;
     const run = async () => {
       if (cancelled) return;
-      if (isAutoRefreshWindow("stocks")) {
-        await refreshStocks(true, true);
-        if (cancelled) return;
-        await refreshWatchlist(true);
-      }
+      await refreshStocks(true, true);
       if (cancelled) return;
-      if (isAutoRefreshWindow("bullion"))
-        await refreshMetals("bullion", true, true);
+      await refreshWatchlist(true);
+      if (cancelled) return;
+      await refreshMetals("bullion", true, true);
     };
     run();
     const t = setInterval(run, SAVED_RATE_REFRESH_MS);
@@ -2368,7 +2339,7 @@ export default function AssetManagerApp() {
     try {
       await loadAll(true);
       const results = await Promise.allSettled([
-        refreshStockDisplay(true),
+        refreshStocks(true, true),
         refreshWatchlist(true),
         refreshMetals("bullion", true, true),
         refreshMarketToday(),
