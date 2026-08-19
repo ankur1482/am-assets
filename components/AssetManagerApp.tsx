@@ -2739,6 +2739,7 @@ export default function AssetManagerApp() {
         d.category ||= s.category;
       }
       if (!d.ticker_symbol) {
+        firstError ||= `${d.security_name || "A holding"} has no ticker symbol`;
         fail++;
         continue;
       }
@@ -2762,7 +2763,7 @@ export default function AssetManagerApp() {
         fail++;
       }
     }
-    if (!silent)
+    if (!silent || fail)
       setToast(
         `Live prices: ${ok} updated${fail ? `, ${fail} failed${firstError ? ` (${firstError})` : ""}` : ""}`,
       );
@@ -2838,6 +2839,7 @@ export default function AssetManagerApp() {
         d.category ||= s.category;
       }
       if (!d.ticker_symbol) {
+        firstError ||= `${d.security_name || "A holding"} has no ticker symbol`;
         fail++;
         continue;
       }
@@ -2869,7 +2871,7 @@ export default function AssetManagerApp() {
         fail++;
       }
     }
-    if (!silent)
+    if (!silent || fail)
       setToast(
         `Watchlist prices: ${ok} updated${fail ? `, ${fail} failed${firstError ? ` (${firstError})` : ""}` : ""}`,
       );
@@ -3018,7 +3020,7 @@ export default function AssetManagerApp() {
         fail++;
       }
     }
-    if (!silent)
+    if (!silent || fail)
       setToast(
         `Bullion rates: ${ok} updated${fail ? `, ${fail} failed${firstError ? ` (${firstError})` : ""}` : ""}`,
       );
