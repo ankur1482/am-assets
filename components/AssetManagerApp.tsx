@@ -1094,6 +1094,7 @@ export default function AssetManagerApp() {
     snapshotRef = useRef(""),
     foregroundRefreshRef = useRef(0),
     recordsRef = useRef<Rec[]>([]),
+    loadEpochRef = useRef(0),
     user = session?.user,
     isAdmin = role === "admin",
     activeWorkspace = workspaces.find((workspace) => workspace.id === activeWorkspaceId),
@@ -1574,6 +1575,13 @@ export default function AssetManagerApp() {
   }
   async function loadAll(quiet = false) {
     if (!user) return;
+    // Several independent code paths (manual refresh, scheduled intervals,
+    // refreshStocks' own post-save reload) can each call loadAll around the
+    // same time. Their responses aren't guaranteed to land in request order,
+    // so an older in-flight call finishing last would otherwise silently
+    // overwrite freshly-saved data with a stale snapshot. Discard any
+    // response that isn't from the most recently started call.
+    const epoch = ++loadEpochRef.current;
     const sx = typeof window !== "undefined" ? window.scrollX : 0,
       sy = typeof window !== "undefined" ? window.scrollY : 0,
       active =
@@ -1597,6 +1605,10 @@ export default function AssetManagerApp() {
       recordQuery.eq(scopeColumn, scopeValue).order("created_at", { ascending: false }),
       documentQuery.eq(scopeColumn, scopeValue).order("created_at", { ascending: false }),
     ]);
+    if (epoch !== loadEpochRef.current) {
+      if (!quiet) setLoading(false);
+      return;
+    }
     if (p.data) setProfile(p.data as any);
     if (r.data) setRole((r.data as any).access_role);
     setAccounts((a.data || []) as any);
