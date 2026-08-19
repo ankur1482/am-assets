@@ -1375,11 +1375,11 @@ export default function AssetManagerApp() {
     let cancelled = false;
     const run = async () => {
       if (cancelled) return;
-      await refreshStocks(true, true);
-      if (cancelled) return;
-      await refreshWatchlist(true);
-      if (cancelled) return;
-      await refreshMetals("bullion", true, true);
+      await Promise.allSettled([
+        refreshStocks(true, true),
+        refreshWatchlist(true),
+        refreshMetals("bullion", true, true),
+      ]);
     };
     run();
     const t = setInterval(run, SAVED_RATE_REFRESH_MS);
@@ -2361,6 +2361,8 @@ export default function AssetManagerApp() {
         refreshStocks(true, true),
         refreshWatchlist(true),
         refreshMetals("bullion", true, true),
+        refreshMetals("nsel", true, true),
+        refreshMutualFundNavs(),
         refreshMarketToday(),
       ]);
       const failed = results.filter((r) => r.status === "rejected").length;
@@ -2537,10 +2539,26 @@ export default function AssetManagerApp() {
     if (!user) return;
     const rented = String(propertyData.is_rented || "").toLowerCase() === "yes",
       rent = num(propertyData.monthly_rent);
-    if (!rented || rent <= 0) return;
     const linked = recordsRef.current.find(
       (r) => r.module_key === "fixedIncome" && r.data?.linked_property_id === propertyId,
     );
+    if (!rented || rent <= 0) {
+      // Property is no longer rented (or rent was cleared): stop the linked
+      // income record from accruing further instead of leaving it reporting
+      // stale rent indefinitely. Preserve history rather than deleting it.
+      if (linked && num(linked.data?.employee_contribution) > 0) {
+        const paused = withSystemDates(
+          computedData("fixedIncome", {
+            ...linked.data,
+            employee_contribution: 0,
+            notes: `Rental income paused — property is no longer marked as rented (was ₹${linked.data?.employee_contribution}/mo).`,
+          }),
+          linked,
+        );
+        await supabase.from("records").update({ data: paused }).eq("id", linked.id);
+      }
+      return;
+    }
     const rentalData = withSystemDates(
       computedData("fixedIncome", {
         ...(linked?.data || {}),
@@ -2791,6 +2809,7 @@ export default function AssetManagerApp() {
         );
       return quotes.get(quoteKey)!;
     };
+    let firstError = "";
     await Promise.all(
       rows.map(async (r) => {
         const d = { ...r.data },
@@ -2813,10 +2832,19 @@ export default function AssetManagerApp() {
           d.latest_value = (num(d.quantity) * num(d.live_price)).toFixed(2);
           d.last_synced = new Date().toLocaleString();
           updates.set(r.id, d);
-        } catch {}
+        } catch (e: any) {
+          firstError ||= e?.message || `${d.security_name || d.ticker_symbol} refresh failed`;
+        }
       }),
     );
-    if (!updates.size) return;
+    // Only surface an error when nothing updated at all -- a single symbol
+    // transiently failing during a routine background refresh shouldn't
+    // pop a toast every cycle, but total failure indicates something worth
+    // seeing (rate limit, network outage, etc.).
+    if (!updates.size) {
+      if (rows.length) setToast(firstError || "Could not refresh live prices");
+      return;
+    }
     setRecords((prev) =>
       prev.map((r) =>
         updates.has(r.id) ? { ...r, data: updates.get(r.id)! } : r,
@@ -6964,6 +6992,13 @@ export default function AssetManagerApp() {
             </div>
           ))}
         </nav>
+        <button
+          type="button"
+          className="btn mt-4 w-full justify-center"
+          onClick={signOutSafely}
+        >
+          <LogOut size={16} className="inline" /> Sign out
+        </button>
         <div
           className="sidebar-resizer"
           role="separator"
@@ -9074,7 +9109,12 @@ export default function AssetManagerApp() {
       const monthlyDeposit = includeContributions
         ? num(r.employee_contribution) + num(r.company_contribution) + num(r.yearly_investment) / 12
         : 0;
-      return sum + project(num(r.latest), years, monthlyDeposit, num(r.interest_rate));
+      // Respect the same "invest until" cutoff as the other contribution
+      // streams -- an EPF/PF record's employer/employee contributions stop
+      // once you stop working, same as everything else on this chart.
+      return sum + projectStreams(num(r.latest), years, num(r.interest_rate), [
+        { monthly: monthlyDeposit, untilYears: monthlyUntilYears },
+      ]);
     }, 0);
     const comboValue = (
       years: number,
@@ -11305,8 +11345,9 @@ export default function AssetManagerApp() {
       ),
       sortedRows = [...filteredRows].sort((a, b) => {
         const key = allInvestmentsSort.key,
-          left = key === "type" || key === "account" || key === "name" ? a[key === "name" ? "name" : key] : a[key === "gain_pct" ? "gainPct" : key],
-          right = key === "type" || key === "account" || key === "name" ? b[key === "name" ? "name" : key] : b[key === "gain_pct" ? "gainPct" : key],
+          field = key === "gain_pct" ? "gainPct" : key,
+          left = a[field],
+          right = b[field],
           comparison =
             typeof left === "string" ? String(left).localeCompare(String(right)) : num(left) - num(right);
         return allInvestmentsSort.direction === "asc" ? comparison : -comparison;

@@ -187,7 +187,7 @@ function fixedIncomeRecord(r:any){
     return r;
   }
   const elapsed=years(fiBaseDate(r));if(isCompanyPf(r))r.broker='Govt';r.maturity_date=isCompanyPf(r)?'':fixedIncomeMaturityDate(r)||r.maturity_date;r.invested=fixedIncomeInvested(r,elapsed);r.interest_incurred_fy=fixedIncomeInterestIncurredFy(r);r.worth_till_date=fixedIncomeWorthTillDate(r);r.latest=r.worth_till_date;r.maturity_value=isCompanyPf(r)?'':fixedIncomeMaturityValue(r);r.year_end_maturity_value=fixedIncomeYearEndValue(r);r.locked_until=r.maturity_date||'';
-  if(/^salary$|^rentalincome$/.test(typeKey(r)))r.yearly_total_value=(num(r.employee_contribution)+num(r.company_contribution))*12;
+  if(/^salary$|^rental\s*income$/.test(typeKey(r)))r.yearly_total_value=(num(r.employee_contribution)+num(r.company_contribution))*12;
   return r
 }
 
