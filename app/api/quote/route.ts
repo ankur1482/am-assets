@@ -6,8 +6,11 @@ import { authenticateRequest } from "@/lib/serverAuth";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const RESPONSE_CACHE_CONTROL =
-  "public, s-maxage=15, stale-while-revalidate=30";
+// No public/CDN caching at all: quotes must reflect the same short-lived
+// in-memory cache below on every request, not a separately-aged copy sitting
+// at some edge node. Relying on a CDN layer here caused refreshes to reveal
+// different-aged snapshots depending on which edge PoP served the request.
+const RESPONSE_CACHE_CONTROL = "no-store, max-age=0, must-revalidate";
 
 type Provider = "upstox" | "twelvedata" | "alphavantage" | "polygon" | "yahoo";
 type Quote = {

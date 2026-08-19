@@ -26,7 +26,6 @@ import {
   PieChart,
   Plus,
   RefreshCw,
-  Search,
   Shield,
   Sparkles,
   Trash2,
@@ -178,6 +177,7 @@ const views = [
   ["loans", "LN", "Loans"],
   ["borrowings", "BR", "Borrowings"],
   ["goals", "GO", "Goals"],
+  ["futureWealth", "FW", "Future Wealth"],
   ["watchlist", "WL", "Watchlist"],
   ["alerts", "AL", "Alerts"],
   ["purchaseCalculator", "CALC", "Purchase Calculator"],
@@ -190,18 +190,18 @@ const groups = [
     "Investments",
     [
       "stocks",
-      "mutualFunds",
-      "ulips",
+      "property",
       "bullion",
-      "nsel",
       "fixedIncome",
       "insurance",
-      "property",
+      "mutualFunds",
+      "ulips",
       "otherAssets",
+      "nsel",
     ],
   ],
   ["Liabilities", ["loans", "borrowings"]],
-  ["Planning", ["goals"]],
+  ["Planning", ["goals", "futureWealth"]],
   ["Utility", ["watchlist", "purchaseCalculator", "alerts", "household", "settings"]],
   ["Admin", ["admin"]],
 ];
@@ -488,6 +488,10 @@ const FIXED_INCOME_LABELS: Record<string, string> = {
   year_end_maturity_value: "Year-End Value",
   maturity_value: "Maturity Value",
   maturity_date: "Maturity Date",
+  yearly_total_value: "Yearly Total Value",
+  rent_agreement_start_date: "Agreement Start Date",
+  rentee_name: "Rentee Name",
+  rentee_phone: "Rentee Phone",
   last_working_date: "Last Working Date",
   calculation_date: "Calculation Date",
   total_service: "Total Service",
@@ -769,11 +773,6 @@ function isAutoRefreshWindow(kind: "stocks" | "bullion", date = new Date()) {
     end = kind === "stocks" ? 15 * 60 + 45 : 23 * 60 + 45;
   return weekdayOpen && minutes >= start && minutes <= end;
 }
-function autoRefreshScheduleText(kind?: "stocks" | "bullion") {
-  if (kind === "stocks") return "Mon-Fri, 9:00 AM-3:45 PM IST";
-  if (kind === "bullion") return "Mon-Fri, 9:00 AM-11:45 PM IST";
-  return "Stocks 9:00 AM-3:45 PM, bullion 9:00 AM-11:45 PM IST";
-}
 function csvEscape(v: any) {
   const s = v == null ? "" : String(v);
   return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
@@ -893,12 +892,12 @@ const Empty = memo(function Empty({ text }: { text: string }) {
 export default function AssetManagerApp() {
   const [session, setSession] = useState<any>(null),
     [loading, setLoading] = useState(true),
-    [refreshing, setRefreshing] = useState(false),
     [email, setEmail] = useState(""),
     [password, setPassword] = useState(""),
     [authMode, setAuthMode] = useState<"signin" | "signup">("signin"),
     [authMsg, setAuthMsg] = useState("");
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false),
+    [globalRefreshing, setGlobalRefreshing] = useState(false),
     [phoneMode, setPhoneMode] = useState(false),
     [mobileAccountMenu, setMobileAccountMenu] = useState(""),
     [mobileNavMode, setMobileNavMode] = useState<"main" | "investments">("main");
@@ -925,8 +924,7 @@ export default function AssetManagerApp() {
         ? "accounts"
         : "profile";
     }),
-    [query, setQuery] = useState(""),
-    [debouncedQuery, setDebouncedQuery] = useState(""),
+    debouncedQuery = "",
     [selectedWatchlistId, setSelectedWatchlistId] = useState(""),
     [watchlistAssetTab, setWatchlistAssetTab] = useState<"Stock" | "ETF">("Stock"),
     [watchlistSort, setWatchlistSort] = useState<{
@@ -990,7 +988,6 @@ export default function AssetManagerApp() {
       }
     }),
     [resetLink, setResetLink] = useState(""),
-    [autoRefresh, setAutoRefresh] = useState(true),
     [docUploadRecordId, setDocUploadRecordId] = useState(""),
     [docUploadModule, setDocUploadModule] = useState("documents"),
     [docUploadNotes, setDocUploadNotes] = useState(""),
@@ -1013,6 +1010,13 @@ export default function AssetManagerApp() {
     [projectionYears, setProjectionYears] = useState(10),
     [projectionMonthlyInput, setProjectionMonthlyInput] = useState(""),
     [projectionReturnInput, setProjectionReturnInput] = useState(""),
+    [projectionYearlyInput, setProjectionYearlyInput] = useState(""),
+    [projectionOtherIncomeInput, setProjectionOtherIncomeInput] = useState(""),
+    [projectionCurrentAge, setProjectionCurrentAge] = useState(""),
+    [projectionRetireAge, setProjectionRetireAge] = useState(""),
+    [projectionMonthlyUntilAge, setProjectionMonthlyUntilAge] = useState(""),
+    [projectionYearlyUntilAge, setProjectionYearlyUntilAge] = useState(""),
+    [projectionOtherIncomeUntilAge, setProjectionOtherIncomeUntilAge] = useState(""),
     [projectionHistoryRates, setProjectionHistoryRates] = useState({ shares: 12, gold: 10, loaded: false }),
     [historicalPerformance, setHistoricalPerformance] = useState<
       { date: string; invested: number; current: number; type: string }[]
@@ -1040,7 +1044,11 @@ export default function AssetManagerApp() {
     [aiReview, setAiReview] = useState<AiPortfolioReview | null>(null),
     [aiReviewMeta, setAiReviewMeta] = useState<AiReviewMeta | null>(null),
     [aiReviewBusy, setAiReviewBusy] = useState(false),
-    [aiReviewError, setAiReviewError] = useState("");
+    [aiReviewError, setAiReviewError] = useState(""),
+    [wealthForecast, setWealthForecast] = useState<any>(null),
+    [wealthForecastMeta, setWealthForecastMeta] = useState<{ model: string; generatedAt: string } | null>(null),
+    [wealthForecastBusy, setWealthForecastBusy] = useState(false),
+    [wealthForecastError, setWealthForecastError] = useState("");
   const [editing, setEditing] = useState<{
       moduleKey: string;
       record?: Rec;
@@ -1294,14 +1302,9 @@ export default function AssetManagerApp() {
     }
   }, [toast]);
   useEffect(() => {
-    const t = setTimeout(() => setDebouncedQuery(query), 200);
-    return () => clearTimeout(t);
-  }, [query]);
-  useEffect(() => {
     if (
       !user?.id ||
       phoneMode ||
-      !autoRefresh ||
       editing ||
       detail ||
       accModal ||
@@ -1318,7 +1321,6 @@ export default function AssetManagerApp() {
     phoneMode,
     view,
     accountTabs,
-    autoRefresh,
     editing,
     detail,
     accModal,
@@ -1327,7 +1329,6 @@ export default function AssetManagerApp() {
     if (
       !user?.id ||
       phoneMode ||
-      !autoRefresh ||
       editing ||
       detail ||
       accModal ||
@@ -1368,24 +1369,22 @@ export default function AssetManagerApp() {
     phoneMode,
     view,
     accountTabs,
-    autoRefresh,
     editing,
     detail,
     accModal,
   ]);
   useEffect(() => {
-    if (!user?.id || !phoneMode || !autoRefresh || editing || detail || accModal) return;
+    if (!user?.id || !phoneMode || editing || detail || accModal) return;
     const t = setInterval(() => {
       if (isAutoRefreshWindow("stocks")) refreshMarketToday();
       if (isAutoRefreshWindow("bullion")) refreshBullionMarket();
     }, AUTO_REFRESH_MS);
     return () => clearInterval(t);
-  }, [user?.id, phoneMode, autoRefresh, editing, detail, accModal]);
+  }, [user?.id, phoneMode, editing, detail, accModal]);
   useEffect(() => {
     if (
       !user?.id ||
       !phoneMode ||
-      !autoRefresh ||
       editing ||
       detail ||
       accModal
@@ -1409,7 +1408,7 @@ export default function AssetManagerApp() {
       cancelled = true;
       clearInterval(t);
     };
-  }, [user?.id, phoneMode, autoRefresh, editing, detail, accModal]);
+  }, [user?.id, phoneMode, editing, detail, accModal]);
   useEffect(() => {
     try {
       localStorage.setItem(
@@ -1493,6 +1492,46 @@ export default function AssetManagerApp() {
     if (view !== "stocks") return;
     refreshMarketToday();
   }, [view]);
+  useEffect(() => {
+    if (!user?.id || !records.length) return;
+    const today = localIsoDate(),
+      storageKey = `asset-manager-rent-reminder-${today}`;
+    let shownToday: string[] = [];
+    try {
+      shownToday = JSON.parse(localStorage.getItem(storageKey) || "[]");
+    } catch {}
+    const due = records.filter((r) => {
+      if (r.module_key !== "property") return false;
+      const d = r.data || {};
+      if (String(d.is_rented || "").toLowerCase() !== "yes") return false;
+      const end = String(d.rent_agreement_end_date || "");
+      if (!end) return false;
+      const daysLeft = Math.round(
+        (new Date(end).getTime() - new Date(today).getTime()) / 86400000,
+      );
+      // 11-month agreements: nag daily once inside the last month (from the end of month 10 onward), including if already overdue.
+      return daysLeft <= 31;
+    });
+    const fresh = due.filter((r) => !shownToday.includes(r.id));
+    if (fresh.length) {
+      const lines = fresh.map((r) => {
+        const d = r.data || {},
+          end = String(d.rent_agreement_end_date || ""),
+          daysLeft = Math.round(
+            (new Date(end).getTime() - new Date(today).getTime()) / 86400000,
+          ),
+          label = d.security_name || d.location || "Property";
+        return `${label}: rent agreement ${daysLeft < 0 ? `expired ${-daysLeft}d ago` : `ends in ${daysLeft}d`} (${d.rentee_name || "tenant"})`;
+      });
+      setToast(`Rent agreement renewal due — ${lines.join(" · ")}`);
+      try {
+        localStorage.setItem(
+          storageKey,
+          JSON.stringify([...shownToday, ...fresh.map((r) => r.id)]),
+        );
+      } catch {}
+    }
+  }, [user?.id, records]);
   async function emailAuth() {
     setAuthMsg("");
     const cleanEmail = email.trim().toLowerCase();
@@ -2323,21 +2362,30 @@ export default function AssetManagerApp() {
     setToast("Google Drive disconnected");
   }
 
-  async function refreshCurrentScreen() {
-    if (refreshing) return;
-    setRefreshing(true);
+  async function refreshAllData() {
+    if (globalRefreshing) return;
+    setGlobalRefreshing(true);
     try {
-      if (view === "watchlist") await refreshWatchlist(true);
-      else if (["stocks", "mutualFunds", "bullion", "nsel"].includes(view))
-        await refreshModuleRates(view, true, true);
-      else await loadAll(true);
-      setToast("Current screen refreshed");
-    } catch (caught: any) {
-      setToast(caught?.message || "Could not refresh the current screen");
+      await loadAll(true);
+      const results = await Promise.allSettled([
+        refreshStockDisplay(true),
+        refreshWatchlist(true),
+        refreshMetals("bullion", true, true),
+        refreshMarketToday(),
+      ]);
+      const failed = results.filter((r) => r.status === "rejected").length;
+      setToast(
+        failed
+          ? `Refreshed with ${failed} issue${failed > 1 ? "s" : ""} — check your connection`
+          : "All data refreshed",
+      );
+    } catch (e: any) {
+      setToast(e?.message || "Could not refresh data");
     } finally {
-      setRefreshing(false);
+      setGlobalRefreshing(false);
     }
   }
+
   async function signOutSafely() {
     const authorization = `Bearer ${session?.access_token || ""}`;
     await Promise.allSettled([
@@ -2486,12 +2534,52 @@ export default function AssetManagerApp() {
           ? await attachDocs(recordId, moduleKey, pending)
           : 0;
       docFilesRef.current = [];
+      if (moduleKey === "property" && recordId)
+        await syncRentalIncome(recordId, data);
       setToast(
         `${record ? "Updated" : "Saved"}${uploaded ? ` with ${uploaded} Google Drive document${uploaded > 1 ? "s" : ""}` : ""}`,
       );
       setEditing(null);
       await loadAll(true);
     }
+  }
+  async function syncRentalIncome(propertyId: string, propertyData: any) {
+    if (!user) return;
+    const rented = String(propertyData.is_rented || "").toLowerCase() === "yes",
+      rent = num(propertyData.monthly_rent);
+    if (!rented || rent <= 0) return;
+    const linked = recordsRef.current.find(
+      (r) => r.module_key === "fixedIncome" && r.data?.linked_property_id === propertyId,
+    );
+    const rentalData = withSystemDates(
+      computedData("fixedIncome", {
+        ...(linked?.data || {}),
+        account_name: propertyData.account_name,
+        category: "Rental Income",
+        employee_contribution: rent,
+        interest_rate: 0,
+        linked_property_id: propertyId,
+        rentee_name: propertyData.rentee_name || "",
+        rentee_phone: propertyData.rentee_phone || "",
+        rent_agreement_start_date: propertyData.rent_agreement_start_date || "",
+        notes: `Auto-linked rental income from Property: ${[propertyData.security_name, propertyData.location].filter(Boolean).join(" · ")}`,
+        purchase_date:
+          propertyData.rent_agreement_start_date ||
+          linked?.data?.purchase_date ||
+          propertyData.purchase_date ||
+          isoDate(),
+      }),
+      linked,
+    );
+    if (linked)
+      await supabase.from("records").update({ data: rentalData }).eq("id", linked.id);
+    else
+      await supabase.from("records").insert({
+        user_id: user.id,
+        ...(activeWorkspaceId ? { workspace_id: activeWorkspaceId } : {}),
+        module_key: "fixedIncome",
+        data: rentalData,
+      });
   }
   async function markFixedIncomeReviewed(r: Rec) {
     if (!user) return;
@@ -3013,8 +3101,8 @@ export default function AssetManagerApp() {
       setToast(e?.message || "Could not fetch fixed income defaults");
     }
   }
-  function showFixedIncomeField(name: string) {
-    const t = key(fixedIncomeType);
+  function showFixedIncomeField(name: string, categoryOverride?: string) {
+    const t = key(categoryOverride ?? fixedIncomeType);
     if (t === "gratuity")
       return [
         "account_name",
@@ -3036,15 +3124,20 @@ export default function AssetManagerApp() {
     )
       return false;
     if (
-      isCompanyPfType(t) &&
-      ["lock_in_years", "maturity_value", "maturity_date"].includes(name)
+      (isCompanyPfType(t) || t === "salary" || t === "rentalincome") &&
+      ["lock_in_years", "maturity_value", "maturity_date", "gratuity_value"].includes(name)
     )
       return false;
     if (name === "account_creation_date")
       return t === "ppf" || t === "sukanyasamriddhi";
-    if (["employee_contribution", "company_contribution"].includes(name))
+    if (name === "employee_contribution")
+      return t === "epf" || t === "companypf" || t === "pf" || t === "salary" || t === "rentalincome";
+    if (name === "company_contribution")
       return t === "epf" || t === "companypf" || t === "pf";
     if (name === "gratuity_value") return t === "gratuity";
+    if (name === "yearly_total_value") return t === "salary" || t === "rentalincome";
+    if (name === "rent_agreement_start_date" || name === "rentee_name" || name === "rentee_phone")
+      return t === "rentalincome";
     return true;
   }
   function showInsuranceField(name: string, source?: Record<string, any>) {
@@ -3821,14 +3914,14 @@ export default function AssetManagerApp() {
   ] as const;
   const mobileInvestmentTabs = [
       ["stocks", "Stocks", BarChart3],
-      ["bullion", "Gold/Silver", BriefcaseBusiness],
       ["property", "Property", Home],
+      ["bullion", "Gold/Silver", BriefcaseBusiness],
       ["fixedIncome", "Fixed", FolderOpen],
       ["insurance", "Insurance", Shield],
       ["mutualFunds", "MF", BriefcaseBusiness],
       ["ulips", "ULIP", Shield],
-      ["nsel", "NSEL", BriefcaseBusiness],
       ["otherAssets", "Other", FolderOpen],
+      ["nsel", "NSEL", BriefcaseBusiness],
     ] as const,
     mobileInvestmentTabsByValue = mobileInvestmentTabs
       .map((tab, preferredOrder) => {
@@ -6930,12 +7023,12 @@ export default function AssetManagerApp() {
             <button
               type="button"
               className="mobile-icon-btn"
-              onClick={refreshCurrentScreen}
-              disabled={refreshing}
-              aria-label="Refresh current screen"
-              title="Refresh current screen"
+              onClick={refreshAllData}
+              disabled={globalRefreshing}
+              aria-label="Refresh all data"
+              title="Refresh all data"
             >
-              <RefreshCw size={18} className={refreshing ? "animate-spin" : ""} />
+              <RefreshCw size={18} className={globalRefreshing ? "animate-spin" : ""} />
             </button>
             {MODULES[view] && view !== "dashboard" && (
               <button
@@ -7010,33 +7103,10 @@ export default function AssetManagerApp() {
                   Track, compare and manage your complete portfolio.
                 </p>
               </div>
-              <div className="desktop-header-actions flex flex-wrap items-center justify-end gap-2">
-                <button
-                  type="button"
-                  className="btn"
-                  onClick={refreshCurrentScreen}
-                  disabled={refreshing}
-                  aria-label="Refresh current screen"
-                >
-                  <RefreshCw size={16} className={refreshing ? "animate-spin" : ""} />
-                  {refreshing ? "Refreshing..." : "Refresh"}
-                </button>
-                <div className="header-search flex items-center gap-2 rounded-full border border-[#e3dccc] bg-white px-3 py-2">
-                  <Search size={16} />
-                  <input
-                    className="w-56 bg-transparent text-sm outline-none"
-                    placeholder="Search current screen"
-                    value={query}
-                    onChange={(e) => setQuery(e.target.value)}
-                  />
-                </div>
-                <button className="btn header-signout" onClick={signOutSafely}>
-                  <LogOut size={16} className="inline" /> Sign out
-                </button>
-              </div>
             </header>
           )}
           {view === "dashboard" && dashboardModern()}
+          {view === "futureWealth" && futureNetWorthPanel()}
           {view === "purchaseCalculator" && bullionCalculatorPanel()}
           {view === "watchlist" && utilityWatchlistView()}
           {view === "household" && householdView()}
@@ -7783,9 +7853,6 @@ export default function AssetManagerApp() {
           return `${c > 0 ? "+" : ""}$${plain(c, 2)} (${cp > 0 ? "+" : ""}${cp.toFixed(2)}%)`;
         return `${prefix}${plain(c, 2)} (${cp > 0 ? "+" : ""}${cp.toFixed(2)}%)`;
       },
-      refreshText = autoRefresh
-        ? `Auto refresh 5 sec | ${autoRefreshScheduleText()}`
-        : "Auto refresh Off",
       marketTime =
         marketTodayUpdatedAt ||
         rows.find((x: any) => x?.time)?.time ||
@@ -7804,18 +7871,6 @@ export default function AssetManagerApp() {
                 hour: "2-digit",
                 minute: "2-digit",
               })}
-            </span>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              className="rounded-full border border-[#d8e4d9] bg-white px-3 py-2 text-xs font-semibold text-[#4f675b] transition hover:bg-[#f7fbf5]"
-              onClick={refreshMarketToday}
-            >
-              Manual refresh
-            </button>
-            <span className="rounded-full border border-[#d8e4d9] bg-[#f7fbf5] px-3 py-2 text-xs font-semibold text-[#4f675b]">
-              {refreshText}
             </span>
           </div>
         </div>
@@ -8031,24 +8086,13 @@ export default function AssetManagerApp() {
             </p>
           </div>
           <div className="flex flex-col items-end gap-1">
-            <button
-              className="btn"
-              disabled={bullionPriceStatus === "loading"}
-              onClick={() => refreshModuleRates("bullion", false, true)}
-            >
-              <RefreshCw
-                size={14}
-                className={
-                  bullionPriceStatus === "loading" ? "inline animate-spin" : "inline"
-                }
-              />{" "}
-              {bullionPriceStatus === "loading" ? "Refreshing..." : "Refresh Rates"}
-            </button>
-            {bullionMarket?.time && (
-              <span className="text-[11px] text-gray-500">
-                Last updated {bullionMarket.time}
-              </span>
-            )}
+            <span className="text-[11px] font-semibold text-gray-500">
+              {bullionPriceStatus === "loading"
+                ? "Updating…"
+                : bullionMarket?.time
+                  ? `Live · updated ${bullionMarket.time}`
+                  : "Live"}
+            </span>
           </div>
         </div>
         <div className="grid grid-cols-2 gap-3 max-md:grid-cols-1">
@@ -8978,7 +9022,27 @@ export default function AssetManagerApp() {
   function futureNetWorthPanel() {
     const inferredMonthly = recurringMonthlyInvestment();
     const monthly = Math.max(0, projectionMonthlyInput === "" ? inferredMonthly : num(projectionMonthlyInput));
+    const yearlyLump = Math.max(0, num(projectionYearlyInput));
+    const otherIncomeMonthly = Math.max(0, num(projectionOtherIncomeInput));
     const annualRate = Math.max(-20, Math.min(30, projectionReturnInput === "" ? projectionHistoryRates.shares : num(projectionReturnInput)));
+    const currentAge = projectionCurrentAge === "" ? null : num(projectionCurrentAge);
+    const retireAge = projectionRetireAge === "" ? null : num(projectionRetireAge);
+    const retireYears =
+      currentAge !== null && retireAge !== null
+        ? Math.max(0, Math.min(projectionYears, retireAge - currentAge))
+        : projectionYears;
+    // Each contribution stream can have its own "invest until age"; falls back to the
+    // shared stop-working age, and to the full horizon if neither is set.
+    const untilYearsFor = (untilAgeInput: string) => {
+      const untilAge = untilAgeInput === "" ? null : num(untilAgeInput);
+      if (currentAge !== null && untilAge !== null)
+        return Math.max(0, Math.min(projectionYears, untilAge - currentAge));
+      if (currentAge !== null && retireAge !== null) return retireYears;
+      return projectionYears;
+    };
+    const monthlyUntilYears = untilYearsFor(projectionMonthlyUntilAge);
+    const yearlyUntilYears = untilYearsFor(projectionYearlyUntilAge);
+    const otherIncomeUntilYears = untilYearsFor(projectionOtherIncomeUntilAge);
     const base = totals.net;
     const moduleValue = (keys: string[]) => records
       .filter((r) => keys.includes(r.module_key))
@@ -8994,27 +9058,126 @@ export default function AssetManagerApp() {
       if (!rate) return starting + contribution * months;
       return starting * Math.pow(1 + rate, months) + contribution * ((Math.pow(1 + rate, months) - 1) / rate);
     };
+    // Month-by-month projection: each stream stops contributing once it passes its own
+    // "invest until" cutoff, so different streams can run for different lengths of time.
+    const projectStreams = (
+      starting: number,
+      years: number,
+      annualPct: number,
+      monthlyStreams: { monthly: number; untilYears: number }[],
+      yearlyStream: { amount: number; untilYears: number } = { amount: 0, untilYears: 0 },
+    ) => {
+      const rate = annualPct / 100 / 12;
+      let value = starting;
+      for (let m = 1; m <= years * 12; m++) {
+        value *= 1 + rate;
+        for (const s of monthlyStreams) if (s.monthly && m <= s.untilYears * 12) value += s.monthly;
+        if (yearlyStream.amount && m <= yearlyStream.untilYears * 12 && m % 12 === 0) value += yearlyStream.amount;
+      }
+      return value;
+    };
     const fixedProjection = (years: number, includeContributions: boolean) => fixedRecords.reduce((sum, r) => {
       const monthlyDeposit = includeContributions
         ? num(r.employee_contribution) + num(r.company_contribution) + num(r.yearly_investment) / 12
         : 0;
       return sum + project(num(r.latest), years, monthlyDeposit, num(r.interest_rate));
     }, 0);
-    const projectionAt = (year: number, continueInvesting: boolean) =>
-      project(sharesBase, year, 0, projectionHistoryRates.shares) +
-      project(goldBase, year, 0, projectionHistoryRates.gold) +
-      fixedProjection(year, continueInvesting) +
-      project(otherBase, year, continueInvesting ? monthly : 0, annualRate);
-    const points = Array.from({ length: projectionYears + 1 }, (_, year) => ({ year, continueValue: projectionAt(year, true), trendValue: projectionAt(year, false) }));
+    const comboValue = (
+      years: number,
+      monthlyOn: boolean,
+      yearlyOn: boolean,
+      incomeOn: boolean,
+    ) =>
+      project(sharesBase, years, 0, projectionHistoryRates.shares) +
+      project(goldBase, years, 0, projectionHistoryRates.gold) +
+      fixedProjection(years, monthlyOn) +
+      projectStreams(
+        otherBase,
+        years,
+        annualRate,
+        [
+          { monthly: monthlyOn ? monthly : 0, untilYears: monthlyUntilYears },
+          { monthly: incomeOn ? otherIncomeMonthly : 0, untilYears: otherIncomeUntilYears },
+        ],
+        { amount: yearlyOn ? yearlyLump : 0, untilYears: yearlyUntilYears },
+      );
+    const scenarioAt = (year: number, scenario: "continue" | "trend" | "withoutIncome") =>
+      scenario === "trend"
+        ? comboValue(year, false, false, false)
+        : comboValue(year, true, true, scenario === "continue");
+    const points = Array.from({ length: projectionYears + 1 }, (_, year) => ({
+      year,
+      continueValue: scenarioAt(year, "continue"),
+      trendValue: scenarioAt(year, "trend"),
+      withoutIncomeValue: scenarioAt(year, "withoutIncome"),
+    }));
+    const combinations = [
+      { label: "Monthly + yearly + other income", monthlyOn: true, yearlyOn: true, incomeOn: true },
+      { label: "Monthly + yearly only", monthlyOn: true, yearlyOn: true, incomeOn: false },
+      { label: "Monthly + other income only", monthlyOn: true, yearlyOn: false, incomeOn: true },
+      { label: "Yearly + other income only", monthlyOn: false, yearlyOn: true, incomeOn: true },
+      { label: "Monthly investment only", monthlyOn: true, yearlyOn: false, incomeOn: false },
+      { label: "Yearly investment only", monthlyOn: false, yearlyOn: true, incomeOn: false },
+      { label: "Other income only", monthlyOn: false, yearlyOn: false, incomeOn: true },
+      { label: "None (current trend)", monthlyOn: false, yearlyOn: false, incomeOn: false },
+    ]
+      .map((c) => ({ ...c, value: comboValue(projectionYears, c.monthlyOn, c.yearlyOn, c.incomeOn) }))
+      .sort((a, b) => b.value - a.value);
     const future = points[points.length - 1];
+    const generateWealthForecast = async () => {
+      if (!session?.access_token) return setWealthForecastError("Sign in before generating a forecast.");
+      setWealthForecastBusy(true);
+      setWealthForecastError("");
+      try {
+        const res = await fetch("/api/wealth-forecast", {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${session.access_token}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              inputs: {
+                horizonYears: projectionYears,
+                currentNetWorth: base,
+                monthlyInvestment: monthly,
+                monthlyInvestmentUntilYears: monthlyUntilYears,
+                yearlyLumpSum: yearlyLump,
+                otherMonthlyIncome: otherIncomeMonthly,
+                assumedAnnualReturnPct: annualRate,
+                sharesHistoricalReturnPct: projectionHistoryRates.shares,
+                goldHistoricalReturnPct: projectionHistoryRates.gold,
+                projectedValueContinuing: future.continueValue,
+                projectedValueTrendOnly: future.trendValue,
+                assetMix: [
+                  { assetClass: "Shares/MF/ULIP", value: sharesBase },
+                  { assetClass: "Gold/Silver", value: goldBase },
+                  { assetClass: "Fixed income", value: fixedBase },
+                  { assetClass: "Other", value: otherBase },
+                ],
+              },
+            }),
+          }),
+          json = await res.json();
+        if (!res.ok) throw new Error(json.error || "Forecast could not be generated.");
+        setWealthForecast(json.forecast);
+        setWealthForecastMeta({ model: String(json.model || "AI"), generatedAt: json.generatedAt });
+      } catch (e: any) {
+        setWealthForecastError(e?.message || "Forecast could not be generated.");
+      } finally {
+        setWealthForecastBusy(false);
+      }
+    };
     const fixedMonthly = fixedRecords.reduce((sum, r) => sum + num(r.employee_contribution) + num(r.company_contribution) + num(r.yearly_investment) / 12, 0);
-    const investedMore = (monthly + fixedMonthly) * projectionYears * 12;
-    const wealthCreated = future.continueValue - base - investedMore;
-    const values = points.flatMap((p) => [p.continueValue, p.trendValue]);
+    const investedMore = monthly * monthlyUntilYears * 12 + fixedMonthly * retireYears * 12 + yearlyLump * yearlyUntilYears;
+    const incomeContribution = future.continueValue - future.withoutIncomeValue;
+    const wealthCreated = future.continueValue - base - investedMore - otherIncomeMonthly * otherIncomeUntilYears * 12;
+    const values = points.flatMap((p) => [p.continueValue, p.trendValue, p.withoutIncomeValue]);
     const minValue = Math.min(0, ...values), maxValue = Math.max(1, ...values), range = Math.max(1, maxValue - minValue);
     const chartPoint = (value: number, index: number) => `${(index / Math.max(1, points.length - 1)) * 100},${92 - ((value - minValue) / range) * 84}`;
     const continuePath = points.map((p, i) => chartPoint(p.continueValue, i)).join(" ");
     const trendPath = points.map((p, i) => chartPoint(p.trendValue, i)).join(" ");
+    const withoutIncomePath = points.map((p, i) => chartPoint(p.withoutIncomeValue, i)).join(" ");
+    const retireX = (retireYears / Math.max(1, projectionYears)) * 100;
     return (
       <section className="overflow-hidden rounded-[26px] border border-[#cddfd4] bg-[linear-gradient(135deg,#f4fbf7_0%,#ffffff_50%,#f7f2ff_100%)] shadow-[0_18px_46px_rgba(23,56,43,0.09)]">
         <div className="grid gap-6 p-6 lg:grid-cols-[minmax(0,1.35fr)_minmax(310px,.65fr)]">
@@ -9023,7 +9186,7 @@ export default function AssetManagerApp() {
               <div>
                 <div className="mb-2 inline-flex items-center gap-2 rounded-full bg-[#17382b] px-3 py-1 text-[11px] font-semibold uppercase tracking-[.14em] text-white"><Sparkles size={13} /> Future wealth outlook</div>
                 <h3 className="text-2xl font-semibold tracking-tight text-[#17382b]">What could my net worth become?</h3>
-                <p className="mt-1 max-w-2xl text-sm text-gray-600">Compare your present trajectory with continuing regular investments.</p>
+                <p className="mt-1 max-w-2xl text-sm text-gray-600">Plan around when you stop working, extra income, and how much you invest each year.</p>
               </div>
               <div className="rounded-2xl border border-emerald-200 bg-white/80 px-4 py-3 text-right shadow-sm">
                 <div className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">In {projectionYears} years</div>
@@ -9032,15 +9195,27 @@ export default function AssetManagerApp() {
             </div>
             <div className="mt-5 rounded-2xl border border-white/80 bg-white/70 p-4">
               <div className="mb-3 flex flex-wrap items-center justify-between gap-2 text-xs font-semibold">
-                <div className="flex flex-wrap gap-4"><span className="flex items-center gap-2 text-emerald-700"><i className="h-2.5 w-2.5 rounded-full bg-emerald-500" />Continue investing</span><span className="flex items-center gap-2 text-violet-700"><i className="h-2.5 w-2.5 rounded-full bg-violet-500" />Current trend only</span></div>
+                <div className="flex flex-wrap gap-4">
+                  <span className="flex items-center gap-2 text-emerald-700"><i className="h-2.5 w-2.5 rounded-full bg-emerald-500" />Continue investing + other income</span>
+                  <span className="flex items-center gap-2 text-blue-600"><i className="h-2.5 w-2.5 rounded-full bg-blue-500" />Without other income</span>
+                  <span className="flex items-center gap-2 text-violet-700"><i className="h-2.5 w-2.5 rounded-full bg-violet-500" />Current trend only</span>
+                </div>
                 <span className="text-gray-500">Today {fmt(base)}</span>
               </div>
               <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="h-52 w-full overflow-visible" role="img" aria-label="Projected net worth chart">
                 {[8, 29, 50, 71, 92].map((y) => <line key={y} x1="0" x2="100" y1={y} y2={y} stroke="#dfe7e2" strokeWidth=".4" />)}
+                {retireYears > 0 && retireYears < projectionYears && (
+                  <line x1={retireX} x2={retireX} y1="0" y2="100" stroke="#f59e0b" strokeWidth=".6" strokeDasharray="3 3" vectorEffect="non-scaling-stroke" />
+                )}
                 <polyline points={trendPath} fill="none" stroke="#7c3aed" strokeWidth="2" vectorEffect="non-scaling-stroke" strokeDasharray="5 4" />
+                <polyline points={withoutIncomePath} fill="none" stroke="#2563eb" strokeWidth="2" vectorEffect="non-scaling-stroke" strokeDasharray="2 3" />
                 <polyline points={continuePath} fill="none" stroke="#16a34a" strokeWidth="3" vectorEffect="non-scaling-stroke" strokeLinecap="round" strokeLinejoin="round" />
               </svg>
-              <div className="flex justify-between text-[11px] font-semibold text-gray-500"><span>Today</span><span>{Math.round(projectionYears / 2)} years</span><span>{projectionYears} years</span></div>
+              <div className="flex justify-between text-[11px] font-semibold text-gray-500">
+                <span>Today</span>
+                {retireYears > 0 && retireYears < projectionYears && <span className="text-amber-600">Stop working ({retireYears}y)</span>}
+                <span>{projectionYears} years</span>
+              </div>
             </div>
           </div>
           <div className="space-y-4">
@@ -9048,16 +9223,120 @@ export default function AssetManagerApp() {
               <div className="text-xs font-semibold uppercase tracking-wider text-gray-500">Adjust assumptions</div>
               <label className="mt-4 block text-xs font-semibold text-[#40584c]">Time horizon: {projectionYears} years</label>
               <input className="mt-2 w-full accent-emerald-700" type="range" min="1" max="30" value={projectionYears} onChange={(e) => setProjectionYears(Number(e.target.value))} />
-              <label className="mt-4 block text-xs font-semibold text-[#40584c]">Other monthly investment</label>
-              <input className="input mt-2 w-full" inputMode="decimal" value={projectionMonthlyInput} placeholder={String(Math.round(inferredMonthly))} onChange={(e) => setProjectionMonthlyInput(e.target.value)} />
+              <div className="mt-4 grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block text-xs font-semibold text-[#40584c]">Your current age</label>
+                  <input className="input mt-2 w-full" inputMode="numeric" value={projectionCurrentAge} placeholder="35" onChange={(e) => setProjectionCurrentAge(e.target.value)} />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-[#40584c]">Stop working at age</label>
+                  <input className="input mt-2 w-full" inputMode="numeric" value={projectionRetireAge} placeholder="60" onChange={(e) => setProjectionRetireAge(e.target.value)} />
+                </div>
+              </div>
+              <p className="mt-1 text-[11px] text-gray-500">
+                {currentAge !== null && retireAge !== null
+                  ? `Investing pauses in ${Math.max(0, retireAge - currentAge)} years; other income keeps coming in.`
+                  : "Enter both ages to set when investing pauses; other income keeps coming in either way."}
+              </p>
+              <label className="mt-4 block text-xs font-semibold text-[#40584c]">Monthly investment (SIPs, contributions)</label>
+              <div className="mt-2 grid grid-cols-2 gap-2">
+                <input className="input w-full" inputMode="decimal" value={projectionMonthlyInput} placeholder={String(Math.round(inferredMonthly))} onChange={(e) => setProjectionMonthlyInput(e.target.value)} />
+                <input className="input w-full" inputMode="numeric" value={projectionMonthlyUntilAge} placeholder={retireAge !== null ? `Until ${retireAge}` : "Until age"} onChange={(e) => setProjectionMonthlyUntilAge(e.target.value)} />
+              </div>
+              <label className="mt-4 block text-xs font-semibold text-[#40584c]">Extra yearly investment (bonus, lump sum)</label>
+              <div className="mt-2 grid grid-cols-2 gap-2">
+                <input className="input w-full" inputMode="decimal" value={projectionYearlyInput} placeholder="0" onChange={(e) => setProjectionYearlyInput(e.target.value)} />
+                <input className="input w-full" inputMode="numeric" value={projectionYearlyUntilAge} placeholder={retireAge !== null ? `Until ${retireAge}` : "Until age"} onChange={(e) => setProjectionYearlyUntilAge(e.target.value)} />
+              </div>
+              <label className="mt-4 block text-xs font-semibold text-[#40584c]">Rental / other monthly income</label>
+              <div className="mt-2 grid grid-cols-2 gap-2">
+                <input className="input w-full" inputMode="decimal" value={projectionOtherIncomeInput} placeholder="0" onChange={(e) => setProjectionOtherIncomeInput(e.target.value)} />
+                <input className="input w-full" inputMode="numeric" value={projectionOtherIncomeUntilAge} placeholder={retireAge !== null ? `Until ${retireAge}` : "Until age"} onChange={(e) => setProjectionOtherIncomeUntilAge(e.target.value)} />
+              </div>
+              <p className="mt-1 text-[11px] text-gray-500">Each amount has its own "invest until age" — leave blank to use your stop-working age above, or set one further out (e.g. rental income continuing past retirement).</p>
               <label className="mt-4 block text-xs font-semibold text-[#40584c]">Other/new investment return</label>
               <div className="relative mt-2"><input className="input w-full pr-9" inputMode="decimal" value={projectionReturnInput} placeholder={annualRate.toFixed(1)} onChange={(e) => setProjectionReturnInput(e.target.value)} /><span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm font-semibold text-gray-500">%</span></div>
               <p className="mt-3 text-[11px] leading-relaxed text-gray-500">Shares use 10-year NIFTY history, gold uses 10-year Gold BeES history, and every fixed-income record uses its own interest and deposits.</p>
             </div>
             <div className="grid grid-cols-2 gap-3">
-              {[["Current trend", future.trendValue, "text-violet-700"], ["Extra invested", investedMore, "text-[#17382b]"], ["Growth earned", wealthCreated, wealthCreated >= 0 ? "text-emerald-700" : "text-red-700"], ["Shares · 10Y", `${projectionHistoryRates.shares.toFixed(1)}%`, "text-[#17382b]"], ["Gold · 10Y", `${projectionHistoryRates.gold.toFixed(1)}%`, "text-amber-700"], ["Fixed income", "Own rates", "text-blue-700"]].map(([label, value, color]) => <div key={String(label)} className="rounded-2xl border border-white bg-white/75 p-3"><div className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">{label}</div><div className={`mt-1 text-base font-semibold tabular-nums ${color}`}>{typeof value === "number" ? fmt(value) : value}</div></div>)}
+              {[
+                ["Current trend", future.trendValue, "text-violet-700"],
+                ["Without other income", future.withoutIncomeValue, "text-blue-700"],
+                ["Extra invested", investedMore, "text-[#17382b]"],
+                ["From other income", incomeContribution, "text-blue-700"],
+                ["Growth earned", wealthCreated, wealthCreated >= 0 ? "text-emerald-700" : "text-red-700"],
+                ["Shares · 10Y", `${projectionHistoryRates.shares.toFixed(1)}%`, "text-[#17382b]"],
+                ["Gold · 10Y", `${projectionHistoryRates.gold.toFixed(1)}%`, "text-amber-700"],
+                ["Fixed income", "Own rates", "text-blue-700"],
+              ].map(([label, value, color]) => <div key={String(label)} className="rounded-2xl border border-white bg-white/75 p-3"><div className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">{label}</div><div className={`mt-1 text-base font-semibold tabular-nums ${color}`}>{typeof value === "number" ? fmt(value) : value}</div></div>)}
             </div>
           </div>
+        </div>
+        <div className="border-t border-[#dce8df] bg-white/40 px-6 py-5">
+          <div className="text-xs font-semibold uppercase tracking-wider text-gray-500">
+            Every combination, in {projectionYears} years
+          </div>
+          <p className="mt-1 text-[11px] text-gray-500">
+            All 8 ways to switch monthly investing, yearly investing and other income on or off — ranked highest to lowest.
+          </p>
+          <div className="mt-3 grid gap-2 sm:grid-cols-2">
+            {combinations.map((c, i) => (
+              <div key={c.label} className="flex items-center justify-between gap-3 rounded-xl border border-white bg-white/80 px-3 py-2">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="shrink-0 text-[10px] font-semibold text-gray-400">#{i + 1}</span>
+                  <span className="truncate text-xs font-semibold text-[#17382b]">{c.label}</span>
+                </div>
+                <span className="shrink-0 text-sm font-semibold tabular-nums text-emerald-700">{fmt(c.value)}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+        <div className="border-t border-[#dce8df] bg-white/40 px-6 py-5">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <div className="text-xs font-semibold uppercase tracking-wider text-gray-500">AI realism check</div>
+              <p className="mt-1 text-[11px] text-gray-500">
+                Ask a local AI model to sanity-check these assumptions against typical long-run market trends. Requires Ollama running on this machine — won't work on the deployed production site.
+              </p>
+            </div>
+            <button type="button" className="btn shrink-0" disabled={wealthForecastBusy} onClick={generateWealthForecast}>
+              {wealthForecastBusy ? "Thinking…" : wealthForecast ? "Regenerate forecast" : "Generate AI forecast"}
+            </button>
+          </div>
+          {wealthForecastError && (
+            <p className="mt-3 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs font-semibold text-red-700">{wealthForecastError}</p>
+          )}
+          {wealthForecast && (
+            <div className="mt-4 space-y-3 rounded-2xl border border-white bg-white/80 p-4">
+              <div>
+                <div className="text-sm font-semibold text-[#17382b]">{wealthForecast.headline}</div>
+                <p className="mt-1 text-xs leading-relaxed text-gray-600">{wealthForecast.outlook}</p>
+              </div>
+              <div className="rounded-xl bg-[#f5efe3] px-3 py-2 text-xs text-[#40584c]">
+                <span className="font-semibold">Realism check: </span>{wealthForecast.realism_check}
+              </div>
+              {[
+                ["Market trend context", wealthForecast.trend_context, "text-[#17382b]"],
+                ["Risks to consider", wealthForecast.risks, "text-red-700"],
+                ["Suggestions", wealthForecast.suggestions, "text-emerald-700"],
+              ].map(([label, items, color]: any) =>
+                Array.isArray(items) && items.length ? (
+                  <div key={label}>
+                    <div className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">{label}</div>
+                    <ul className="mt-1 list-disc space-y-1 pl-4">
+                      {items.map((item: string, i: number) => (
+                        <li key={i} className={`text-xs ${color}`}>{item}</li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : null,
+              )}
+              <p className="text-[10px] italic text-gray-400">{wealthForecast.disclaimer}</p>
+              {wealthForecastMeta && (
+                <p className="text-[10px] text-gray-400">{wealthForecastMeta.model} · {new Date(wealthForecastMeta.generatedAt).toLocaleString()}</p>
+              )}
+            </div>
+          )}
         </div>
         <div className="border-t border-[#dce8df] bg-white/55 px-6 py-3 text-[11px] text-gray-500">Illustration only. Historical returns do not guarantee future results. Fixed-income interest and monthly/yearly deposits are compounded monthly; taxes, inflation and future liability changes are not included.</div>
       </section>
@@ -10574,9 +10853,6 @@ export default function AssetManagerApp() {
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
-            <button className="btn" onClick={() => refreshWatchlist()}>
-              <RefreshCw size={16} className="inline" /> Refresh Watchlist
-            </button>
             <button
               className="btn-primary"
               onClick={() =>
@@ -11100,7 +11376,19 @@ export default function AssetManagerApp() {
           </div>
         </section>
         {executiveAnalyticsPanel()}
-        {futureNetWorthPanel()}
+        <section
+          className="flex cursor-pointer flex-wrap items-center justify-between gap-3 overflow-hidden rounded-[26px] border border-[#cddfd4] bg-[linear-gradient(135deg,#f4fbf7_0%,#ffffff_50%,#f7f2ff_100%)] p-5 shadow-[0_18px_46px_rgba(23,56,43,0.09)] transition hover:shadow-[0_22px_54px_rgba(23,56,43,0.14)]"
+          onClick={() => setView("futureWealth")}
+        >
+          <div>
+            <div className="mb-2 inline-flex items-center gap-2 rounded-full bg-[#17382b] px-3 py-1 text-[11px] font-semibold uppercase tracking-[.14em] text-white"><Sparkles size={13} /> Future wealth outlook</div>
+            <h3 className="text-xl font-semibold tracking-tight text-[#17382b]">What could my net worth become?</h3>
+            <p className="mt-1 max-w-xl text-sm text-gray-600">Plan retirement age, extra income and every combination of contributions on the Future Wealth tab.</p>
+          </div>
+          <button type="button" className="btn-primary shrink-0" onClick={() => setView("futureWealth")}>
+            Open Future Wealth →
+          </button>
+        </section>
         {portfolioPerformancePanel()}
         {portfolioSummaryTable()}
         {dashboardFeaturePanels()}
@@ -13131,20 +13419,9 @@ export default function AssetManagerApp() {
                 <p className="text-sm text-gray-600">{def.desc}</p>
               </div>
               <div className="flex flex-wrap items-center gap-2">
-                <button
-                  type="button"
-                  className="inline-flex items-center rounded-full border border-[#e1d8c8] bg-[#FFFFFF] px-3 py-1.5 text-xs font-medium text-[#37534a] shadow-none"
-                  onClick={() => setAutoRefresh((v) => !v)}
-                >
-                  Auto refresh: {autoRefresh ? "On" : "Off"}
-                  {editing || detail || accModal
-                    ? " | Paused while editing"
-                    : ""}
-                  {lastSynced ? ` | Last sync: ${lastSynced}` : ""}
-                </button>
-                <button className="btn" onClick={() => refreshStocks(false, true)}>
-                  <RefreshCw size={16} className="inline" /> Refresh Holdings
-                </button>
+                <span className="inline-flex items-center rounded-full border border-[#e1d8c8] bg-[#FFFFFF] px-3 py-1.5 text-xs font-medium text-[#37534a]">
+                  Live{lastSynced ? ` · updated ${lastSynced}` : ""}
+                </span>
                 <button
                   className="btn-primary"
                   onClick={() => setEditing({ moduleKey: "stocks" })}
@@ -13192,20 +13469,9 @@ export default function AssetManagerApp() {
           </div>
           <div className="flex flex-wrap items-center gap-2">
             {(k === "stocks" || k === "bullion") && (
-              <button
-                type="button"
-                className="inline-flex items-center rounded-full border border-[#e1d8c8] bg-[#FFFFFF] px-3 py-1.5 text-xs font-medium text-[#37534a] shadow-none"
-                onClick={() => setAutoRefresh((v) => !v)}
-              >
-                Auto refresh: {autoRefresh ? "On" : "Off"}
-                {editing || detail || accModal ? " | Paused while editing" : ""}
-                {lastSynced ? ` | Last sync: ${lastSynced}` : ""}
-              </button>
-            )}
-            {isInvestment && k !== "bullion" && (
-              <button className="btn" onClick={() => refreshModuleRates(k, false, true)}>
-                <RefreshCw size={16} className="inline" /> Refresh Current Rates
-              </button>
+              <span className="inline-flex items-center rounded-full border border-[#e1d8c8] bg-[#FFFFFF] px-3 py-1.5 text-xs font-medium text-[#37534a]">
+                Live{lastSynced ? ` · updated ${lastSynced}` : ""}
+              </span>
             )}
             <button className="btn" onClick={() => exportModuleCsv(k)}>
               Export CSV
@@ -14451,7 +14717,9 @@ export default function AssetManagerApp() {
           computed[f] !== "" &&
           computed[f] !== null &&
           (d.moduleKey !== "insurance" ||
-            showInsuranceDetailField(f, computed as Record<string, any>)),
+            showInsuranceDetailField(f, computed as Record<string, any>)) &&
+          (d.moduleKey !== "fixedIncome" ||
+            showFixedIncomeField(f, key((computed as Record<string, any>).category))),
       ),
       linkedDocs = docs.filter((x) => x.record_id === d.record.id);
     return (
@@ -14643,7 +14911,20 @@ export default function AssetManagerApp() {
         : [],
       fields =
         editing!.moduleKey === "fixedIncome"
-          ? def.fields.filter((f) => showFixedIncomeField(f.name))
+          ? def.fields
+              .filter((f) => showFixedIncomeField(f.name))
+              .map((f) =>
+                f.name === "employee_contribution" &&
+                ["salary", "rentalincome"].includes(key(fixedIncomeType))
+                  ? {
+                      ...f,
+                      label:
+                        key(fixedIncomeType) === "salary"
+                          ? "Monthly Salary"
+                          : "Monthly Rent Received",
+                    }
+                  : f,
+              )
           : editing!.moduleKey === "insurance"
             ? def.fields.filter((f) => showInsuranceField(f.name))
           : editing!.moduleKey === "stocks"
@@ -14663,6 +14944,13 @@ export default function AssetManagerApp() {
             if (editing!.moduleKey === "bullion")
               fillBullionCosts(e.currentTarget);
             const t = e.target as HTMLInputElement | HTMLSelectElement;
+            if (editing!.moduleKey === "property" && t.name === "rent_agreement_start_date") {
+              const endField = e.currentTarget.querySelector<HTMLInputElement>(
+                '[name="rent_agreement_end_date"]',
+              );
+              if (endField && !endField.value && t.value)
+                endField.value = addMonthsIso(t.value, 11);
+            }
             if (editing!.moduleKey === "fixedIncome") {
               if (t.name === "category") {
                 setFixedIncomeType(t.value);

@@ -2,8 +2,11 @@ import { NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
 
-const RESPONSE_CACHE_CONTROL =
-  "public, s-maxage=900, stale-while-revalidate=3600";
+// No public/CDN caching, for the same reason as /api/quote and /api/market-rate:
+// a CDN-cached copy can sit at a different age per edge PoP, which is what made
+// refreshes appear to "step down" through several stale snapshots instead of
+// jumping straight to the current value.
+const RESPONSE_CACHE_CONTROL = "no-store, max-age=0, must-revalidate";
 
 function citySlug(value: string) {
   return value

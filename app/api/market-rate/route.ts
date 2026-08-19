@@ -4,8 +4,11 @@ export const dynamic = "force-dynamic";
 export const runtime = "edge";
 export const preferredRegion = "bom1";
 
-const RESPONSE_CACHE_CONTROL =
-  "public, s-maxage=20, stale-while-revalidate=40";
+// No public/CDN caching: bullion rates must come straight from the request-
+// scoped MCX/Moneycontrol fetch below, not an edge-cached copy that can be a
+// different age at every PoP (that's what caused refreshes to reveal
+// progressively "less stale" snapshots instead of the current rate).
+const RESPONSE_CACHE_CONTROL = "no-store, max-age=0, must-revalidate";
 const TROY_OZ_GRAMS = 31.1034768;
 const MCX_MARKET_WATCH_URL =
   "https://www.mcxindia.com/market-data/market-watch";

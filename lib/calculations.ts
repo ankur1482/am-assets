@@ -107,8 +107,9 @@ function projectedFixedIncomeValue(r:any,periodYears:number){
     if(partial)balance=balance*(1+(rate*partial));
     return balance;
   }
+  const effectiveYearly=yearly+monthly*12;
   let balance=initial*Math.pow(1+rate,Math.max(0,periodYears));
-  for(let i=1;i<=Math.floor(Math.max(0,periodYears));i++)balance+=yearly*Math.pow(1+rate,periodYears-i);
+  for(let i=1;i<=Math.floor(Math.max(0,periodYears));i++)balance+=effectiveYearly*Math.pow(1+rate,periodYears-i);
   return balance;
 }
 
@@ -116,7 +117,7 @@ function fixedIncomeInvested(r:any,periodYears:number){
   const initial=num(r.gratuity_value)||num(r.initial_investment)||num(r.investment_amount),yearly=num(r.yearly_investment),monthly=num(r.employee_contribution)+num(r.company_contribution);
   if(isPf(r))return initial+(monthly*Math.max(0,Math.round(periodYears*12)));
   if(isAnnualAccount(r))return initial+(yearly*Math.floor(Math.max(0,periodYears)));
-  return initial+(yearly*Math.floor(Math.max(0,periodYears)));
+  return initial+(yearly*Math.floor(Math.max(0,periodYears)))+(monthly*monthSpan(fiBaseDate(r)));
 }
 
 function fixedIncomeBaseValue(r:any){
@@ -185,7 +186,9 @@ function fixedIncomeRecord(r:any){
     Object.assign(r,{calculation_date:result.calculationDate,total_service:`${result.serviceYears} years, ${result.serviceMonths} months, ${result.serviceDays} days`,service_years:result.serviceYears,service_months:result.serviceMonths,service_days:result.serviceDays,eligible_years:result.eligibleYears,salary_basis:result.salaryBasis,gratuity_per_year:result.gratuityPerYear,gratuity_value:result.totalGratuity,tax_exempt_gratuity:result.taxExemptGratuity,taxable_gratuity:result.taxableGratuity,monthly_ctc_gratuity:result.monthlyCtcAccrual,annual_ctc_gratuity:result.annualCtcAccrual,gratuity_eligible:result.eligible,eligibility_message:result.eligibilityMessage,invested:0,interest_incurred_fy:0,current_value_today:result.totalGratuity,worth_till_date:result.totalGratuity,latest:result.totalGratuity,year_end_maturity_value:result.totalGratuity,maturity_value:result.totalGratuity,maturity_date:'',locked_until:''});
     return r;
   }
-  const elapsed=years(fiBaseDate(r));if(isCompanyPf(r))r.broker='Govt';r.maturity_date=isCompanyPf(r)?'':fixedIncomeMaturityDate(r)||r.maturity_date;r.invested=fixedIncomeInvested(r,elapsed);r.interest_incurred_fy=fixedIncomeInterestIncurredFy(r);r.worth_till_date=fixedIncomeWorthTillDate(r);r.latest=r.worth_till_date;r.maturity_value=isCompanyPf(r)?'':fixedIncomeMaturityValue(r);r.year_end_maturity_value=fixedIncomeYearEndValue(r);r.locked_until=r.maturity_date||'';return r
+  const elapsed=years(fiBaseDate(r));if(isCompanyPf(r))r.broker='Govt';r.maturity_date=isCompanyPf(r)?'':fixedIncomeMaturityDate(r)||r.maturity_date;r.invested=fixedIncomeInvested(r,elapsed);r.interest_incurred_fy=fixedIncomeInterestIncurredFy(r);r.worth_till_date=fixedIncomeWorthTillDate(r);r.latest=r.worth_till_date;r.maturity_value=isCompanyPf(r)?'':fixedIncomeMaturityValue(r);r.year_end_maturity_value=fixedIncomeYearEndValue(r);r.locked_until=r.maturity_date||'';
+  if(/^salary$|^rentalincome$/.test(typeKey(r)))r.yearly_total_value=(num(r.employee_contribution)+num(r.company_contribution))*12;
+  return r
 }
 
 function projectLoanFuture(r:any){
