@@ -2,7 +2,7 @@ import {NextRequest,NextResponse} from 'next/server';
 import {UPSTOX_STATE_COOKIE,UPSTOX_TOKEN_COOKIE,UPSTOX_TOKEN_URL,clearUpstoxCookieOptions,upstoxConfig} from '@/lib/upstox';
 import {secureEqual,verifyOAuthState} from '@/lib/oauthState';
 import {saveOAuthCredential} from '@/lib/oauthCredentials';
-import {escapeHtml} from '@/lib/security';
+import {escapeHtml,safeJsonForInlineScript} from '@/lib/security';
 
 export const runtime='nodejs';
 export const dynamic='force-dynamic';
@@ -10,11 +10,12 @@ export const dynamic='force-dynamic';
 function html(message:string,ok=true){
   const title=ok?'Upstox connected':'Upstox connection failed';
   const safeMessage=escapeHtml(message);
-  return new NextResponse(`<!doctype html><html><head><title>${title}</title><meta name="viewport" content="width=device-width,initial-scale=1"></head><body style="font-family:system-ui;margin:32px;line-height:1.5"><h1>${title}</h1><p>${safeMessage}</p><p>You can close this tab.</p></body></html>`,{
+  const eventType=ok?'upstox-connected':'upstox-error';
+  return new NextResponse(`<!doctype html><html><head><title>${title}</title><meta name="viewport" content="width=device-width,initial-scale=1"></head><body style="font-family:system-ui;margin:32px;line-height:1.5"><script>window.opener&&window.opener.postMessage({type:${safeJsonForInlineScript(eventType)},message:${safeJsonForInlineScript(message)}},window.location.origin);window.close();</script><h1>${title}</h1><p>${safeMessage}</p><p>You can close this tab.</p></body></html>`,{
     status:ok?200:400,
     headers:{
       'Content-Type':'text/html; charset=utf-8',
-      'Content-Security-Policy':"default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'",
+      'Content-Security-Policy':"default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'",
       'X-Content-Type-Options':'nosniff',
       'Referrer-Policy':'no-referrer',
       'Cache-Control':'no-store, max-age=0'

@@ -212,7 +212,6 @@ const allViews = [...views, ["admin", "Admin", "Admin Console"]];
 const INVESTMENT_SOURCE_OPTIONS: Record<string, { label: string; value: string; note: string }[]> = {
   stocks: [
     { label: "Auto fallback", value: "auto", note: "Configured order, then Yahoo" },
-    { label: "Upstox", value: "upstox", note: "Live NSE/BSE where token is valid" },
     { label: "Twelve Data", value: "twelvedata", note: "Quote API, often EOD for India" },
     { label: "Alpha Vantage", value: "alphavantage", note: "Global quote endpoint" },
     { label: "Polygon", value: "polygon", note: "US markets only" },
