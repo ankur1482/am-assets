@@ -19,6 +19,7 @@ import {
   GitBranch,
   Home,
   KeyRound,
+  Layers,
   LogOut,
   Menu,
   MoreHorizontal,
@@ -165,6 +166,7 @@ type WorkspaceMember = {
 };
 const views = [
   ["dashboard", "DB", "Dashboard"],
+  ["allInvestments", "AI", "All Investments"],
   ["stocks", "ST", "Stocks"],
   ["mutualFunds", "MF", "Mutual Funds"],
   ["ulips", "UL", "ULIPs"],
@@ -189,6 +191,7 @@ const groups = [
   [
     "Investments",
     [
+      "allInvestments",
       "stocks",
       "property",
       "bullion",
@@ -920,6 +923,11 @@ export default function AssetManagerApp() {
       key: string;
       direction: "asc" | "desc";
     }>({ key: "security_name", direction: "asc" }),
+    [allInvestmentsSort, setAllInvestmentsSort] = useState<{
+      key: "name" | "type" | "account" | "invested" | "latest" | "gain" | "gain_pct";
+      direction: "asc" | "desc";
+    }>({ key: "latest", direction: "desc" }),
+    [allInvestmentsType, setAllInvestmentsType] = useState("All"),
     [profile, setProfile] = useState<Profile | null>(null),
     [role, setRole] = useState<Role>("normal"),
     [accounts, setAccounts] = useState<Account[]>([]),
@@ -3855,6 +3863,7 @@ export default function AssetManagerApp() {
     const meta = allViews.find((v) => v[0] === id);
     const NavIcon = ({
       dashboard: PieChart,
+      allInvestments: Layers,
       stocks: BarChart3,
       mutualFunds: BriefcaseBusiness,
       ulips: Shield,
@@ -7089,6 +7098,7 @@ export default function AssetManagerApp() {
             </header>
           )}
           {view === "dashboard" && dashboardModern()}
+          {view === "allInvestments" && allInvestmentsView()}
           {view === "futureWealth" && futureNetWorthPanel()}
           {view === "purchaseCalculator" && bullionCalculatorPanel()}
           {view === "watchlist" && utilityWatchlistView()}
@@ -11239,6 +11249,203 @@ export default function AssetManagerApp() {
           <Empty text="No broker details yet." />
         )}
       </section>
+    );
+  }
+  function allInvestmentsView() {
+    const investmentKeys = [
+        "stocks",
+        "property",
+        "bullion",
+        "fixedIncome",
+        "mutualFunds",
+        "ulips",
+        "otherAssets",
+        "nsel",
+      ],
+      rows = records
+        .filter((r) => investmentKeys.includes(r.module_key))
+        .map((r) => {
+          const c = computeLiveRecord(r.module_key, r.data);
+          return {
+            record: r,
+            computed: c,
+            type: MODULES[r.module_key]?.title || r.module_key,
+            moduleKey: r.module_key,
+            account: String(r.data?.account_name || "Unassigned"),
+            name: c.security_name || r.data?.security_name || MODULES[r.module_key]?.title,
+            invested: num(c.invested),
+            latest: num(c.latest),
+            gain: num(c.gain),
+            gainPct: num(c.invested) ? (num(c.gain) / num(c.invested)) * 100 : 0,
+          };
+        }),
+      byModule = investmentKeys.map((k) => {
+        const moduleRows = rows.filter((r) => r.moduleKey === k),
+          invested = moduleRows.reduce((s, r) => s + r.invested, 0),
+          latest = moduleRows.reduce((s, r) => s + r.latest, 0);
+        return {
+          key: k,
+          title: MODULES[k]?.title || k,
+          count: moduleRows.length,
+          invested,
+          latest,
+          gain: latest - invested,
+        };
+      }),
+      totals = {
+        invested: rows.reduce((s, r) => s + r.invested, 0),
+        latest: rows.reduce((s, r) => s + r.latest, 0),
+      },
+      totalGain = totals.latest - totals.invested,
+      totalGainPct = totals.invested ? (totalGain / totals.invested) * 100 : 0,
+      typeOptions = ["All", ...byModule.filter((m) => m.count).map((m) => m.title)],
+      filteredRows = rows.filter(
+        (r) => allInvestmentsType === "All" || r.type === allInvestmentsType,
+      ),
+      sortedRows = [...filteredRows].sort((a, b) => {
+        const key = allInvestmentsSort.key,
+          left = key === "type" || key === "account" || key === "name" ? a[key === "name" ? "name" : key] : a[key === "gain_pct" ? "gainPct" : key],
+          right = key === "type" || key === "account" || key === "name" ? b[key === "name" ? "name" : key] : b[key === "gain_pct" ? "gainPct" : key],
+          comparison =
+            typeof left === "string" ? String(left).localeCompare(String(right)) : num(left) - num(right);
+        return allInvestmentsSort.direction === "asc" ? comparison : -comparison;
+      }),
+      sortHeader = (label: string, key: typeof allInvestmentsSort.key) => (
+        <th
+          className="cursor-pointer select-none text-left"
+          onClick={() =>
+            setAllInvestmentsSort((prev) => ({
+              key,
+              direction: prev.key === key && prev.direction === "desc" ? "asc" : "desc",
+            }))
+          }
+        >
+          {label}
+          {allInvestmentsSort.key === key ? (allInvestmentsSort.direction === "asc" ? " ▲" : " ▼") : ""}
+        </th>
+      );
+    return (
+      <div className="space-y-5">
+        <section className="rounded-[26px] border border-[#ded6c4] bg-white/90 p-5 shadow-[0_14px_34px_rgba(15,23,42,0.05)]">
+          <div className="mb-4">
+            <h3 className="text-xl font-semibold tracking-tight">All Investments</h3>
+            <p className="text-sm text-gray-600">
+              Every investment holding — Stocks, Property, Gold/Silver, Fixed Income, Mutual
+              Funds, ULIPs, Other Assets and NSEL — in one combined view.
+            </p>
+          </div>
+          <div className="grid grid-cols-4 gap-3 max-md:grid-cols-2">
+            <div className="rounded-2xl border border-[#e3dccc] bg-[#FFFFFF] p-4">
+              <div className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">Invested</div>
+              <div className="mt-1 text-xl font-semibold tabular-nums text-[#17382b]">{fmt(totals.invested)}</div>
+            </div>
+            <div className="rounded-2xl border border-[#e3dccc] bg-[#FFFFFF] p-4">
+              <div className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">Current Value</div>
+              <div className="mt-1 text-xl font-semibold tabular-nums text-[#17382b]">{fmt(totals.latest)}</div>
+            </div>
+            <div className="rounded-2xl border border-[#e3dccc] bg-[#FFFFFF] p-4">
+              <div className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">Gain</div>
+              <div className={`mt-1 text-xl font-semibold tabular-nums ${totalGain >= 0 ? "text-emerald-700" : "text-red-600"}`}>
+                {fmt(totalGain)}
+              </div>
+            </div>
+            <div className="rounded-2xl border border-[#e3dccc] bg-[#FFFFFF] p-4">
+              <div className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">Gain %</div>
+              <div className={`mt-1 text-xl font-semibold tabular-nums ${totalGain >= 0 ? "text-emerald-700" : "text-red-600"}`}>
+                {pct(totalGainPct)}
+              </div>
+            </div>
+          </div>
+        </section>
+        <section className="rounded-[26px] border border-[#ded6c4] bg-white/90 p-5 shadow-[0_14px_34px_rgba(15,23,42,0.05)]">
+          <div className="mb-3 text-xs font-semibold uppercase tracking-wider text-gray-500">By asset class</div>
+          <div className="grid grid-cols-4 gap-3 max-lg:grid-cols-2 max-sm:grid-cols-1">
+            {byModule
+              .filter((m) => m.count)
+              .map((m) => (
+                <button
+                  key={m.key}
+                  type="button"
+                  onClick={() => setView(m.key)}
+                  className="rounded-2xl border border-[#e3dccc] bg-[#FFFFFF] p-4 text-left transition hover:border-[#c9bd9e] hover:shadow-md"
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="text-sm font-semibold text-[#17382b]">{m.title}</div>
+                    <span className="text-[10px] font-semibold text-gray-400">{m.count}</span>
+                  </div>
+                  <div className="mt-2 text-lg font-semibold tabular-nums text-[#17382b]">{fmt(m.latest)}</div>
+                  <div className={`text-xs font-semibold tabular-nums ${m.gain >= 0 ? "text-emerald-700" : "text-red-600"}`}>
+                    {m.gain >= 0 ? "+" : ""}
+                    {fmt(m.gain)}
+                  </div>
+                </button>
+              ))}
+          </div>
+        </section>
+        <section className="rounded-[26px] border border-[#ded6c4] bg-white/90 p-5 shadow-[0_14px_34px_rgba(15,23,42,0.05)]">
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+            <div className="text-xs font-semibold uppercase tracking-wider text-gray-500">
+              All holdings ({sortedRows.length})
+            </div>
+            <div className="flex flex-wrap gap-1">
+              {typeOptions.map((t) => (
+                <button
+                  key={t}
+                  onClick={() => setAllInvestmentsType(t)}
+                  className={`rounded-full px-3 py-1 text-xs font-semibold ${allInvestmentsType === t ? "bg-sage text-white" : "border border-[#e3dccc] text-[#40584c] hover:bg-[#f5efe3]"}`}
+                >
+                  {t}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="overflow-auto rounded-2xl border border-[#e3dccc]">
+            <table className="w-full min-w-[720px] text-sm">
+              <thead className="bg-[#f5efe3] text-xs font-semibold uppercase tracking-wider text-gray-500">
+                <tr>
+                  {sortHeader("Type", "type")}
+                  {sortHeader("Account", "account")}
+                  {sortHeader("Name", "name")}
+                  <th className="text-right">{sortHeader("Invested", "invested")}</th>
+                  <th className="text-right">{sortHeader("Current Value", "latest")}</th>
+                  <th className="text-right">{sortHeader("Gain", "gain")}</th>
+                  <th className="text-right">{sortHeader("Gain %", "gain_pct")}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {sortedRows.map((r) => (
+                  <tr
+                    key={r.record.id}
+                    className="cursor-pointer border-t border-[#ede9df] hover:bg-[#f9f8f4]"
+                    onClick={() =>
+                      setDetail({
+                        moduleKey: r.moduleKey,
+                        record: r.record,
+                        computed: r.computed,
+                        cols: MODULES[r.moduleKey]?.cols || [],
+                        linkedProperty: false,
+                      })
+                    }
+                  >
+                    <td className="px-3 py-2 text-xs font-semibold text-gray-500">{r.type}</td>
+                    <td className="px-3 py-2">{r.account}</td>
+                    <td className="px-3 py-2 font-semibold text-[#17382b]">{r.name}</td>
+                    <td className="px-3 py-2 text-right tabular-nums">{fmt(r.invested)}</td>
+                    <td className="px-3 py-2 text-right tabular-nums">{fmt(r.latest)}</td>
+                    <td className={`px-3 py-2 text-right tabular-nums ${r.gain >= 0 ? "text-emerald-700" : "text-red-600"}`}>
+                      {fmt(r.gain)}
+                    </td>
+                    <td className={`px-3 py-2 text-right tabular-nums ${r.gain >= 0 ? "text-emerald-700" : "text-red-600"}`}>
+                      {pct(r.gainPct)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {!sortedRows.length && <Empty text="No investments yet." />}
+          </div>
+        </section>
+      </div>
     );
   }
   function dashboardModern() {
