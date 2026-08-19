@@ -285,8 +285,12 @@ async function polygonQuote(symbol: string, exchange: string) {
 async function yahooQuote(symbol: string, exchange: string) {
   const resolved = yahooSymbol(symbol, exchange);
   if (!resolved) throw new Error("Ticker missing");
+  // range=1d alone is unreliable for meta.previousClose on some symbols
+  // (particularly indices) -- it can reflect a stale prior session instead
+  // of the actual last trading day's close. Fetch a few days of daily
+  // closes instead and derive previousClose from the real data.
   const res = await fetch(
-    `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(resolved)}?interval=1d&range=1d`,
+    `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(resolved)}?interval=1d&range=5d`,
     {
       headers: {
         "User-Agent": "Mozilla/5.0 AssetManager/1.0",
@@ -297,9 +301,25 @@ async function yahooQuote(symbol: string, exchange: string) {
   );
   if (!res.ok) throw new Error("Yahoo Finance quote failed");
   const data = await res.json();
-  const meta = data?.chart?.result?.[0]?.meta || {};
-  const price = number(meta.regularMarketPrice ?? meta.previousClose);
-  const previousClose = number(meta.previousClose ?? meta.chartPreviousClose);
+  const result = data?.chart?.result?.[0];
+  const meta = result?.meta || {};
+  const timestamps: number[] = result?.timestamp || [];
+  const closes: any[] = result?.indicators?.quote?.[0]?.close || [];
+  const bars = timestamps
+    .map((ts, i) => ({ ts, close: number(closes[i]) }))
+    .filter((bar): bar is { ts: number; close: number } => bar.close !== null);
+  const exchangeTz = meta.exchangeTimezoneName || "Asia/Kolkata";
+  const dateKey = (epochSeconds: number) =>
+    new Date(epochSeconds * 1000).toLocaleDateString("en-CA", { timeZone: exchangeTz });
+  const todayKey = dateKey(Date.now() / 1000);
+  // The daily-bar array may or may not include a partially-formed bar for
+  // today depending on market hours; only drop it if it's actually dated
+  // today, so a genuinely completed last session isn't discarded.
+  const completedBars =
+    bars.length && dateKey(bars[bars.length - 1].ts) === todayKey ? bars.slice(0, -1) : bars;
+  const price = number(meta.regularMarketPrice) ?? bars.at(-1)?.close ?? number(meta.previousClose);
+  const previousClose =
+    completedBars.at(-1)?.close ?? number(meta.previousClose ?? meta.chartPreviousClose);
   return quoteResult(
     resolved,
     price,
