@@ -17,6 +17,13 @@ const MCX_MARKET_WATCH_API =
 const MONEYCONTROL_COMMODITY_URL = "https://www.moneycontrol.com/commodity/";
 const MONEYCONTROL_MCX_API =
   "https://priceapi.moneycontrol.com/technicalCompanyData/commodity/getMajorCommodities?tabName=MCX&deviceType=W";
+// MCX blocks Vercel's IP outright, and the Moneycontrol backup occasionally
+// rate-limits/blocks it too for brief windows. Rather than surfacing a hard
+// error for what's usually a transient blip, keep the last successful
+// response per asset+source and serve that (marked stale) if both sources
+// fail within a reasonable window.
+const LAST_GOOD_BULLION_TTL_MS = 30 * 60 * 1000;
+const lastGoodBullionQuote = new Map<string, { quote: any; savedAt: number }>();
 const symbols: Record<string, string> = {
   gold: "GC=F",
   silver: "SI=F",
@@ -602,19 +609,21 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "Unsupported asset" }, { status: 400 });
   }
 
+  const bullionCacheKey = `${asset}:${source}`;
   try {
     if (asset === "gold" || asset === "silver") {
       const quote = await bullionQuote(asset, source);
-      return NextResponse.json(
-        {
-          asset,
-          ...quote,
-          currency: "INR",
-          unit: asset === "gold" ? "10g" : "kg",
-          time: new Date().toISOString(),
-        },
-        { headers: { "Cache-Control": RESPONSE_CACHE_CONTROL } },
-      );
+      const responseBody = {
+        asset,
+        ...quote,
+        currency: "INR",
+        unit: asset === "gold" ? "10g" : "kg",
+        time: new Date().toISOString(),
+      };
+      lastGoodBullionQuote.set(bullionCacheKey, { quote: responseBody, savedAt: Date.now() });
+      return NextResponse.json(responseBody, {
+        headers: { "Cache-Control": RESPONSE_CACHE_CONTROL },
+      });
     }
     if (asset === "crude") {
       const usdPerBarrel = await yahooPrice(symbol);
@@ -651,6 +660,20 @@ export async function GET(request: Request) {
       { headers: { "Cache-Control": RESPONSE_CACHE_CONTROL } },
     );
   } catch (error: any) {
+    if (asset === "gold" || asset === "silver") {
+      const cached = lastGoodBullionQuote.get(bullionCacheKey);
+      if (cached && Date.now() - cached.savedAt < LAST_GOOD_BULLION_TTL_MS) {
+        return NextResponse.json(
+          {
+            ...cached.quote,
+            stale: true,
+            warning: `MCX/Moneycontrol are temporarily unreachable — showing the last rate fetched ${Math.round((Date.now() - cached.savedAt) / 60000)} min ago.`,
+            time: new Date().toISOString(),
+          },
+          { headers: { "Cache-Control": "no-store, max-age=0" } },
+        );
+      }
+    }
     return NextResponse.json(
       {
         error: error?.message || "Price unavailable",
