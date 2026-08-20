@@ -106,15 +106,27 @@ function quoteResult(
   > = {},
 ): Quote {
   if (price === null) throw new Error("Live price not available");
-  // A real previous close is always positive; treat null/zero/negative the
-  // same way (no usable baseline) so a bad zero can't make "change" jump to
-  // the full price while changePct's own truthy guard shows 0%.
+  // A real previous close is always positive. When a provider explicitly
+  // supplies a zero/negative previousClose alongside its own change value
+  // (e.g. Kotak returning a bad/missing baseline for an index overnight),
+  // that change value is just as untrustworthy as one we'd derive ourselves
+  // -- don't let a provider's own "change" bypass this guard by being
+  // supplied directly. Only trust a supplied change when the provider gave
+  // no previousClose opinion at all (null, not an explicit bad value).
+  const previousCloseKnownBad = previousClose !== null && previousClose <= 0;
   const hasPreviousClose = previousClose !== null && previousClose > 0;
-  const change =
-    suppliedChange ?? (hasPreviousClose ? price - previousClose : 0);
-  const changePct =
-    suppliedChangePct ??
-    (hasPreviousClose ? (change / previousClose) * 100 : 0);
+  // Same failure signature even when previousClose is missing rather than an
+  // explicit zero: a supplied "change" that's essentially the whole price
+  // implies the provider's own baseline was 0/absent for this instrument.
+  const suppliedChangeImpliesZeroBaseline =
+    suppliedChange !== null && price !== 0 && Math.abs(suppliedChange - price) < 0.01;
+  const changeIsBad = previousCloseKnownBad || suppliedChangeImpliesZeroBaseline;
+  const change = changeIsBad
+    ? 0
+    : (suppliedChange ?? (hasPreviousClose ? price - previousClose : 0));
+  const changePct = changeIsBad
+    ? 0
+    : (suppliedChangePct ?? (hasPreviousClose ? (change / previousClose) * 100 : 0));
   return {
     symbol,
     price,
