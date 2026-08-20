@@ -103,11 +103,15 @@ function quoteResult(
   > = {},
 ): Quote {
   if (price === null) throw new Error("Live price not available");
+  // A real previous close is always positive; treat null/zero/negative the
+  // same way (no usable baseline) so a bad zero can't make "change" jump to
+  // the full price while changePct's own truthy guard shows 0%.
+  const hasPreviousClose = previousClose !== null && previousClose > 0;
   const change =
-    suppliedChange ?? (previousClose === null ? 0 : price - previousClose);
+    suppliedChange ?? (hasPreviousClose ? price - previousClose : 0);
   const changePct =
     suppliedChangePct ??
-    (previousClose ? (change / previousClose) * 100 : 0);
+    (hasPreviousClose ? (change / previousClose) * 100 : 0);
   return {
     symbol,
     price,
@@ -307,7 +311,10 @@ async function yahooQuote(symbol: string, exchange: string) {
   const closes: any[] = result?.indicators?.quote?.[0]?.close || [];
   const bars = timestamps
     .map((ts, i) => ({ ts, close: number(closes[i]) }))
-    .filter((bar): bar is { ts: number; close: number } => bar.close !== null);
+    // Yahoo sometimes returns 0 (not null) for a gap/bad data point -- treat
+    // it the same as missing data, not a real close, or a stray zero row
+    // makes "change" jump to the full price with 0% (0 as previousClose).
+    .filter((bar): bar is { ts: number; close: number } => bar.close !== null && bar.close > 0);
   const exchangeTz = meta.exchangeTimezoneName || "Asia/Kolkata";
   const dateKey = (epochSeconds: number) =>
     new Date(epochSeconds * 1000).toLocaleDateString("en-CA", { timeZone: exchangeTz });
