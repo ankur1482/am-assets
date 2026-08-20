@@ -1,7 +1,7 @@
 import crypto from 'crypto';
 import {createClient} from '@supabase/supabase-js';
 
-export type OAuthProvider='upstox'|'google-drive';
+export type OAuthProvider='upstox'|'google-drive'|'kotak';
 
 function adminClient(){
   const url=process.env.NEXT_PUBLIC_SUPABASE_URL;

@@ -1,4 +1,6 @@
 import { NextResponse } from "next/server";
+import { getKotakCredential } from "@/lib/kotak";
+import { authenticateRequest } from "@/lib/serverAuth";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -9,7 +11,7 @@ export const dynamic = "force-dynamic";
 // different-aged snapshots depending on which edge PoP served the request.
 const RESPONSE_CACHE_CONTROL = "no-store, max-age=0, must-revalidate";
 
-type Provider = "twelvedata" | "alphavantage" | "polygon" | "yahoo";
+type Provider = "kotak" | "twelvedata" | "alphavantage" | "polygon" | "yahoo";
 type Quote = {
   symbol: string;
   price: number;
@@ -27,6 +29,7 @@ type Quote = {
 };
 
 const DEFAULT_PROVIDER_ORDER: Provider[] = [
+  "kotak",
   "twelvedata",
   "alphavantage",
   "polygon",
@@ -155,6 +158,120 @@ function yahooSymbol(symbol: string, exchange = "NSE") {
   if (normalizedExchange(exchange) === "BSE") return `${ticker}.BO`;
   if (normalizedExchange(exchange) === "NSE") return `${ticker}.NS`;
   return ticker;
+}
+
+function lookupKey(value: string) {
+  return String(value || "").toUpperCase().replace(/[^A-Z0-9]+/g, "");
+}
+
+// pSymbol -> trading-symbol map, per baseUrl+market. Cached in memory since
+// the scrip master file is a shared instrument list, not per-user data, and
+// only changes (at most) once a day.
+type KotakScripIndex = Map<string, string>;
+const kotakScripCache = new Map<string, Promise<KotakScripIndex>>();
+const KOTAK_SCRIP_TTL_MS = 6 * 60 * 60 * 1000;
+const kotakScripSavedAt = new Map<string, number>();
+
+async function kotakScripMap(baseUrl: string, token: string, market: "NSE" | "BSE") {
+  const cacheKey = `${baseUrl}:${market}`;
+  const savedAt = kotakScripSavedAt.get(cacheKey) || 0;
+  if (!kotakScripCache.has(cacheKey) || Date.now() - savedAt > KOTAK_SCRIP_TTL_MS) {
+    kotakScripSavedAt.set(cacheKey, Date.now());
+    kotakScripCache.set(
+      cacheKey,
+      (async () => {
+        const pathsRes = await fetch(`${baseUrl}/script-details/1.0/masterscrip/file-paths`, {
+          headers: { Authorization: token },
+          cache: "no-store",
+        });
+        if (!pathsRes.ok) throw new Error("Kotak scrip master unavailable");
+        const paths = await pathsRes.json();
+        const files: string[] = paths?.data?.filesPaths || [];
+        const target = market === "NSE" ? /nse_cm.*\.csv$/i : /bse_cm.*\.csv$/i;
+        const fileUrl = files.find((f) => target.test(f));
+        if (!fileUrl) throw new Error(`Kotak ${market} scrip master not found`);
+        const csvRes = await fetch(fileUrl, { cache: "no-store" });
+        if (!csvRes.ok) throw new Error("Kotak scrip master download failed");
+        const csv = await csvRes.text();
+        const lines = csv.split(/\r?\n/).filter(Boolean);
+        if (!lines.length) throw new Error("Kotak scrip master empty");
+        const header = lines[0].split(",").map((h) => h.trim());
+        const symbolIdx = header.indexOf("pSymbol");
+        const tradSymbolIdx = header.indexOf("pTrdSymbol");
+        const map: KotakScripIndex = new Map();
+        if (symbolIdx === -1 || tradSymbolIdx === -1) return map;
+        for (let i = 1; i < lines.length; i++) {
+          const cols = lines[i].split(",");
+          const pSymbol = cols[symbolIdx]?.trim();
+          const tradSymbol = cols[tradSymbolIdx]?.trim();
+          if (!pSymbol || !tradSymbol) continue;
+          map.set(lookupKey(tradSymbol.replace(/-EQ$/i, "")), pSymbol);
+        }
+        return map;
+      })(),
+    );
+  }
+  return kotakScripCache.get(cacheKey)!;
+}
+
+const KOTAK_INDEX_NAMES: Record<string, { name: string; seg: string }> = {
+  BSESN: { name: "SENSEX", seg: "bse_cm" },
+  SENSEX: { name: "SENSEX", seg: "bse_cm" },
+  NSEI: { name: "Nifty 50", seg: "nse_cm" },
+  NIFTY: { name: "Nifty 50", seg: "nse_cm" },
+  NIFTY50: { name: "Nifty 50", seg: "nse_cm" },
+  NSEBANK: { name: "Nifty Bank", seg: "nse_cm" },
+  BANKNIFTY: { name: "Nifty Bank", seg: "nse_cm" },
+  NIFTYBANK: { name: "Nifty Bank", seg: "nse_cm" },
+};
+
+async function kotakQuote(symbol: string, exchange: string, userId?: string) {
+  if (!userId) throw new Error("not configured");
+  const cred = await getKotakCredential(userId);
+  if (!cred) throw new Error("not configured");
+  let query: string;
+  if (isIndexExchange(exchange)) {
+    const found = KOTAK_INDEX_NAMES[lookupKey(symbol)];
+    if (!found) throw new Error("Kotak index not found");
+    query = `${found.seg}|${encodeURIComponent(found.name)}`;
+  } else if (isIndianExchange(exchange)) {
+    const market = normalizedExchange(exchange) === "BSE" ? "BSE" : "NSE";
+    const map = await kotakScripMap(cred.baseUrl, cred.token, market);
+    const pSymbol = map.get(lookupKey(symbol));
+    if (!pSymbol) throw new Error("Kotak instrument not found");
+    query = `${market === "NSE" ? "nse_cm" : "bse_cm"}|${pSymbol}`;
+  } else {
+    throw new Error("unsupported market");
+  }
+  const res = await fetch(
+    `${cred.baseUrl}/script-details/1.0/quotes/neosymbol/${query}/all`,
+    { headers: { Authorization: cred.token, Accept: "application/json" }, cache: "no-store" },
+  );
+  const data = await res.json().catch(() => null);
+  if (!res.ok) throw new Error(data?.emsg || data?.message || "Kotak quote failed");
+  const row = Array.isArray(data) ? data[0] : data?.data?.[0];
+  if (!row) throw new Error("Kotak quote unavailable");
+  const price = number(row.ltp);
+  const change = number(row.change);
+  const changePct = number(row.per_change);
+  const previousClose = number(row?.ohlc?.close);
+  return quoteResult(
+    row.display_symbol || symbol,
+    price,
+    previousClose,
+    change,
+    changePct,
+    "INR",
+    "Kotak Neo live quote",
+    "exchange snapshot",
+    row.lstup_time ? new Date(Number(row.lstup_time) * 1000).toISOString() : undefined,
+    {
+      dayHigh: number(row?.ohlc?.high),
+      dayLow: number(row?.ohlc?.low),
+      fiftyTwoWeekHigh: number(row.year_high),
+      fiftyTwoWeekLow: number(row.year_low),
+    },
+  );
 }
 
 async function twelveDataQuote(symbol: string, exchange: string) {
@@ -346,7 +463,8 @@ async function yahooQuote(symbol: string, exchange: string) {
   );
 }
 
-async function fetchProvider(provider: Provider, symbol: string, exchange: string) {
+async function fetchProvider(provider: Provider, symbol: string, exchange: string, userId?: string) {
+  if (provider === "kotak") return kotakQuote(symbol, exchange, userId);
   if (provider === "twelvedata") return twelveDataQuote(symbol, exchange);
   if (provider === "alphavantage") return alphaVantageQuote(symbol, exchange);
   if (provider === "polygon") return polygonQuote(symbol, exchange);
@@ -355,6 +473,7 @@ async function fetchProvider(provider: Provider, symbol: string, exchange: strin
 
 export async function GET(request: Request) {
   pruneQuoteCache();
+  const auth = await authenticateRequest(request);
   const { searchParams } = new URL(request.url);
   const symbol = searchParams.get("symbol") || "";
   const exchange = searchParams.get("exchange") || "NSE";
@@ -380,7 +499,7 @@ export async function GET(request: Request) {
   const attempted: string[] = [];
   for (const provider of providerOrder(preferredProvider)) {
     try {
-      const quote = await fetchProvider(provider, symbol, exchange);
+      const quote = await fetchProvider(provider, symbol, exchange, auth?.user.id);
       cacheQuote(cacheKey, { quote, attempted: [...attempted], savedAt: Date.now() });
       return NextResponse.json(
         { ...quote, attempted, time: new Date().toISOString() },

@@ -212,6 +212,7 @@ const allViews = [...views, ["admin", "Admin", "Admin Console"]];
 const INVESTMENT_SOURCE_OPTIONS: Record<string, { label: string; value: string; note: string }[]> = {
   stocks: [
     { label: "Auto fallback", value: "auto", note: "Configured order, then Yahoo" },
+    { label: "Kotak Neo", value: "kotak", note: "Live NSE/BSE where token is set" },
     { label: "Twelve Data", value: "twelvedata", note: "Quote API, often EOD for India" },
     { label: "Alpha Vantage", value: "alphavantage", note: "Global quote endpoint" },
     { label: "Polygon", value: "polygon", note: "US markets only" },
@@ -977,6 +978,10 @@ export default function AssetManagerApp() {
     [docUploadNotes, setDocUploadNotes] = useState(""),
     [docUploading, setDocUploading] = useState(false),
     [googleDriveConnected, setGoogleDriveConnected] = useState(false),
+    [kotakConnected, setKotakConnected] = useState(false),
+    [kotakTokenInput, setKotakTokenInput] = useState(""),
+    [kotakBaseUrlInput, setKotakBaseUrlInput] = useState(""),
+    [kotakSaving, setKotakSaving] = useState(false),
     [bullionMarket, setBullionMarket] = useState<any>(null),
     [localBullionRate, setLocalBullionRate] = useState<any>(null),
     [bullionPriceStatus, setBullionPriceStatus] = useState<
@@ -1461,6 +1466,7 @@ export default function AssetManagerApp() {
   useEffect(() => {
     if (user?.id) {
       refreshGoogleDriveStatus();
+      refreshKotakStatus();
     }
   }, [user?.id]);
   useEffect(() => {
@@ -2123,6 +2129,55 @@ export default function AssetManagerApp() {
     } catch {
       setGoogleDriveConnected(false);
     }
+  }
+  async function refreshKotakStatus() {
+    try {
+      const res = await fetch("/api/kotak/status", {
+        headers: { Authorization: `Bearer ${session?.access_token || ""}` },
+      });
+      const json = await res.json();
+      setKotakConnected(!!json.connected);
+      if (json.baseUrl) setKotakBaseUrlInput((prev) => prev || json.baseUrl);
+    } catch {
+      setKotakConnected(false);
+    }
+  }
+  async function saveKotakCredential() {
+    if (!kotakTokenInput.trim() || !kotakBaseUrlInput.trim()) {
+      setToast("Enter both the access token and base URL");
+      return;
+    }
+    setKotakSaving(true);
+    try {
+      const res = await fetch("/api/kotak/status", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${session?.access_token || ""}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          token: kotakTokenInput.trim(),
+          baseUrl: kotakBaseUrlInput.trim(),
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Could not save Kotak token");
+      setKotakConnected(true);
+      setKotakTokenInput("");
+      setToast("Kotak token saved");
+    } catch (e: any) {
+      setToast(e?.message || "Could not save Kotak token");
+    } finally {
+      setKotakSaving(false);
+    }
+  }
+  async function disconnectKotak() {
+    await fetch("/api/kotak/status", {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${session?.access_token || ""}` },
+    });
+    setKotakConnected(false);
+    setToast("Kotak disconnected");
   }
   async function refreshBullionMarket() {
     setBullionPriceStatus("loading");
@@ -12555,6 +12610,48 @@ export default function AssetManagerApp() {
             >
               Reset Sources
             </button>
+          </div>
+          <div className="mb-4 rounded-2xl border border-[#e3dccc] bg-[#fffaf0] p-4">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <div className="text-sm font-semibold text-[#17382b]">Kotak Neo live NSE/BSE quotes</div>
+                <p className="mt-1 max-w-xl text-xs text-gray-500">
+                  Kotak's access token has to be regenerated with your MPIN roughly once a day.
+                  Paste today's token here (from NEO app → Invest → Trade API → API Dashboard) —
+                  it's stored encrypted and never used to place trades, only to read quotes.
+                </p>
+              </div>
+              <span
+                className={`shrink-0 rounded-full px-3 py-1 text-xs font-semibold ${kotakConnected ? "bg-emerald-50 text-emerald-700" : "border border-[#e1d8c8] text-[#40584c]"}`}
+              >
+                {kotakConnected ? "Token set" : "Not set"}
+              </span>
+            </div>
+            <div className="mt-3 grid gap-2 sm:grid-cols-[1fr_1fr_auto]">
+              <input
+                className="input"
+                type="password"
+                placeholder="Access token"
+                value={kotakTokenInput}
+                onChange={(e) => setKotakTokenInput(e.target.value)}
+              />
+              <input
+                className="input"
+                placeholder="Base URL (e.g. https://cis.kotaksecurities.com)"
+                value={kotakBaseUrlInput}
+                onChange={(e) => setKotakBaseUrlInput(e.target.value)}
+              />
+              <div className="flex gap-2">
+                <button className="btn-primary" disabled={kotakSaving} onClick={saveKotakCredential}>
+                  {kotakSaving ? "Saving…" : "Save"}
+                </button>
+                {kotakConnected && (
+                  <button className="btn" onClick={disconnectKotak}>
+                    Clear
+                  </button>
+                )}
+              </div>
+            </div>
           </div>
           <div className="grid gap-3 lg:grid-cols-2">
             {Object.entries(INVESTMENT_SOURCE_OPTIONS).map(([moduleKey, options]) => {
