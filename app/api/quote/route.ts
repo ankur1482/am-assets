@@ -177,39 +177,48 @@ async function kotakScripMap(baseUrl: string, token: string, market: "NSE" | "BS
   const savedAt = kotakScripSavedAt.get(cacheKey) || 0;
   if (!kotakScripCache.has(cacheKey) || Date.now() - savedAt > KOTAK_SCRIP_TTL_MS) {
     kotakScripSavedAt.set(cacheKey, Date.now());
-    kotakScripCache.set(
-      cacheKey,
-      (async () => {
-        const pathsRes = await fetch(`${baseUrl}/script-details/1.0/masterscrip/file-paths`, {
-          headers: { Authorization: token },
-          cache: "no-store",
-        });
-        if (!pathsRes.ok) throw new Error("Kotak scrip master unavailable");
-        const paths = await pathsRes.json();
-        const files: string[] = paths?.data?.filesPaths || [];
-        const target = market === "NSE" ? /nse_cm.*\.csv$/i : /bse_cm.*\.csv$/i;
-        const fileUrl = files.find((f) => target.test(f));
-        if (!fileUrl) throw new Error(`Kotak ${market} scrip master not found`);
-        const csvRes = await fetch(fileUrl, { cache: "no-store" });
-        if (!csvRes.ok) throw new Error("Kotak scrip master download failed");
-        const csv = await csvRes.text();
-        const lines = csv.split(/\r?\n/).filter(Boolean);
-        if (!lines.length) throw new Error("Kotak scrip master empty");
-        const header = lines[0].split(",").map((h) => h.trim());
-        const symbolIdx = header.indexOf("pSymbol");
-        const tradSymbolIdx = header.indexOf("pTrdSymbol");
-        const map: KotakScripIndex = new Map();
-        if (symbolIdx === -1 || tradSymbolIdx === -1) return map;
-        for (let i = 1; i < lines.length; i++) {
-          const cols = lines[i].split(",");
-          const pSymbol = cols[symbolIdx]?.trim();
-          const tradSymbol = cols[tradSymbolIdx]?.trim();
-          if (!pSymbol || !tradSymbol) continue;
-          map.set(lookupKey(tradSymbol.replace(/-EQ$/i, "")), pSymbol);
-        }
-        return map;
-      })(),
-    );
+    const attempt = (async () => {
+      const pathsRes = await fetch(`${baseUrl}/script-details/1.0/masterscrip/file-paths`, {
+        headers: { Authorization: token },
+        cache: "no-store",
+      });
+      if (!pathsRes.ok) {
+        const bodyText = await pathsRes.text().catch(() => "");
+        throw new Error(
+          `Kotak scrip master returned ${pathsRes.status}${bodyText ? `: ${bodyText.slice(0, 200)}` : ""}`,
+        );
+      }
+      const paths = await pathsRes.json();
+      const files: string[] = paths?.data?.filesPaths || [];
+      const target = market === "NSE" ? /nse_cm.*\.csv$/i : /bse_cm.*\.csv$/i;
+      const fileUrl = files.find((f) => target.test(f));
+      if (!fileUrl) throw new Error(`Kotak ${market} scrip master not found`);
+      const csvRes = await fetch(fileUrl, { cache: "no-store" });
+      if (!csvRes.ok) throw new Error(`Kotak scrip master download returned ${csvRes.status}`);
+      const csv = await csvRes.text();
+      const lines = csv.split(/\r?\n/).filter(Boolean);
+      if (!lines.length) throw new Error("Kotak scrip master empty");
+      const header = lines[0].split(",").map((h) => h.trim());
+      const symbolIdx = header.indexOf("pSymbol");
+      const tradSymbolIdx = header.indexOf("pTrdSymbol");
+      const map: KotakScripIndex = new Map();
+      if (symbolIdx === -1 || tradSymbolIdx === -1) return map;
+      for (let i = 1; i < lines.length; i++) {
+        const cols = lines[i].split(",");
+        const pSymbol = cols[symbolIdx]?.trim();
+        const tradSymbol = cols[tradSymbolIdx]?.trim();
+        if (!pSymbol || !tradSymbol) continue;
+        map.set(lookupKey(tradSymbol.replace(/-EQ$/i, "")), pSymbol);
+      }
+      return map;
+    })();
+    // Don't let a failed attempt block retries for the full TTL -- only a
+    // successful resolution should be cached that long.
+    attempt.catch(() => {
+      kotakScripSavedAt.delete(cacheKey);
+      kotakScripCache.delete(cacheKey);
+    });
+    kotakScripCache.set(cacheKey, attempt);
   }
   return kotakScripCache.get(cacheKey)!;
 }

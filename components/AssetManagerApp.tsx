@@ -11407,9 +11407,9 @@ export default function AssetManagerApp() {
             typeof left === "string" ? String(left).localeCompare(String(right)) : num(left) - num(right);
         return allInvestmentsSort.direction === "asc" ? comparison : -comparison;
       }),
-      sortHeader = (label: string, key: typeof allInvestmentsSort.key) => (
+      sortHeader = (label: string, key: typeof allInvestmentsSort.key, align: "left" | "right" = "left") => (
         <th
-          className="cursor-pointer select-none text-left"
+          className={`cursor-pointer select-none ${align === "right" ? "text-right" : "text-left"}`}
           onClick={() =>
             setAllInvestmentsSort((prev) => ({
               key,
@@ -11503,10 +11503,10 @@ export default function AssetManagerApp() {
                   {sortHeader("Type", "type")}
                   {sortHeader("Account", "account")}
                   {sortHeader("Name", "name")}
-                  <th className="text-right">{sortHeader("Invested", "invested")}</th>
-                  <th className="text-right">{sortHeader("Current Value", "latest")}</th>
-                  <th className="text-right">{sortHeader("Gain", "gain")}</th>
-                  <th className="text-right">{sortHeader("Gain %", "gain_pct")}</th>
+                  {sortHeader("Invested", "invested", "right")}
+                  {sortHeader("Current Value", "latest", "right")}
+                  {sortHeader("Gain", "gain", "right")}
+                  {sortHeader("Gain %", "gain_pct", "right")}
                 </tr>
               </thead>
               <tbody>
