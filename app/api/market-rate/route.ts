@@ -510,6 +510,13 @@ async function moneycontrolBullionQuote(
     parseMcxTimestamp(firstValue(detail, ["lastupdEpoch", "lastupdTime"])) ||
     parseMcxTimestamp(listPayload?.data?.lastUpdated) ||
     new Date().toISOString();
+  // Moneycontrol's own feed has no 52-week fields at all; derive them from a
+  // year of Yahoo futures history. Best-effort -- if Yahoo is also
+  // unreachable, fall back to null rather than failing the whole quote.
+  const yearRange = await yahoo52WeekRangeInr(
+    asset === "gold" ? "GC=F" : "SI=F",
+    asset === "gold" ? 10 : 1000,
+  ).catch(() => ({ low: null, high: null }));
   const common = {
     symbol,
     instrument: "FUTCOM" as const,
@@ -522,10 +529,10 @@ async function moneycontrolBullionQuote(
     todayHigh: firstNumber(detail, ["highPrice", "High", "dayHigh"]),
     dayLow: firstNumber(detail, ["lowPrice", "Low", "dayLow"]),
     dayHigh: firstNumber(detail, ["highPrice", "High", "dayHigh"]),
-    week52Low: null,
-    week52High: null,
-    fiftyTwoWeekLow: null,
-    fiftyTwoWeekHigh: null,
+    week52Low: yearRange.low,
+    week52High: yearRange.high,
+    fiftyTwoWeekLow: yearRange.low,
+    fiftyTwoWeekHigh: yearRange.high,
     updatedAt,
     lastUpdate: updatedAt,
     provider: "Moneycontrol MCX active-contract backup",
@@ -594,6 +601,29 @@ async function yahooPrice(symbol: string) {
   const price = Number(meta.regularMarketPrice ?? meta.previousClose);
   if (!Number.isFinite(price)) throw new Error("Price unavailable");
   return price;
+}
+
+// Moneycontrol's MCX backup feed (used whenever MCX itself blocks Vercel's
+// IP, i.e. almost always in production) doesn't include 52-week high/low at
+// all -- confirmed empty on their commodityData response. Derive it
+// ourselves from a year of Yahoo futures history instead of showing nothing.
+async function yahoo52WeekRangeInr(futuresSymbol: "GC=F" | "SI=F", unitMultiplier: number) {
+  const [chartRes, usdInr] = await Promise.all([
+    fetch(
+      `https://query1.finance.yahoo.com/v8/finance/chart/${futuresSymbol}?interval=1wk&range=1y`,
+      {
+        headers: { Accept: "application/json", "User-Agent": "Mozilla/5.0 AssetManager/1.0" },
+        cache: "no-store",
+      },
+    ),
+    yahooPrice("USDINR=X"),
+  ]);
+  if (!chartRes.ok) throw new Error("52-week range request failed");
+  const closes: any[] = (await chartRes.json())?.chart?.result?.[0]?.indicators?.quote?.[0]?.close || [];
+  const valid = closes.map((c) => Number(c)).filter((c) => Number.isFinite(c));
+  if (!valid.length) throw new Error("52-week range unavailable");
+  const toInr = (usdPerOz: number) => (usdPerOz * usdInr * unitMultiplier) / TROY_OZ_GRAMS;
+  return { low: toInr(Math.min(...valid)), high: toInr(Math.max(...valid)) };
 }
 
 export async function GET(request: Request) {
