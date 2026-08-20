@@ -226,7 +226,6 @@ const KOTAK_INDEX_NAMES: Record<string, { name: string; seg: string }> = {
 };
 
 async function kotakQuote(symbol: string, exchange: string, userId?: string) {
-  if (!userId) throw new Error("not configured");
   const cred = await getKotakCredential(userId);
   if (!cred) throw new Error("not configured");
   let query: string;
