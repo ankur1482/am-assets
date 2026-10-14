@@ -35,7 +35,7 @@ const DEFAULT_PROVIDER_ORDER: Provider[] = [
   "polygon",
   "yahoo",
 ];
-const QUOTE_CACHE_TTL_MS = 15 * 1000;
+const QUOTE_CACHE_TTL_MS = 10 * 1000;
 const QUOTE_STALE_TTL_MS = 2 * 60 * 1000;
 const QUOTE_CACHE_MAX_ENTRIES = 500;
 

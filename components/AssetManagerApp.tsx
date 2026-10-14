@@ -728,7 +728,7 @@ const isCompanyPfType = (value: any) =>
   /^(companypf|pf)$/.test(key(String(value || "")));
 const NET_WORTH_SNAPSHOT_MODULE = "netWorthSnapshot";
 const INVESTMENT_PERIOD_SNAPSHOT_MODULE = "investmentPeriodSnapshot";
-const AUTO_REFRESH_MS = 60 * 1000;
+const AUTO_REFRESH_MS = 20 * 1000;
 const LIVE_DISPLAY_REFRESH_MS = AUTO_REFRESH_MS;
 const SAVED_RATE_REFRESH_MS = AUTO_REFRESH_MS;
 const IST_TIME_ZONE = "Asia/Kolkata";
