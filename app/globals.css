@@ -2168,15 +2168,6 @@ form,
   --app-shadow-soft: 0 6px 18px rgba(15, 23, 42, 0.05);
 }
 
-/* Base background */
-html,
-body {
-  background:
-    radial-gradient(circle at top left, rgba(209, 250, 229, 0.55), transparent 30%),
-    linear-gradient(135deg, #fbfaf4 0%, #f3f8f0 52%, #eef7ef 100%) !important;
-  color: var(--app-text);
-}
-
 /* Normal font weight again */
 body {
   font-weight: 500;
@@ -2196,20 +2187,20 @@ a {
 
 /* Headings - professional, not too thick */
 h1 {
-  color: var(--app-green-dark) !important;
+  color: var(--lux-ink, var(--app-green-dark)) !important;
   font-weight: 750 !important;
   letter-spacing: -0.035em;
 }
 
 h2 {
-  color: var(--app-green-dark) !important;
+  color: var(--lux-ink, var(--app-green-dark)) !important;
   font-weight: 720 !important;
   letter-spacing: -0.025em;
 }
 
 h3,
 h4 {
-  color: var(--app-green-dark) !important;
+  color: var(--lux-ink, var(--app-green-dark)) !important;
   font-weight: 700 !important;
 }
 
@@ -2244,11 +2235,23 @@ button,
   border-radius: 999px !important;
   font-weight: 650 !important;
   box-shadow: none !important;
+  transition: transform 150ms ease, box-shadow 150ms ease, background 150ms ease, border-color 150ms ease;
 }
 
 button:hover,
 [role="button"]:hover {
   transform: translateY(-1px);
+}
+
+button:active,
+[role="button"]:active {
+  transform: translateY(0);
+}
+
+button:focus-visible,
+[role="button"]:focus-visible {
+  outline: 2px solid var(--lux-plum-3, rgba(15, 95, 70, 0.45));
+  outline-offset: 2px;
 }
 
 /* Inputs */
@@ -2259,14 +2262,18 @@ textarea {
   border-color: rgba(15, 95, 70, 0.18) !important;
   background: #ffffff !important;
   box-shadow: none !important;
+  transition: border-color 150ms ease, box-shadow 150ms ease;
 }
 
 input:focus,
 select:focus,
-textarea:focus {
+textarea:focus,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
   outline: none !important;
   border-color: rgba(15, 95, 70, 0.45) !important;
-  box-shadow: 0 0 0 3px rgba(15, 95, 70, 0.08) !important;
+  box-shadow: 0 0 0 3px rgba(15, 95, 70, 0.16) !important;
 }
 
 /* Table clean-up */
@@ -2437,10 +2444,24 @@ body {
     linear-gradient(180deg, #fffdf8 0%, #f9edda 100%) !important;
 }
 
+@keyframes app-toast-in {
+  from { opacity: 0; transform: translate(-50%, 10px); }
+  to { opacity: 1; transform: translate(-50%, 0); }
+}
+
+.app-toast {
+  animation: app-toast-in 180ms ease-out;
+}
+
 .card, .card-gradient, .kpi-card, .investment-table, .table-smooth, .stock-holdings-table {
   border-color: rgba(198,150,50,.22) !important;
   box-shadow: var(--lux-shadow-soft), var(--lux-inner) !important;
   backdrop-filter: blur(22px) saturate(140%) !important;
+  transition: box-shadow 180ms ease, transform 180ms ease;
+}
+
+.card:hover, .kpi-card:hover {
+  box-shadow: var(--lux-shadow), var(--lux-inner) !important;
 }
 
 .btn, .btn-danger {
@@ -3111,4 +3132,354 @@ body {
   .auth-card {
     padding: 2rem !important;
   }
+}
+
+/* =========================================================
+   MODERN FINTECH THEME
+   Appended last so it wins the cascade over the legacy
+   plum/gold "lux" system and the Amazon-styled auth screen
+   above, without needing to rewrite every rule underneath.
+   Flat neutral surfaces, one confident indigo accent,
+   sharp-ish corners, no gradients/blur.
+   ========================================================= */
+:root {
+  --ft-ink: #0f172a;
+  --ft-muted: #64748b;
+  --ft-bg: #f8fafc;
+  --ft-surface: #ffffff;
+  --ft-border: #e2e8f0;
+  --ft-border-strong: #cbd5e1;
+  --ft-accent: #0071e3;
+  --ft-accent-hover: #0077ed;
+  --ft-accent-soft: #e8f2ff;
+  --ft-green: #059669;
+  --ft-green-soft: #ecfdf5;
+  --ft-red: #dc2626;
+  --ft-red-soft: #fef2f2;
+  --ft-radius-card: 14px;
+  --ft-radius-control: 10px;
+  --ft-shadow: 0 1px 2px rgba(15, 23, 42, .04), 0 8px 24px rgba(15, 23, 42, .06);
+  --ft-shadow-hover: 0 1px 2px rgba(15, 23, 42, .05), 0 14px 32px rgba(15, 23, 42, .09);
+}
+
+html, body {
+  background: var(--ft-bg) !important;
+  color: var(--ft-ink) !important;
+}
+
+.app-shell {
+  background: var(--ft-bg) !important;
+}
+
+h1, h2, h3, h4 {
+  color: var(--ft-ink) !important;
+}
+
+aside {
+  background: var(--ft-surface) !important;
+  border-right: 1px solid var(--ft-border) !important;
+  box-shadow: none !important;
+}
+
+aside a:hover,
+aside button:hover {
+  background: var(--ft-accent-soft) !important;
+  color: var(--ft-accent) !important;
+}
+
+.card, .card-gradient, .kpi-card, .investment-table, .table-smooth, .stock-holdings-table {
+  border: 1px solid var(--ft-border) !important;
+  background: var(--ft-surface) !important;
+  border-radius: var(--ft-radius-card) !important;
+  box-shadow: var(--ft-shadow) !important;
+  backdrop-filter: none !important;
+}
+
+.card:hover, .kpi-card:hover {
+  box-shadow: var(--ft-shadow-hover) !important;
+}
+
+button,
+[role="button"] {
+  border-radius: var(--ft-radius-control) !important;
+}
+
+.btn, .btn-danger {
+  border: 1px solid var(--ft-border-strong) !important;
+  background: var(--ft-surface) !important;
+  color: var(--ft-ink) !important;
+  border-radius: var(--ft-radius-control) !important;
+  box-shadow: none !important;
+}
+
+.btn:hover {
+  background: var(--ft-bg) !important;
+  border-color: #94a3b8 !important;
+}
+
+.btn-danger {
+  color: var(--ft-red) !important;
+  border-color: #fecaca !important;
+}
+
+.btn-danger:hover {
+  background: var(--ft-red-soft) !important;
+}
+
+.btn-primary {
+  border: 1px solid var(--ft-accent) !important;
+  background: var(--ft-accent) !important;
+  color: #fff !important;
+  border-radius: var(--ft-radius-control) !important;
+  box-shadow: 0 1px 2px rgba(79, 70, 229, .15), 0 8px 20px rgba(79, 70, 229, .22) !important;
+}
+
+.btn-primary:hover {
+  background: var(--ft-accent-hover) !important;
+  border-color: var(--ft-accent-hover) !important;
+}
+
+input, select, textarea, .field-input {
+  border-radius: var(--ft-radius-control) !important;
+  border-color: var(--ft-border-strong) !important;
+  background: var(--ft-surface) !important;
+  color: var(--ft-ink) !important;
+  box-shadow: none !important;
+}
+
+input:focus, select:focus, textarea:focus, .field-input:focus,
+input:focus-visible, select:focus-visible, textarea:focus-visible {
+  outline: none !important;
+  border-color: var(--ft-accent) !important;
+  box-shadow: 0 0 0 3px var(--ft-accent-soft) !important;
+}
+
+button:focus-visible,
+[role="button"]:focus-visible {
+  outline: 2px solid var(--ft-accent) !important;
+  outline-offset: 2px;
+}
+
+.investment-table thead th,
+.stock-holdings-table thead th,
+.table-smooth thead th,
+.overflow-auto table thead th,
+.property-holdings-table thead th:first-child,
+.property-holdings-table thead th:nth-child(2) {
+  background: #f8fafc !important;
+  color: var(--ft-muted) !important;
+  border-bottom-color: var(--ft-border) !important;
+  font-weight: 700 !important;
+  letter-spacing: .06em !important;
+}
+
+.investment-table tbody tr:nth-child(even), .stock-holdings-table tbody tr:nth-child(even) {
+  background: #f8fafc !important;
+}
+
+.investment-table tbody tr:hover, .stock-holdings-table tbody tr:hover, .table-smooth tbody tr:hover {
+  background: var(--ft-accent-soft) !important;
+  box-shadow: inset 3px 0 0 var(--ft-accent) !important;
+}
+
+.app-toast {
+  background: var(--ft-ink) !important;
+}
+
+.desktop-market-card {
+  border: 1px solid var(--ft-border) !important;
+  background: var(--ft-surface) !important;
+  box-shadow: var(--ft-shadow) !important;
+}
+
+.desktop-market-card::before {
+  background: var(--ft-accent) !important;
+}
+
+.desktop-market-pair,
+.phone-property-values > div {
+  border: 1px solid var(--ft-border) !important;
+  background: var(--ft-bg) !important;
+}
+
+.desktop-market-pair.gain-up {
+  background: var(--ft-green-soft) !important;
+}
+
+.desktop-market-pair.gain-down {
+  background: var(--ft-red-soft) !important;
+}
+
+.desktop-market-prices .price-up {
+  border: 1px solid #a7f3d0 !important;
+  color: var(--ft-green) !important;
+  background: var(--ft-green-soft) !important;
+}
+
+.desktop-market-prices .price-down {
+  border: 1px solid #fecaca !important;
+  color: var(--ft-red) !important;
+  background: var(--ft-red-soft) !important;
+}
+
+.desktop-market-prices .price-neutral {
+  border: 1px solid var(--ft-border) !important;
+  color: var(--ft-muted) !important;
+  background: var(--ft-bg) !important;
+}
+
+.phone-property-card {
+  border: 1px solid var(--ft-border) !important;
+  border-left: 4px solid var(--ft-accent) !important;
+  background: var(--ft-surface) !important;
+  box-shadow: var(--ft-shadow) !important;
+}
+
+.phone-property-status {
+  border: 1px solid var(--ft-accent) !important;
+  background: var(--ft-accent-soft) !important;
+  color: var(--ft-accent) !important;
+}
+
+.mobile-tabbar.mobile-top-nav {
+  border: 1px solid var(--ft-border) !important;
+  background: var(--ft-surface) !important;
+  box-shadow: var(--ft-shadow) !important;
+  backdrop-filter: none !important;
+}
+
+.mobile-tabbar.mobile-top-nav .mobile-nav-back {
+  border: 1px solid var(--ft-border) !important;
+  background: var(--ft-bg) !important;
+  color: var(--ft-ink) !important;
+}
+
+/* Auth screen: drop the Amazon-styled navy/orange look for the same
+   neutral + indigo system used everywhere else. */
+.auth-shell {
+  background: var(--ft-bg) !important;
+  color: var(--ft-ink) !important;
+}
+
+.auth-shell::before {
+  display: none;
+}
+
+.auth-card {
+  border: 1px solid var(--ft-border) !important;
+  border-radius: var(--ft-radius-card) !important;
+  background: var(--ft-surface) !important;
+  box-shadow: var(--ft-shadow) !important;
+}
+
+.auth-card h1 {
+  color: var(--ft-ink) !important;
+}
+
+.auth-brand-mark {
+  border: none !important;
+  border-radius: var(--ft-radius-control) !important;
+  color: #fff !important;
+  background: var(--ft-accent) !important;
+}
+
+.auth-card .field-label {
+  color: var(--ft-ink) !important;
+}
+
+.auth-card .field-input {
+  border-color: var(--ft-border-strong) !important;
+  border-radius: var(--ft-radius-control) !important;
+  background: var(--ft-surface) !important;
+}
+
+.auth-card .field-input:focus {
+  border-color: var(--ft-accent) !important;
+  box-shadow: 0 0 0 3px var(--ft-accent-soft) !important;
+}
+
+.auth-card .btn-primary {
+  border-color: var(--ft-accent) !important;
+  border-radius: var(--ft-radius-control) !important;
+  color: #fff !important;
+  background: var(--ft-accent) !important;
+}
+
+.auth-card .btn-primary:hover {
+  border-color: var(--ft-accent-hover) !important;
+  background: var(--ft-accent-hover) !important;
+}
+
+.auth-card .btn {
+  border-color: var(--ft-border-strong) !important;
+  border-radius: var(--ft-radius-control) !important;
+  color: var(--ft-ink) !important;
+  background: var(--ft-surface) !important;
+}
+
+.auth-shell {
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, sans-serif !important;
+}
+
+/* Most of the app (dashboard/stocks/bullion) is built from raw Tailwind
+   utility classes rather than the .card/.btn classes above, so the theme
+   needs to reach those directly too. */
+body {
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, sans-serif !important;
+}
+
+main .border,
+main [class*=" border-"],
+main [class^="border-"] {
+  border-color: var(--ft-border) !important;
+}
+
+main .bg-white {
+  background-color: var(--ft-surface) !important;
+}
+
+main .rounded-3xl {
+  border-radius: 16px !important;
+}
+
+main .rounded-2xl {
+  border-radius: var(--ft-radius-card) !important;
+}
+
+main .rounded-xl {
+  border-radius: var(--ft-radius-control) !important;
+}
+
+main .shadow-sm,
+main .shadow-md,
+main .shadow-xl,
+main .shadow-soft {
+  box-shadow: var(--ft-shadow) !important;
+}
+
+main table thead th {
+  background: #f8fafc !important;
+  color: var(--ft-muted) !important;
+  border-color: var(--ft-border) !important;
+}
+
+main table tbody tr:hover {
+  background: var(--ft-accent-soft) !important;
+}
+
+/* Brand/accent utility classes used for icons, links and highlights
+   across the dashboard. */
+main .text-sage,
+main .text-leaf {
+  color: var(--ft-accent) !important;
+}
+
+main .bg-sage,
+main .bg-leaf {
+  background-color: var(--ft-accent) !important;
+}
+
+main .border-sage,
+main .border-leaf {
+  border-color: var(--ft-accent) !important;
 }

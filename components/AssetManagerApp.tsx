@@ -288,8 +288,8 @@ const APP_FONTS = [
   { label: "Mono", value: "'SFMono-Regular', Consolas, 'Liberation Mono', monospace" },
 ];
 const DEFAULT_APPEARANCE = {
-  theme: "amazon",
-  font: "Arial, Helvetica, ui-sans-serif, system-ui, sans-serif",
+  theme: "studio",
+  font: "Inter, ui-sans-serif, system-ui, sans-serif",
   fontSize: 16,
 };
 const STOCKS = [
@@ -963,10 +963,10 @@ export default function AssetManagerApp() {
         return {
           ...DEFAULT_APPEARANCE,
           ...saved,
-          // Retire removed themes safely; existing users land on Marketplace.
+          // Retire removed themes safely; existing users land on Studio Store.
           theme: APP_THEMES.some((theme) => theme.id === saved.theme)
             ? saved.theme
-            : "amazon",
+            : "studio",
         };
       } catch {
         return DEFAULT_APPEARANCE;
@@ -7205,8 +7205,20 @@ export default function AssetManagerApp() {
         {corporateAction && corporateActionModal()}
         {accModal && accountModal()}
         {toast && (
-          <div className="fixed bottom-6 left-1/2 z-50 -translate-x-1/2 rounded-full bg-sage px-5 py-3 text-sm font-bold text-white shadow-2xl">
-            {toast}
+          <div
+            role="status"
+            aria-live="polite"
+            className="app-toast fixed bottom-6 left-1/2 z-50 -translate-x-1/2 flex items-center gap-3 rounded-full bg-sage px-5 py-3 text-sm font-bold text-white shadow-2xl"
+          >
+            <span>{toast}</span>
+            <button
+              type="button"
+              aria-label="Dismiss notification"
+              onClick={() => setToast("")}
+              className="-mr-1 rounded-full p-1 text-white/80 hover:text-white hover:bg-white/15"
+            >
+              ✕
+            </button>
           </div>
         )}
 
