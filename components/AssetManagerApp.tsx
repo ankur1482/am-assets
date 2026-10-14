@@ -10038,7 +10038,13 @@ export default function AssetManagerApp() {
                   investedLabelY =
                     investedY + 18 > plotTop + plotHeight
                       ? investedY - 10
-                      : investedY + 18;
+                      : investedY + 18,
+                  // The first/last point sit exactly on the plot edges, so a
+                  // centered label would overlap the axis labels (first) or
+                  // run past the chart edge (last).
+                  labelAnchor =
+                    index === 0 ? "start" : index === points.length - 1 ? "end" : "middle",
+                  labelOffsetX = index === 0 ? 6 : index === points.length - 1 ? -6 : 0;
                 return (
                   <g key={`${point.date}-${index}`}>
                     <circle cx={pointX} cy={currentY} r="5" fill="#115c45">
@@ -10048,9 +10054,9 @@ export default function AssetManagerApp() {
                       </title>
                     </circle>
                     {showPointLabel && <text
-                      x={pointX}
+                      x={pointX + labelOffsetX}
                       y={currentLabelY}
-                      textAnchor="middle"
+                      textAnchor={labelAnchor}
                       fill="#115c45"
                       fontSize="10"
                       fontWeight="700"
@@ -10067,9 +10073,9 @@ export default function AssetManagerApp() {
                       </title>
                     </circle>
                     {showPointLabel && <text
-                      x={pointX}
+                      x={pointX + labelOffsetX}
                       y={investedLabelY}
-                      textAnchor="middle"
+                      textAnchor={labelAnchor}
                       fill="#8b6a28"
                       fontSize="10"
                       fontWeight="700"
@@ -10210,24 +10216,83 @@ export default function AssetManagerApp() {
         </div>
         {rows.length ? (
           <>
-            <div className="mb-4 flex h-5 overflow-hidden rounded-full bg-[#eef5ee]">
-              {rows.map((x, i) => (
-                <div
-                  key={x.k}
-                  className={x.liability ? "opacity-80" : ""}
-                  style={{
-                    width: `${Math.max(2, (Math.abs(x.value) / total) * 100)}%`,
-                    backgroundColor: colors[i % colors.length],
-                  }}
-                  title={`${x.title}: ${pct((Math.abs(x.value) / total) * 100)}`}
-                />
-              ))}
+            <div className="mb-5 flex flex-wrap items-center gap-6 max-sm:justify-center">
+              {(() => {
+                const size = 168,
+                  strokeWidth = 26,
+                  radius = (size - strokeWidth) / 2,
+                  circumference = 2 * Math.PI * radius;
+                let cumulative = 0;
+                return (
+                  <svg
+                    viewBox={`0 0 ${size} ${size}`}
+                    width={size}
+                    height={size}
+                    className="shrink-0 -rotate-90"
+                    role="img"
+                    aria-label="Asset allocation donut chart"
+                  >
+                    <circle
+                      cx={size / 2}
+                      cy={size / 2}
+                      r={radius}
+                      fill="none"
+                      stroke="#f1f5f4"
+                      strokeWidth={strokeWidth}
+                    />
+                    {rows.map((x, i) => {
+                      const fraction = Math.abs(x.value) / total,
+                        dash = Math.max(0, fraction * circumference - 2),
+                        offset = circumference - cumulative * circumference;
+                      cumulative += fraction;
+                      return (
+                        <circle
+                          key={x.k}
+                          cx={size / 2}
+                          cy={size / 2}
+                          r={radius}
+                          fill="none"
+                          stroke={colors[i % colors.length]}
+                          strokeWidth={strokeWidth}
+                          strokeDasharray={`${dash} ${circumference - dash}`}
+                          strokeDashoffset={offset}
+                          opacity={x.liability ? 0.75 : 1}
+                        >
+                          <title>
+                            {x.title}: {fmt(x.liability ? -x.value : x.value)} (
+                            {pct(fraction * 100)})
+                          </title>
+                        </circle>
+                      );
+                    })}
+                  </svg>
+                );
+              })()}
+              <div className="min-w-[140px]">
+                <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+                  Net worth
+                </div>
+                <div className="mt-1 text-2xl font-bold text-[#17382b]">
+                  {fmt(
+                    rows.reduce(
+                      (s, x) => s + (x.liability ? -x.value : x.value),
+                      0,
+                    ),
+                  )}
+                </div>
+                <div className="mt-1 text-xs text-gray-500">
+                  Across {rows.length} asset {rows.length === 1 ? "class" : "classes"}
+                </div>
+              </div>
             </div>
             <div className="space-y-2">
               {rows.map((x, i) => (
-                <div
+                <button
                   key={x.k}
-                  className="grid grid-cols-[1fr_auto] items-center gap-3 rounded-2xl bg-white px-3 py-2"
+                  type="button"
+                  onClick={() => setView(x.k)}
+                  title={`Open ${x.title}`}
+                  className="grid w-full grid-cols-[1fr_auto] items-center gap-3 rounded-2xl bg-white px-3 py-2 text-left transition hover:bg-[#f8fafc]"
                 >
                   <div className="flex items-center gap-2">
                     <span
@@ -10251,7 +10316,7 @@ export default function AssetManagerApp() {
                       {pct((Math.abs(x.value) / total) * 100)}
                     </div>
                   </div>
-                </div>
+                </button>
               ))}
             </div>
           </>
