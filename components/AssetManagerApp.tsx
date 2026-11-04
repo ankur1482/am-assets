@@ -10570,7 +10570,7 @@ export default function AssetManagerApp() {
                   </div>
                   <div className="text-xs font-semibold text-gray-500">
                     {x.latest
-                      ? new Date(x.latest).toLocaleDateString()
+                      ? formatDate(new Date(x.latest))
                       : "No date"}{" "}
                     | {x.rs.length} rows
                   </div>
