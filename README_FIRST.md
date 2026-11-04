@@ -127,8 +127,10 @@ rent credited to the OD account is not added automatically; update the parked am
 ### Dividends and earnings
 
 The Dashboard's **Dividends to Confirm** tab lists dividends declared since April on shares
-held on each ex-date, and asks whether each was received. Yes adds the amount to that month's
-cash flow and Month on Month, and optionally to an account balance.
+held on each ex-date, and asks whether each was received once its payout date arrives. Yes adds
+the amount to the cash flow of the month it was received and to Month on Month, and optionally
+to an account balance. Available data sources do not publish payout dates, so the date is
+estimated at 30 days after the ex-date until you enter the real one from the company's notice.
 
 **Planning → Earnings by Person** totals what each account received in a financial year:
 recorded salary, rent, confirmed dividends, accrued interest and realised gains. It projects

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { computeRecord } from './calculations';
-import { dividendKey, dividendsReceivedIn, DIVIDEND_MODULE, dividendSymbols, pendingDividends } from './dividends';
+import { dividendKey, dividendsReceivedIn, DIVIDEND_MODULE, dividendSymbols, pendingDividends, receiptCheck, validateReceipt } from './dividends';
 import { earningsByPerson } from './earnings';
 import { ledgerEntries } from './monthlyValuation';
 import { planningSnapshot } from './predictions';
@@ -50,6 +50,42 @@ describe('dividend confirmations', () => {
     expect(planningSnapshot(records, '2026-07-01').monthlyDividend).toBe(0);
     expect(ledgerEntries(records, computeRecord, '2026-06')).toEqual([expect.objectContaining({ id: 'd:dividend', group: 'Dividends', side: 'inflow', value: 60, account: 'Ankur' })]);
     expect(ledgerEntries(records, computeRecord, '2026-07')).toEqual([]);
+  });
+});
+
+describe('payout date validation', () => {
+  const key = dividendKey('Ankur', 'RELIANCE', '2026-06-05');
+  const at = (today: string, extra: any[] = []) => pendingDividends([stock('a'), ...extra], events, computeRecord, '2026-04-01', today)[0];
+  it('estimates the payout 30 days after the ex-date, and does not ask before then', () => {
+    expect(at('2026-06-20')).toMatchObject({ payoutDate: '2026-07-05', payoutEstimated: true, state: 'awaiting' });
+    expect(at('2026-07-05').state).toBe('due');
+    expect(at('2026-07-20').state).toBe('due');
+    expect(at('2026-07-21').state).toBe('overdue');
+  });
+  it('uses a payout date you entered in place of the estimate', () => {
+    const entered = { id: 'p', module_key: DIVIDEND_MODULE, data: { key, status: 'awaiting', payout_date: '2026-08-30' } };
+    expect(at('2026-08-01', [entered])).toMatchObject({ payoutDate: '2026-08-30', payoutEstimated: false, state: 'awaiting' });
+    expect(at('2026-08-30', [entered]).state).toBe('due');
+  });
+  it('keeps asking until answered when only a payout date has been saved', () => {
+    expect(at('2026-09-30', [{ id: 'p', module_key: DIVIDEND_MODULE, data: { key, status: 'awaiting', payout_date: '2026-08-30' } }])).toBeDefined();
+  });
+  it('rejects answers that do not fit the dates', () => {
+    const item = { exDate: '2026-06-05', payoutDate: '2026-08-30', payoutEstimated: false }, today = '2026-11-04';
+    expect(validateReceipt(item, '2026-08-30', 60, today)).toBe('');
+    expect(validateReceipt(item, '2026-08-29', 60, today)).toContain('before the payout date');
+    expect(validateReceipt(item, '2026-06-01', 60, today)).toContain('before the ex-date');
+    expect(validateReceipt(item, '2026-12-01', 60, today)).toContain('future');
+    expect(validateReceipt(item, '2026-08-30', 0, today)).toContain('amount');
+  });
+  it('allows a date before an estimated payout, since the real date may be earlier', () => {
+    expect(validateReceipt({ exDate: '2026-06-05', payoutDate: '2026-07-05', payoutEstimated: true }, '2026-06-25', 60, '2026-11-04')).toBe('');
+  });
+  it('reports timing and any shortfall against the announcement', () => {
+    const data = { per_share: 6, quantity: 10, currency: 'INR', payout_date: '2026-07-05', payout_estimated: true };
+    expect(receiptCheck({ ...data, amount: 60, received_on: '2026-07-05' })).toBe('On the payout date');
+    expect(receiptCheck({ ...data, amount: 54, received_on: '2026-07-08' })).toBe('3 days after the estimated payout date. ₹6.00 less than announced, possibly tax deducted');
+    expect(receiptCheck({ ...data, amount: 70, received_on: '2026-07-01' })).toContain('more than announced');
   });
 });
 

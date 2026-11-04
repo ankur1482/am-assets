@@ -44,7 +44,7 @@ import { backupFileName, backupFingerprint } from "@/lib/backups";
 import { chooseBackupFolder, folderPermission, forgetBackupFolder, loadBackupFolder, requestFolderPermission, supportsBackupFolder, writeBackupFile } from "@/lib/backupFolder";
 import DividendConfirmations from "@/components/DividendConfirmations";
 import EarningsByPerson from "@/components/EarningsByPerson";
-import { dividendSymbols, DIVIDEND_MODULE, pendingDividends, receivedDividends, type DividendEvent, type PendingDividend } from "@/lib/dividends";
+import { dividendSymbols, DIVIDEND_MODULE, pendingDividends, receivedDividends, validateReceipt, type DividendEvent, type PendingDividend } from "@/lib/dividends";
 import MonthlyPayments from "@/components/MonthlyPayments";
 import { addToAccount, drawFromAccount, firstWordMatch, MONTHLY_PAYMENT_MODULE, payAccounts, paymentsDue, paymentTotals, recurringData, recurringPayments, recurringRecord, yearlyCommitments, type PaymentItem, type PaymentMonth, type RecurringPayment } from "@/lib/monthlyPayments";
 import MonthlyValuation from "@/components/MonthlyValuation";
@@ -2857,16 +2857,31 @@ export default function AssetManagerApp() {
   }
   async function saveDividendAnswer(item: PendingDividend, status: string, extra: Record<string, any>) {
     if (!user) return false;
-    const { error } = await supabase.from("records").insert({
-      user_id: user.id,
-      ...(activeWorkspaceId ? { workspace_id: activeWorkspaceId } : {}),
-      module_key: DIVIDEND_MODULE,
-      data: { key: item.key, account_name: item.account, security_name: item.name, ticker_symbol: item.ticker, ex_date: item.exDate, per_share: item.perShare, quantity: item.quantity, currency: item.currency, status, ...extra },
-    });
+    // A saved payout date already has a row for this dividend, so the answer goes on that row.
+    const existing = recordsRef.current.find((r) => r.module_key === DIVIDEND_MODULE && r.data?.key === item.key),
+      data = { key: item.key, account_name: item.account, security_name: item.name, ticker_symbol: item.ticker, ex_date: item.exDate, per_share: item.perShare, quantity: item.quantity, currency: item.currency, payout_date: item.payoutDate, payout_estimated: item.payoutEstimated, status, ...extra },
+      { error } = existing
+        ? await supabase.from("records").update({ data }).eq("id", existing.id)
+        : await supabase.from("records").insert({
+            user_id: user.id,
+            ...(activeWorkspaceId ? { workspace_id: activeWorkspaceId } : {}),
+            module_key: DIVIDEND_MODULE,
+            data,
+          });
     if (error) setToast(error.message);
     return !error;
   }
+  async function saveDividendPayout(item: PendingDividend, payoutDate: string) {
+    const saved = await saveDividendAnswer(item, "awaiting", { payout_date: payoutDate, payout_estimated: false });
+    await loadAll(true);
+    return saved;
+  }
   async function confirmDividend(item: PendingDividend, amount: number, receivedOn: string, creditId: string) {
+    const problem = validateReceipt(item, receivedOn, amount, istCalendar().iso);
+    if (problem) {
+      setToast(problem);
+      return false;
+    }
     const account = payAccounts(recordsRef.current).find((row) => row.id === creditId),
       record = recordsRef.current.find((row) => row.id === account?.id);
     if (account && record) {
@@ -2913,6 +2928,7 @@ export default function AssetManagerApp() {
         today={istCalendar().iso}
         onReceived={confirmDividend}
         onNotReceived={declineDividend}
+        onPayoutDate={saveDividendPayout}
         onUndo={undoDividend}
       />
     );
@@ -7804,10 +7820,10 @@ export default function AssetManagerApp() {
             <strong>Upload now</strong>
           </button>
         )}
-        {phoneMode && view === "dashboard" && dividendsPending().length > 0 && (
+        {phoneMode && view === "dashboard" && dividendsPending().some((item) => item.state !== "awaiting") && (
           <button type="button" className="monthly-banner" onClick={() => setView("dividends")}>
             <Paperclip size={15} />
-            <span>{dividendsPending().length} dividends to confirm</span>
+            <span>{dividendsPending().filter((item) => item.state !== "awaiting").length} dividends to confirm</span>
             <strong>View</strong>
           </button>
         )}
@@ -9410,7 +9426,7 @@ export default function AssetManagerApp() {
     const onPayments = detailTabs.dashboard === "payments",
       onDividends = detailTabs.dashboard === "dividends",
       unpaid = currentPayments().unpaidCount,
-      unconfirmed = dividendsPending().length,
+      unconfirmed = dividendsPending().filter((item) => item.state !== "awaiting").length,
       tabClass = (active: boolean) =>
         `shrink-0 rounded-xl px-3 py-2 text-sm font-semibold ${active ? "bg-sage text-white" : "text-[#17382b]"}`;
     return (

@@ -71,6 +71,9 @@
 .div-card { display: grid; gap: 12px; padding: 14px; border: 1px solid #e2e8f0; border-radius: 14px; background: #fff; color: #0f172a; font-size: 13px; }
 .div-card p { margin-top: 3px; color: #64748b; font-size: 12px; line-height: 1.55; }
 .div-card .div-question { color: #0f172a; font-weight: 600; }
+.div-overdue { border-color: #f59e0b; background: #fffbeb; }
+.div-heading { font-size: 13px; font-weight: 650; color: #0f172a; }
+.mom td.div-check { max-width: 280px; white-space: normal; text-align: left; color: #475569; }
 .div-fields { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px; }
 .div-fields label { display: grid; flex: 1 1 150px; gap: 4px; color: #475569; font-size: 12px; font-weight: 600; }
 .div-fields input, .div-fields select { min-height: 38px; padding: 6px 10px; border: 1px solid #cbd5e1; border-radius: 8px; background: #fff; color: #0f172a; font-size: 13px; }
