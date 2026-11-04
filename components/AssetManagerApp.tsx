@@ -1755,7 +1755,9 @@ export default function AssetManagerApp() {
     if (quiet && typeof window !== "undefined")
       requestAnimationFrame(() => {
         window.scrollTo(sx, sy);
-        if (active && document.contains(active))
+        // Only if the refresh lost focus. Someone who has moved to another field keeps typing there.
+        const focusLost = !document.activeElement || document.activeElement === document.body;
+        if (focusLost && active && document.contains(active))
           active.focus?.({ preventScroll: true } as any);
       });
     return true;
