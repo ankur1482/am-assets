@@ -146,18 +146,17 @@ code with full history, database structure and rows, logins, stored documents, a
 settings and keys (encrypted with the passphrase). It only reads from Supabase, and checks
 itself when finished. Keep the folder private: apart from the settings it is not encrypted.
 
-To rebuild on any PC with Node.js and Git, using a copy of the project's scripts folder or an
-existing checkout:
+To rebuild on any PC with Node.js and Git, use the tools inside the backup folder:
 
 ```bash
 # Rebuild the app into a new folder
-node scripts/full-restore.mjs <backup folder> --code <new folder>
+node <backup folder>/restore-tools/full-restore.mjs <backup folder> --code <new folder>
 
-# Preview loading the data, changing nothing
-node scripts/full-restore.mjs <backup folder> --data --dry-run
+# From inside that new folder: preview loading the data, changing nothing
+node <backup folder>/restore-tools/full-restore.mjs <backup folder> --data --dry-run
 
-# Load the data. It names the project and asks you to type it to confirm
-node scripts/full-restore.mjs <backup folder> --data
+# From inside that new folder: load the data. You type the project name to confirm
+node <backup folder>/restore-tools/full-restore.mjs <backup folder> --data
 ```
 
 For a new Supabase project, first run the four files in the backup's `database/schema` folder

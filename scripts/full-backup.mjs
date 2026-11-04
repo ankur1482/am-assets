@@ -96,6 +96,11 @@ await fs.writeFile(path.join(out, 'settings', 'env.local.enc'), encryptText(envT
 const vercel = await fs.readFile(path.join(root, '.vercel', 'project.json'), 'utf8').catch(() => '');
 if (vercel) await fs.writeFile(path.join(out, 'settings', 'vercel-project.json'), vercel);
 
+// A new PC has no copy of the project yet, so the backup carries its own restore tools.
+step('Restore tools');
+await fs.mkdir(path.join(out, 'restore-tools'));
+for (const file of ['full-restore.mjs', 'recovery-lib.mjs']) await fs.copyFile(path.join(root, 'scripts', file), path.join(out, 'restore-tools', file));
+
 step('Checking the backup');
 const manifest = { format: 'asset-manager-full-backup', version: 1, created_at: new Date().toISOString(), supabase_url: url, commit, branch, uncommitted_changes: Boolean(uncommitted), counts, warnings, checksums: await checksums(out) };
 await fs.writeFile(path.join(out, 'manifest.json'), JSON.stringify(manifest, null, 2));
@@ -105,4 +110,5 @@ execFileSync('git', ['bundle', 'verify', path.join(out, 'code', 'app.bundle')], 
 
 console.log(`\nDone. Backup saved to:\n${out}\n\nContains ${counts.records} records, ${counts.accounts} accounts, ${counts.users} logins and ${stored.length} stored documents.`);
 if (warnings.length) console.log(`\nPlease note:\n${warnings.map(warning => `  * ${warning}`).join('\n')}`);
+console.log(`\nTo rebuild on any PC with Node.js and Git:\n  node "${path.join(out, 'restore-tools', 'full-restore.mjs')}" "${out}" --code <new folder> --data`);
 console.log('\nThis folder holds your financial data unencrypted. Keep it on a private drive and copy it somewhere safe.');

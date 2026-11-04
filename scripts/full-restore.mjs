@@ -5,6 +5,7 @@
 import { execFileSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { promises as fs } from 'node:fs';
+import { createRequire } from 'node:module';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { ask, decryptText, DOCUMENT_BUCKET, listFiles, parseArgs, parseEnv, SCHEMA_FILES, TABLES, verifyBackup } from './recovery-lib.mjs';
@@ -43,9 +44,12 @@ if (flags.data) {
   const env = parseEnv(await settings()), url = env.NEXT_PUBLIC_SUPABASE_URL, serviceKey = env.SUPABASE_SERVICE_ROLE_KEY;
   const host = new URL(url).host, sameProject = url === manifest.supabase_url;
   console.log(`\n- Loading data into ${host}${sameProject ? ' (the project this backup came from)' : ''}`);
-  // The client comes from the project's own packages, which exist once the code is in place.
-  const { createClient } = await import(pathToFileURL(path.join(codeFolder || process.cwd(), 'node_modules', '@supabase', 'supabase-js', 'dist', 'index.mjs')).href)
-    .catch(async () => import('@supabase/supabase-js'));
+  // The client comes from the restored project's packages, so this also works from inside a backup folder.
+  const projectFolder = codeFolder || process.cwd();
+  let clientPath;
+  try { clientPath = createRequire(path.join(projectFolder, 'package.json')).resolve('@supabase/supabase-js'); }
+  catch { throw new Error(`Packages are missing in ${projectFolder}. Add --code <new folder> without --skip-install, or run this from a project folder after npm ci.`); }
+  const { createClient } = await import(pathToFileURL(clientPath).href);
   const supabase = createClient(url, serviceKey, { auth: { persistSession: false, autoRefreshToken: false } });
   for (const [table] of TABLES) {
     const { error } = await supabase.from(table).select('*', { count: 'exact', head: true });
