@@ -1,4 +1,5 @@
 import { MODULES } from './modules';
+import { DIVIDEND_MODULE } from './dividends';
 import { MONTHLY_PAYMENT_MODULE } from './monthlyPayments';
 import { MONTHLY_UPLOAD_MODULE } from './monthlyUploads';
 import { MONTHLY_VALUATION_MODULE } from './monthlyValuation';
@@ -15,7 +16,7 @@ type BackupAccount = { id: string; [field: string]: any };
 
 function meaningfulData(record: BackupRecord) {
   const data = record.data || {};
-  if (record.module_key === TRANSACTION_MODULE || record.module_key === MONTHLY_UPLOAD_MODULE || record.module_key === MONTHLY_PAYMENT_MODULE) return data;
+  if (record.module_key === TRANSACTION_MODULE || record.module_key === MONTHLY_UPLOAD_MODULE || record.module_key === MONTHLY_PAYMENT_MODULE || record.module_key === DIVIDEND_MODULE) return data;
   if (record.module_key === MONTHLY_VALUATION_MODULE) {
     // Only hand edits count; the month's automatic figures follow market prices.
     return Object.entries(data.items || {}).filter(([, item]: [string, any]) => item.start_edited || item.end_edited || item.amount_edited).map(([id, item]: [string, any]) => [id, item.start_edited && item.start, item.end_edited && item.end, item.amount_edited && item.amount]);

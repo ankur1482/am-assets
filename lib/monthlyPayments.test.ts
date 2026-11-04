@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { computeRecord } from './calculations';
-import { addToAccount, drawFromAccount, firstWordMatch, mergeRecurring, monthlyRegularTotal, MONTHLY_PAYMENT_MODULE, odAccounts, parseRecurringImport, payAccounts, paymentsDue, paymentTotals, recurringData, type PaidEntry, type RecurringPayment } from './monthlyPayments';
+import { addToAccount, drawFromAccount, firstWordMatch, mergeRecurring, monthName, monthlyRegularTotal, MONTHLY_PAYMENT_MODULE, yearlyCommitments, odAccounts, parseRecurringImport, payAccounts, paymentsDue, paymentTotals, recurringData, type PaidEntry, type RecurringPayment } from './monthlyPayments';
 import { planningSnapshot } from './predictions';
 
 const loan = (id: string, data: Record<string, any> = {}) => ({ id, module_key: 'property', data: { broker: 'Example Heights', loan_institution: 'HDFC Bank', loan_balance: 1000000, loan_interest_rate: 12, emi_amount: 20000, loan_start_date: '2022-03-31', ...data } });
@@ -20,6 +20,36 @@ describe('monthly payments', () => {
     const policy = { id: 'p', module_key: 'insurance', data: { security_name: 'Term', premium_amount: 24000 } };
     expect(paymentsDue([policy], compute, '2026-11')[0]).toMatchObject({ type: 'Insurance premium', amount: 24000, dueDate: '2026-11-20' });
     expect(paymentsDue([policy], compute, '2026-12')).toEqual([]);
+  });
+  it('repeats a yearly premium in its month even when the saved year has passed', () => {
+    const compute = () => ({ premium_status: 'PAYING', next_premium_due_date: '2024-11-20' });
+    const policy = (premium_frequency: string) => ({ id: 'p', module_key: 'insurance', data: { security_name: 'Term', premium_amount: 24000, premium_frequency } });
+    expect(paymentsDue([policy('Yearly')], compute, '2026-11')[0]).toMatchObject({ amount: 24000, dueDate: '2026-11-20' });
+    expect(paymentsDue([policy('Yearly')], compute, '2026-12')).toEqual([]);
+    expect(paymentsDue([policy('Quarterly')], compute, '2026-11')).toEqual([]);
+  });
+  it('shows a yearly investment in its due month, from the choice or else the start date', () => {
+    const ppf = (extra = {}) => ({ id: 'f', module_key: 'fixedIncome', data: { category: 'PPF', account_name: 'Ankur', broker: 'Govt', yearly_investment: 150000, purchase_date: '2020-04-10', ...extra } });
+    expect(paymentsDue([ppf()], computeRecord, '2027-04')[0]).toMatchObject({ id: 'f:yearly', type: 'Yearly investment', amount: 150000, dueDate: '2027-04-10' });
+    expect(paymentsDue([ppf()], computeRecord, '2026-11')).toEqual([]);
+    expect(paymentsDue([ppf({ investment_due_month: 'November' })], computeRecord, '2026-11')[0].amount).toBe(150000);
+  });
+  it('never treats salary or savings as a yearly investment', () => {
+    const row = (category: string) => ({ id: category, module_key: 'fixedIncome', data: { category, yearly_investment: 100, investment_due_month: 'November' } });
+    const records = [row('Salary'), row('Savings in Bank'), row('Cash at Home')];
+    expect(paymentsDue(records, computeRecord, '2026-11')).toEqual([]);
+    expect(yearlyCommitments(records, computeRecord)).toEqual([]);
+  });
+  it('lists every yearly commitment by due month, with unknown months last', () => {
+    const compute = () => ({ premium_status: 'PAYING', annual_premium: 24000, next_premium_due_date: '2026-08-01' });
+    const rows = yearlyCommitments([
+      { id: 'a', module_key: 'fixedIncome', data: { category: 'PPF', yearly_investment: 150000 } },
+      { id: 'b', module_key: 'fixedIncome', data: { category: 'Sukanya Samriddhi', yearly_investment: 100000, investment_due_month: 'April' } },
+      { id: 'c', module_key: 'insurance', data: { security_name: 'Term', premium_frequency: 'Yearly' } },
+    ], compute);
+    expect(rows.map(row => [row.id, row.dueMonth])).toEqual([['b', 4], ['c', 8], ['a', null]]);
+    expect(rows[1]).toMatchObject({ type: 'Insurance premium', amount: 24000 });
+    expect(monthName(4)).toBe('April');
   });
   it('includes payments added by hand, soonest first', () => {
     const items = paymentsDue([loan('a', { loan_start_date: '2022-03-20' })], computeRecord, '2026-11', { period: '2026-11', custom: [{ id: 'c', label: 'School fees', amount: 5000, due_date: '2026-11-03' }] });

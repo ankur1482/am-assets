@@ -1,5 +1,6 @@
 import { isCashAtHome, isDividendIncome, isEarningRent, isOverdraftLoan, isRentedProperty, isSavingsAccount, LOAN_FIELDS, occupiedShareOfMonth, loanPosition, num, parkedAgainstLoan, PROPERTY_LOAN_FIELDS } from './calculations';
 import { calculateInsurance } from './insurance';
+import { dividendsReceivedIn } from './dividends';
 import { monthlyRegularTotal, recurringPayments } from './monthlyPayments';
 
 const clamp = (value: number, low: number, high: number) => Math.min(high, Math.max(low, Number.isFinite(value) ? value : low));
@@ -59,6 +60,8 @@ export function planningSnapshot(records: PlanningRecord[], asOf = indiaDate()) 
     }
   }
   const monthlyEmi = debts.reduce((sum, debt) => sum + debt.payment, 0);
+  // Dividends confirmed as received this month count alongside any average entered by hand.
+  monthlyDividend += dividendsReceivedIn(records, asOf.slice(0, 7));
   const monthlyIncome = monthlySalary + monthlyRent + monthlyDividend;
   const monthlyRegular = monthlyRegularTotal(recurringPayments(records));
   const availableCashFlow = monthlyIncome - monthlyEmi - monthlyPremium - monthlyInvestment - monthlyRegular;

@@ -124,6 +124,16 @@ and payments added by hand. Marking one paid deducts it from the chosen OD accou
 liquidity and raising the balance that bears interest. Undo puts the money back. Salary or
 rent credited to the OD account is not added automatically; update the parked amount.
 
+### Dividends and earnings
+
+The Dashboard's **Dividends to Confirm** tab lists dividends declared since April on shares
+held on each ex-date, and asks whether each was received. Yes adds the amount to that month's
+cash flow and Month on Month, and optionally to an account balance.
+
+**Planning → Earnings by Person** totals what each account received in a financial year:
+recorded salary, rent, confirmed dividends, accrued interest and realised gains. It projects
+nothing and is a starting point for tax planning, not a tax calculation.
+
 ### Automatic backups
 
 **Utility → Automatic Backups** saves a new restorable JSON file about 10 seconds after any

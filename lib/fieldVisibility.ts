@@ -22,7 +22,7 @@ const FIELD_RULES: Record<string, FieldRule[]> = {
   ],
   loans: [OD_RULE],
   fixedIncome: [
-    { controllers: ['category'], fields: ['interest_rate', 'rate_year', 'yearly_investment'], visible: values => !earnsNoTrackedInterest(values) },
+    { controllers: ['category'], fields: ['interest_rate', 'rate_year', 'yearly_investment', 'investment_due_month'], visible: values => !earnsNoTrackedInterest(values) },
     { controllers: ['category'], fields: ['lock_in_years', 'maturity_value', 'maturity_date', 'year_end_maturity_value', 'interest_incurred_fy'], visible: values => !isCashCategory(values) },
     { controllers: ['category'], fields: ['current_value_today', 'latest'], visible: values => !/^(salary|rental\s*income|dividend)/i.test(String(values.category || '').trim()) },
     { controllers: ['category'], fields: ['broker', 'purchase_date'], visible: values => !/^cash\s*at\s*home/i.test(String(values.category || '').trim()) },

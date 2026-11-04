@@ -42,12 +42,15 @@ import MonthlyUploads from "@/components/MonthlyUploads";
 import BackupCenter, { type BackupTarget } from "@/components/BackupCenter";
 import { backupFileName, backupFingerprint } from "@/lib/backups";
 import { chooseBackupFolder, folderPermission, forgetBackupFolder, loadBackupFolder, requestFolderPermission, supportsBackupFolder, writeBackupFile } from "@/lib/backupFolder";
+import DividendConfirmations from "@/components/DividendConfirmations";
+import EarningsByPerson from "@/components/EarningsByPerson";
+import { dividendSymbols, DIVIDEND_MODULE, pendingDividends, receivedDividends, type DividendEvent, type PendingDividend } from "@/lib/dividends";
 import MonthlyPayments from "@/components/MonthlyPayments";
-import { addToAccount, drawFromAccount, firstWordMatch, MONTHLY_PAYMENT_MODULE, payAccounts, paymentsDue, paymentTotals, recurringData, recurringPayments, recurringRecord, type PaymentItem, type PaymentMonth, type RecurringPayment } from "@/lib/monthlyPayments";
+import { addToAccount, drawFromAccount, firstWordMatch, MONTHLY_PAYMENT_MODULE, payAccounts, paymentsDue, paymentTotals, recurringData, recurringPayments, recurringRecord, yearlyCommitments, type PaymentItem, type PaymentMonth, type RecurringPayment } from "@/lib/monthlyPayments";
 import MonthlyValuation from "@/components/MonthlyValuation";
 import TransactionLedger, { RecordSaleForm, type BuyRow } from "@/components/TransactionLedger";
 import { planSale, postedSales, reduceLot, restoreLot, TRANSACTION_MODULE, xirr, type CashFlow, type SaleInput, type SaleLot } from "@/lib/transactions";
-import { applyLedgerEdit, ledgerEntries, mergeCurrentMonth, MONTHLY_VALUATION_MODULE, type LedgerField, type LedgerRow, type MonthData } from "@/lib/monthlyValuation";
+import { applyLedgerEdit, financialYearOf, ledgerEntries, mergeCurrentMonth, MONTHLY_VALUATION_MODULE, type LedgerField, type LedgerRow, type MonthData } from "@/lib/monthlyValuation";
 import PredictivePlanner, { type ForecastTab } from "@/components/PredictivePlanner";
 import { MONTHLY_UPLOAD_MODULE, periodLabel, requiredUploads, type UploadItem } from "@/lib/monthlyUploads";
 import { planningSnapshot } from "@/lib/predictions";
@@ -207,6 +210,7 @@ const views = [
   ["goals", "GO", "Goals"],
   ["futureWealth", "FW", "Predictive Planner"],
   [MONTHLY_VALUATION_MODULE, "MM", "Month on Month"],
+  ["earnings", "EP", "Earnings by Person"],
   [MONTHLY_UPLOAD_MODULE, "MU", "Monthly Uploads"],
   ["watchlist", "WL", "Watchlist"],
   ["alerts", "AL", "Alerts"],
@@ -234,7 +238,7 @@ const groups = [
     ],
   ],
   ["Liabilities", ["loans", "borrowings"]],
-  ["Planning", ["goals", "futureWealth", MONTHLY_VALUATION_MODULE, MONTHLY_UPLOAD_MODULE]],
+  ["Planning", ["goals", "futureWealth", MONTHLY_VALUATION_MODULE, "earnings", MONTHLY_UPLOAD_MODULE]],
   ["Utility", ["watchlist", "purchaseCalculator", "alerts", "backups", "household", "settings"]],
   ["Admin", ["admin"]],
 ];
@@ -1170,6 +1174,9 @@ export default function AssetManagerApp() {
     docFilesRef = useRef<File[]>([]),
     snapshotRef = useRef(""),
     valuationWriteRef = useRef({ scope: "", at: 0 }),
+    dividendLookupRef = useRef(""),
+    [dividendEvents, setDividendEvents] = useState<Record<string, DividendEvent[]>>({}),
+    [dividendLoading, setDividendLoading] = useState(false),
     backupBaselineRef = useRef({ scope: "", fingerprint: "" }),
     backupTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null),
     backupRunRef = useRef<() => void>(() => {}),
@@ -1970,6 +1977,30 @@ export default function AssetManagerApp() {
     });
     return () => { cancelled = true; };
   }, [user?.id]);
+  // Looks up each stock's dividends once per session, or when the set of stocks changes.
+  useEffect(() => {
+    const token = session?.access_token;
+    if (!token || loading) return;
+    const symbols = dividendSymbols(records),
+      lookup = symbols.map((item) => item.symbol).sort().join(",");
+    if (!lookup || dividendLookupRef.current === lookup) return;
+    dividendLookupRef.current = lookup;
+    setDividendLoading(true);
+    (async () => {
+      const found: Record<string, DividendEvent[]> = {},
+        queue = [...symbols];
+      await Promise.all(Array.from({ length: 4 }, async () => {
+        for (let next = queue.shift(); next; next = queue.shift()) {
+          try {
+            const res = await fetch(`/api/dividends?symbol=${encodeURIComponent(next.symbol)}&exchange=${encodeURIComponent(next.exchange)}`, { headers: { Authorization: `Bearer ${token}` } });
+            if (res.ok) found[next.symbol] = (await res.json()).dividends || [];
+          } catch {}
+        }
+      }));
+      setDividendEvents(found);
+      setDividendLoading(false);
+    })();
+  }, [session?.access_token, loading, records]);
   // Saves a new backup shortly after any real change, so a burst of edits makes one file.
   useEffect(() => {
     if (!user?.id || loading || (!records.length && !accounts.length)) return;
@@ -2817,6 +2848,87 @@ export default function AssetManagerApp() {
         returnCoverage={`Stocks and funds: ${dated} of ${lots.length} lots have a purchase date`}
         canEdit={canEditModule(TRANSACTION_MODULE)}
         onUndo={undoSale}
+      />
+    );
+  }
+  function dividendsPending() {
+    const today = istCalendar().iso;
+    return pendingDividends(records, dividendEvents, computeLiveRecord, `${financialYearOf(today.slice(0, 7))}-04-01`, today);
+  }
+  async function saveDividendAnswer(item: PendingDividend, status: string, extra: Record<string, any>) {
+    if (!user) return false;
+    const { error } = await supabase.from("records").insert({
+      user_id: user.id,
+      ...(activeWorkspaceId ? { workspace_id: activeWorkspaceId } : {}),
+      module_key: DIVIDEND_MODULE,
+      data: { key: item.key, account_name: item.account, security_name: item.name, ticker_symbol: item.ticker, ex_date: item.exDate, per_share: item.perShare, quantity: item.quantity, currency: item.currency, status, ...extra },
+    });
+    if (error) setToast(error.message);
+    return !error;
+  }
+  async function confirmDividend(item: PendingDividend, amount: number, receivedOn: string, creditId: string) {
+    const account = payAccounts(recordsRef.current).find((row) => row.id === creditId),
+      record = recordsRef.current.find((row) => row.id === account?.id);
+    if (account && record) {
+      const { error } = await supabase.from("records").update({ data: addToAccount(record.data, account.kind, amount) }).eq("id", record.id);
+      if (error) {
+        setToast(error.message);
+        return false;
+      }
+    }
+    const saved = await saveDividendAnswer(item, "received", { amount, received_on: receivedOn, credit_id: account?.id || "", credit_kind: account?.kind || "", credit_name: account?.name || "" });
+    if (!saved && account && record) await supabase.from("records").update({ data: record.data }).eq("id", record.id);
+    if (saved) setToast(`${fmt(amount)} dividend added to cash flow`);
+    await loadAll(true);
+    return saved;
+  }
+  async function declineDividend(item: PendingDividend) {
+    const saved = await saveDividendAnswer(item, "not_received", {});
+    await loadAll(true);
+    return saved;
+  }
+  /** Undoing asks the question again, by clearing the answer's key and taking the money back out. */
+  async function undoDividend(receipt: { id: string; data: Record<string, any> }) {
+    const record = recordsRef.current.find((row) => row.id === receipt.data.credit_id);
+    if (record) {
+      const { error } = await supabase.from("records").update({ data: drawFromAccount(record.data, receipt.data.credit_kind, num(receipt.data.amount)).data }).eq("id", record.id);
+      if (error) {
+        setToast(error.message);
+        return false;
+      }
+    }
+    const { error } = await supabase.from("records").update({ data: { ...receipt.data, key: "", status: "undone" } }).eq("id", receipt.id);
+    if (error) setToast(error.message);
+    await loadAll(true);
+    return !error;
+  }
+  function dividendsPanel() {
+    return (
+      <DividendConfirmations
+        pending={dividendsPending()}
+        received={receivedDividends(records)}
+        accounts={payAccounts(records)}
+        canEdit={canEditModule(DIVIDEND_MODULE)}
+        loading={dividendLoading}
+        today={istCalendar().iso}
+        onReceived={confirmDividend}
+        onNotReceived={declineDividend}
+        onUndo={undoDividend}
+      />
+    );
+  }
+  function earningsPanel() {
+    const interestByAccount: Record<string, number> = {};
+    records.filter((r) => r.module_key === "fixedIncome").forEach((r) => {
+      const name = String(r.data?.account_name || "").trim() || "Unassigned";
+      interestByAccount[name] = (interestByAccount[name] || 0) + num(computeLiveRecord("fixedIncome", r.data).interest_incurred_fy);
+    });
+    return (
+      <EarningsByPerson
+        months={valuationRecords().map((r) => r.data as MonthData)}
+        records={records}
+        interestByAccount={interestByAccount}
+        currentMonth={istCalendar().iso.slice(0, 7)}
       />
     );
   }
@@ -4452,6 +4564,7 @@ export default function AssetManagerApp() {
       [MONTHLY_VALUATION_MODULE]: BarChart3,
       [TRANSACTION_MODULE]: ArrowUpDown,
       backups: HardDrive,
+      earnings: Users,
       [MONTHLY_UPLOAD_MODULE]: Paperclip,
       watchlist: Eye,
       alerts: Bell,
@@ -5114,6 +5227,8 @@ export default function AssetManagerApp() {
     if (view === TRANSACTION_MODULE) return <div className="phone-screen p-3">{transactionLedgerPanel()}</div>;
     if (view === "backups") return <div className="phone-screen p-3">{backupCenterPanel()}</div>;
     if (view === "payments") return <div className="phone-screen p-3">{monthlyPaymentsPanel()}</div>;
+    if (view === "dividends") return <div className="phone-screen p-3">{dividendsPanel()}</div>;
+    if (view === "earnings") return <div className="phone-screen p-3">{earningsPanel()}</div>;
     if (view === "settings")
       return <div className="phone-screen">{settings()}</div>;
     if (view === "purchaseCalculator")
@@ -7689,6 +7804,13 @@ export default function AssetManagerApp() {
             <strong>Upload now</strong>
           </button>
         )}
+        {phoneMode && view === "dashboard" && dividendsPending().length > 0 && (
+          <button type="button" className="monthly-banner" onClick={() => setView("dividends")}>
+            <Paperclip size={15} />
+            <span>{dividendsPending().length} dividends to confirm</span>
+            <strong>View</strong>
+          </button>
+        )}
         {phoneMode && view === "dashboard" && currentPayments().unpaidCount > 0 && (
           <button type="button" className="monthly-banner" onClick={() => setView("payments")}>
             <Paperclip size={15} />
@@ -7727,6 +7849,8 @@ export default function AssetManagerApp() {
           {view === TRANSACTION_MODULE && transactionLedgerPanel()}
           {view === "backups" && backupCenterPanel()}
           {view === "payments" && monthlyPaymentsPanel()}
+          {view === "dividends" && dividendsPanel()}
+          {view === "earnings" && earningsPanel()}
           {view === "purchaseCalculator" && !phoneMode && bullionCalculatorPanel()}
           {view === "watchlist" && utilityWatchlistView()}
           {view === "household" && householdView()}
@@ -9284,15 +9408,17 @@ export default function AssetManagerApp() {
   }
   function dashboardTabs() {
     const onPayments = detailTabs.dashboard === "payments",
+      onDividends = detailTabs.dashboard === "dividends",
       unpaid = currentPayments().unpaidCount,
+      unconfirmed = dividendsPending().length,
       tabClass = (active: boolean) =>
         `shrink-0 rounded-xl px-3 py-2 text-sm font-semibold ${active ? "bg-sage text-white" : "text-[#17382b]"}`;
     return (
       <div className="flex gap-2 overflow-auto rounded-2xl border border-[#e3dccc] bg-white p-1">
         <button
           onClick={() => setDetailTabs((p) => ({ ...p, dashboard: "summary" }))}
-          aria-pressed={!onPayments}
-          className={tabClass(!onPayments)}
+          aria-pressed={!onPayments && !onDividends}
+          className={tabClass(!onPayments && !onDividends)}
         >
           Overall Dashboard
         </button>
@@ -9302,6 +9428,13 @@ export default function AssetManagerApp() {
           className={tabClass(onPayments)}
         >
           Payments This Month{unpaid ? ` (${unpaid})` : ""}
+        </button>
+        <button
+          onClick={() => setDetailTabs((p) => ({ ...p, dashboard: "dividends" }))}
+          aria-pressed={onDividends}
+          className={tabClass(onDividends)}
+        >
+          Dividends to Confirm{unconfirmed ? ` (${unconfirmed})` : ""}
         </button>
       </div>
     );
@@ -9437,6 +9570,7 @@ export default function AssetManagerApp() {
     return (
       <MonthlyPayments
         recurring={recurringPayments(records)}
+        yearly={yearlyCommitments(records, computeLiveRecord)}
         onAmount={savePaymentAmount}
         onSaveRecurring={saveRecurringList}
         monthTitle={periodLabel(month)}
@@ -9860,6 +9994,7 @@ export default function AssetManagerApp() {
   function predictivePlannerView() {
     return <div className="space-y-5">
       {phoneMode && canViewModule(MONTHLY_VALUATION_MODULE) && <button type="button" className="btn" onClick={() => setView(MONTHLY_VALUATION_MODULE)}><BarChart3 size={15} /> Month on Month</button>}
+      {phoneMode && workspaceAccess.all_modules && <button type="button" className="btn" onClick={() => setView("earnings")}><Users size={15} /> Earnings by Person</button>}
       <PredictivePlanner key={`${user?.id}:${activeWorkspaceId}:${plannerTab}`} records={records} netWorth={totals.net} accessToken={session?.access_token || ""} initialTab={plannerTab} />
       <details className="forecast-legacy">
         <summary>Advanced contribution combinations and AI commentary</summary>
@@ -12417,11 +12552,11 @@ export default function AssetManagerApp() {
       monthMove = totals.net - monthStartNet,
       monthMovePct = monthStartNet ? (monthMove / monthStartNet) * 100 : 0,
       yearlyGain = totals.gain;
-    if (detailTabs.dashboard === "payments")
+    if (detailTabs.dashboard === "payments" || detailTabs.dashboard === "dividends")
       return (
         <div className="space-y-5">
           {dashboardTabs()}
-          {monthlyPaymentsPanel()}
+          {detailTabs.dashboard === "payments" ? monthlyPaymentsPanel() : dividendsPanel()}
         </div>
       );
     return (

@@ -1,4 +1,5 @@
 import { isCashAtHome, isDividendIncome, isSavingsAccount, num, occupiedShareOfMonth, isRentedProperty } from './calculations';
+import { DIVIDEND_MODULE } from './dividends';
 import { TRANSACTION_MODULE } from './transactions';
 
 export const MONTHLY_VALUATION_MODULE = 'monthlyValuation';
@@ -33,7 +34,10 @@ export function ledgerEntries(records: LedgerRecord[], compute: (moduleKey: stri
   const propertyIds = new Set(records.filter(r => r.module_key === 'property').map(r => r.id));
   for (const record of records) {
     const k = record.module_key, d = record.data || {}, account = String(d.account_name || '').trim() || 'Unassigned';
-    if (k === TRANSACTION_MODULE) {
+    if (k === DIVIDEND_MODULE) {
+      if (String(d.received_on || '').slice(0, 7) !== month) continue;
+      entries.push({ id: `${record.id}:dividend`, label: `${d.security_name} dividend`, group: 'Dividends', account, side: 'inflow', value: d.status === 'received' ? num(d.amount) : 0 });
+    } else if (k === TRANSACTION_MODULE) {
       if (String(d.sale_date || '').slice(0, 7) !== month || !['posted', 'reversed'].includes(d.status)) continue;
       // Purchase beside proceeds shows buying versus selling. An undone sale zeroes out rather than lingering.
       entries.push({ id: `${record.id}:sale`, label: `${d.security_name} · sold ${d.quantity} @ ₹${d.price}`, group: 'Sale Proceeds', account, side: 'inflow', value: d.status === 'posted' ? num(d.proceeds) : 0, purchase: num(d.cost) });

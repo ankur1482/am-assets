@@ -1,4 +1,4 @@
-import { isCashAtHome, isOverdraftLoan, isSavingsAccount, num } from './calculations';
+import { isCashAtHome, isIncomeRecord, isOverdraftLoan, isSavingsAccount, num } from './calculations';
 
 export const MONTHLY_PAYMENT_MODULE = 'monthlyPayment';
 
@@ -44,7 +44,34 @@ function emiDueDate(start: any, month: string) {
   return `${month}-${String(Math.min(day, last)).padStart(2, '0')}`;
 }
 
-/** Everything to pay in a month, soonest first: loan EMIs, premiums falling due, and payments added by hand. */
+const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+export const monthName = (monthNumber: number | null) => (monthNumber ? MONTH_NAMES[monthNumber - 1] : '');
+const monthOfDate = (date: any) => { const value = Number(String(date || '').slice(5, 7)); return value >= 1 && value <= 12 ? value : null; };
+const isFixedDeposit = (d: Record<string, any>) => !isIncomeRecord(d) && !isSavingsAccount(d) && !isCashAtHome(d);
+/** Due month of a yearly investment: the one chosen, otherwise the anniversary of its start date. */
+const investmentDueMonth = (d: Record<string, any>) => {
+  const chosen = MONTH_NAMES.indexOf(String(d.investment_due_month || ''));
+  return chosen >= 0 ? chosen + 1 : monthOfDate(d.purchase_date);
+};
+const isYearlyPremium = (d: Record<string, any>) => /^(yearly|annual)/i.test(String(d.premium_frequency || ''));
+export type YearlyCommitment = { id: string; label: string; type: string; account: string; amount: number; dueMonth: number | null; frequency: string };
+
+/** Everything paid once a year or spread over it, for planning across the whole year. */
+export function yearlyCommitments(records: PaymentRecord[], compute: (moduleKey: string, data: any) => any): YearlyCommitment[] {
+  const rows: YearlyCommitment[] = [];
+  for (const record of records) {
+    const d = record.data || {}, account = String(d.account_name || '').trim();
+    if (record.module_key === 'fixedIncome' && num(d.yearly_investment) > 0 && isFixedDeposit(d)) {
+      rows.push({ id: record.id, label: [d.category, d.broker].filter(Boolean).join(' · ') || 'Yearly investment', type: 'Yearly investment', account, amount: num(d.yearly_investment), dueMonth: investmentDueMonth(d), frequency: 'Yearly' });
+    } else if (record.module_key === 'insurance') {
+      const c = compute('insurance', d);
+      if (c.premium_status === 'PAYING' && num(c.annual_premium) > 0) rows.push({ id: record.id, label: String(d.security_name || 'Policy'), type: 'Insurance premium', account, amount: num(c.annual_premium), dueMonth: monthOfDate(c.next_premium_due_date), frequency: String(d.premium_frequency || 'Yearly') });
+    }
+  }
+  return rows.sort((a, b) => (a.dueMonth ?? 13) - (b.dueMonth ?? 13) || a.label.localeCompare(b.label));
+}
+
+/** Everything to pay in a month, soonest first: loan EMIs, premiums and yearly investments falling due, and payments added by hand. */
 export function paymentsDue(records: PaymentRecord[], compute: (moduleKey: string, data: any) => any, month: string, saved?: PaymentMonth): PaymentItem[] {
   const items: PaymentItem[] = [];
   for (const row of recurringPayments(records)) {
@@ -59,7 +86,11 @@ export function paymentsDue(records: PaymentRecord[], compute: (moduleKey: strin
       items.push({ id: `${record.id}:emi`, label: String(k === 'property' ? d.broker || d.location || 'Home loan' : d.security_name || 'Loan'), type: 'Loan EMI', bank: String(d.loan_institution || (k === 'loans' ? d.broker : '') || ''), amount: num(c.monthly_emi), dueDate: emiDueDate(k === 'property' ? d.loan_start_date : d.purchase_date, month), custom: false });
     } else if (k === 'insurance') {
       const c = compute(k, d);
-      if (c.premium_status === 'PAYING' && inMonth(c.next_premium_due_date, month) && num(d.premium_amount) > 0) items.push({ id: `${record.id}:premium`, label: String(d.security_name || 'Policy'), type: 'Insurance premium', bank: String(d.broker || ''), amount: num(d.premium_amount), dueDate: String(c.next_premium_due_date).slice(0, 10), custom: false });
+      // A yearly premium repeats in the same month every year, even if its saved date has not been moved on.
+      const due = isYearlyPremium(d) ? monthOfDate(c.next_premium_due_date) === Number(month.slice(5)) : inMonth(c.next_premium_due_date, month);
+      if (c.premium_status === 'PAYING' && due && num(d.premium_amount) > 0) items.push({ id: `${record.id}:premium`, label: String(d.security_name || 'Policy'), type: 'Insurance premium', bank: String(d.broker || ''), amount: num(d.premium_amount), dueDate: `${month}-${String(c.next_premium_due_date).slice(8, 10)}`, custom: false });
+    } else if (k === 'fixedIncome' && num(d.yearly_investment) > 0 && isFixedDeposit(d) && investmentDueMonth(d) === Number(month.slice(5))) {
+      items.push({ id: `${record.id}:yearly`, label: [d.category, String(d.account_name || '').trim()].filter(Boolean).join(' · ') || 'Yearly investment', type: 'Yearly investment', bank: String(d.broker || ''), amount: num(d.yearly_investment), dueDate: emiDueDate(d.purchase_date, month), custom: false });
     }
   }
   for (const custom of saved?.custom || []) items.push({ id: custom.id, label: custom.label, type: 'Other payment', bank: '', amount: num(custom.amount), dueDate: custom.due_date, custom: true });

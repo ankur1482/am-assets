@@ -3,10 +3,10 @@
 import { useState } from 'react';
 import { CheckCircle2 } from 'lucide-react';
 import { fmt, num } from '@/lib/calculations';
-import { firstWordMatch, mergeRecurring, parseRecurringImport, paymentTotals, type PayAccount, type PaymentItem, type RecurringKind, type RecurringPayment } from '@/lib/monthlyPayments';
+import { firstWordMatch, mergeRecurring, monthName, parseRecurringImport, paymentTotals, type PayAccount, type PaymentItem, type RecurringKind, type RecurringPayment, type YearlyCommitment } from '@/lib/monthlyPayments';
 
 type Props = {
-  monthTitle: string; items: PaymentItem[]; accounts: PayAccount[]; liquidity: number; canEdit: boolean; recurring: RecurringPayment[];
+  monthTitle: string; items: PaymentItem[]; accounts: PayAccount[]; liquidity: number; canEdit: boolean; recurring: RecurringPayment[]; yearly: YearlyCommitment[];
   onPay: (item: PaymentItem, amount: number, fromId: string) => Promise<boolean>;
   onUndo: (item: PaymentItem) => Promise<boolean>;
   onAdd: (label: string, amount: number, dueDate: string) => Promise<boolean>;
@@ -76,7 +76,7 @@ function RecurringEditor({ recurring, onSaveRecurring }: Pick<Props, 'recurring'
   </details>;
 }
 
-export default function MonthlyPayments({ monthTitle, items, accounts, liquidity, canEdit, recurring, onPay, onUndo, onAdd, onRemove, onAmount, onSaveRecurring }: Props) {
+export default function MonthlyPayments({ monthTitle, items, accounts, liquidity, canEdit, recurring, yearly, onPay, onUndo, onAdd, onRemove, onAmount, onSaveRecurring }: Props) {
   const [fromId, setFromId] = useState(''), [label, setLabel] = useState(''), [amount, setAmount] = useState(''), [dueDate, setDueDate] = useState('');
   const totals = paymentTotals(items), selected = fromId || accounts[0]?.id || 'other', after = liquidity - totals.remaining;
   return <section className="mom" aria-label={`Payments for ${monthTitle}`}>
@@ -96,6 +96,11 @@ export default function MonthlyPayments({ monthTitle, items, accounts, liquidity
     {!!items.length && <div className="mom-scroll" tabIndex={0} role="region" aria-label="Payments due"><table>
       <thead><tr><th scope="col" className="mom-sticky">Payment</th><th scope="col">Due</th><th scope="col">Amount</th><th scope="col">Status</th><th scope="col"><span className="sr-only">Actions</span></th></tr></thead>
       <tbody>{items.map(item => <PaymentRow key={`${item.id}:${item.amount}`} item={item} fromId={accountFor(item, accounts, selected)} canEdit={canEdit} onPay={onPay} onUndo={onUndo} onRemove={onRemove} onAmount={onAmount} />)}</tbody>
+    </table></div>}
+    {!!yearly.length && <div className="mom-scroll" tabIndex={0} role="region" aria-label="Yearly investments and premiums"><table>
+      <caption className="pay-caption">Yearly investments and premiums: {fmt(yearly.reduce((sum, row) => sum + row.amount, 0))} a year. Each joins the payments above in its due month.</caption>
+      <thead><tr><th scope="col" className="mom-sticky">Item</th><th scope="col">Due month</th><th scope="col">Amount a year</th></tr></thead>
+      <tbody>{yearly.map(row => <tr key={row.id}><th scope="row" className="mom-sticky"><span>{row.label}</span><small>{[row.type, row.account].filter(Boolean).join(' · ')}</small></th><td>{row.dueMonth ? monthName(row.dueMonth) : (row.type === 'Insurance premium' ? 'Add the next due date' : 'Add a due month')}</td><td>{fmt(row.amount)}</td></tr>)}</tbody>
     </table></div>}
     {canEdit && <RecurringEditor recurring={recurring} onSaveRecurring={onSaveRecurring} />}
     {canEdit && <form className="pay-add" onSubmit={async event => {
