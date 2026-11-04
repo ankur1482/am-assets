@@ -233,7 +233,6 @@ const groups = [
     [
       "allInvestments",
       TRANSACTION_MODULE,
-      "dividendRadar",
       "stocks",
       "property",
       "bullion",
@@ -7936,6 +7935,13 @@ export default function AssetManagerApp() {
             <strong>Upload now</strong>
           </button>
         )}
+        {phoneMode && view === "stocks" && (
+          <button type="button" className="monthly-banner" onClick={() => setView("dividendRadar")}>
+            <Sparkles size={15} />
+            <span>Dividend Buy Radar{currentBuySignals().length ? `: ${currentBuySignals().length} to look at` : ""}</span>
+            <strong>View</strong>
+          </button>
+        )}
         {phoneMode && view === "dashboard" && dividendsPending().some((item) => item.state !== "awaiting") && (
           <button type="button" className="monthly-banner" onClick={() => setView("dividends")}>
             <Paperclip size={15} />
@@ -7991,7 +7997,15 @@ export default function AssetManagerApp() {
           {MODULES[view] &&
             !["watchlist", "settings", "admin"].includes(view) &&
             moduleView(view)}
-          {view === "stocks" && <div className="mt-5"><DividendHistory history={dividendHistory(records)} /></div>}
+          {view === "stocks" && (
+            <div className="mt-5 space-y-5">
+              <details className="pay-recurring" open>
+                <summary>Dividend Buy Radar{currentBuySignals().length ? ` (${currentBuySignals().length})` : ""}</summary>
+                {dividendRadarPanel()}
+              </details>
+              <DividendHistory history={dividendHistory(records)} />
+            </div>
+          )}
           {view === "dividendRadar" && dividendRadarPanel()}
         </div>
         {uploadsLocked && (
@@ -10158,9 +10172,7 @@ export default function AssetManagerApp() {
   function predictivePlannerView() {
     return <div className="space-y-5">
       {phoneMode && canViewModule(MONTHLY_VALUATION_MODULE) && <button type="button" className="btn" onClick={() => setView(MONTHLY_VALUATION_MODULE)}><BarChart3 size={15} /> Month on Month</button>}
-      {phoneMode && workspaceAccess.all_modules && <button type="button" className="btn" onClick={() => setView("earnings")}><Users size={15} /> Earnings by Person</button>}
-      {phoneMode && workspaceAccess.all_modules && <button type="button" className="btn" onClick={() => setView("dividendRadar")}><Sparkles size={15} /> Dividend Buy Radar</button>}
-      <PredictivePlanner key={`${user?.id}:${activeWorkspaceId}:${plannerTab}`} records={records} netWorth={totals.net} accessToken={session?.access_token || ""} initialTab={plannerTab} />
+      {phoneMode && workspaceAccess.all_modules && <button type="button" className="btn" onClick={() => setView("earnings")}><Users size={15} /> Earnings by Person</button>}      <PredictivePlanner key={`${user?.id}:${activeWorkspaceId}:${plannerTab}`} records={records} netWorth={totals.net} accessToken={session?.access_token || ""} initialTab={plannerTab} />
       <details className="forecast-legacy">
         <summary>Advanced contribution combinations and AI commentary</summary>
         <p className="forecast-note">This separate calculator keeps its own assumptions. Its outputs may differ from the Predictive Planner above.</p>
