@@ -16,13 +16,13 @@ const daysBetween = (from: string, to: string) => Math.round((Date.parse(`${to}T
 export const payoutState = (payoutDate: string, today: string): PayoutState =>
   today < payoutDate ? 'awaiting' : daysBetween(payoutDate, today) > PAYOUT_OVERDUE_DAYS ? 'overdue' : 'due';
 
-/** Why an answer cannot be accepted, or an empty string. An estimate never blocks, because the real date may be earlier. */
-export function validateReceipt(item: Pick<PendingDividend, 'exDate' | 'payoutDate' | 'payoutEstimated'>, receivedOn: string, amount: number, today: string) {
+/** Why an answer cannot be accepted, or an empty string. Money cannot arrive before its payout date, so correct that date if it did. */
+export function validateReceipt(item: Pick<PendingDividend, 'exDate' | 'payoutDate'>, receivedOn: string, amount: number, today: string) {
   if (!(amount > 0)) return 'Enter the amount received.';
   if (!/^\d{4}-\d{2}-\d{2}$/.test(receivedOn)) return 'Enter the date it was received.';
+  if (item.payoutDate > today) return `This can be confirmed from the payout date, ${item.payoutDate}. If it has already been credited, change the payout date.`;
   if (receivedOn > today) return 'The date received cannot be in the future.';
-  if (receivedOn < item.exDate) return `The date received cannot be before the ex-date, ${item.exDate}.`;
-  if (!item.payoutEstimated && receivedOn < item.payoutDate) return `The date received is before the payout date, ${item.payoutDate}. Correct one of them.`;
+  if (receivedOn < item.payoutDate) return `The date received cannot be before the payout date, ${item.payoutDate}. If it arrived earlier, change the payout date.`;
   return '';
 }
 
@@ -31,7 +31,7 @@ export function receiptCheck(data: Record<string, any>) {
   const notes: string[] = [], expected = num(data.per_share) * num(data.quantity), gap = expected - num(data.amount), payout = String(data.payout_date || '');
   if (payout) {
     const late = daysBetween(payout, String(data.received_on));
-    notes.push(late > 0 ? `${late} day${late === 1 ? '' : 's'} after the ${data.payout_estimated ? 'estimated ' : ''}payout date` : late < 0 ? `${-late} day${late === -1 ? '' : 's'} before the estimated payout date` : 'On the payout date');
+    notes.push(late > 0 ? `${late} day${late === 1 ? '' : 's'} after the ${data.payout_estimated ? 'estimated ' : ''}payout date` : 'On the payout date');
   }
   if (data.currency === 'INR' && gap > 0.5) notes.push(`₹${gap.toFixed(2)} less than announced, possibly tax deducted`);
   if (data.currency === 'INR' && gap < -0.5) notes.push(`₹${(-gap).toFixed(2)} more than announced, so check the quantity`);

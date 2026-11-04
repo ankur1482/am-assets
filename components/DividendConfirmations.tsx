@@ -18,11 +18,12 @@ type Props = {
 };
 
 function PendingRow({ item, accounts, today, canEdit, onReceived, onNotReceived, onPayoutDate }: { item: PendingDividend } & Pick<Props, 'accounts' | 'today' | 'canEdit' | 'onReceived' | 'onNotReceived' | 'onPayoutDate'>) {
-  const [amount, setAmount] = useState(String(Number(item.amount.toFixed(2)))), [date, setDate] = useState(today > item.payoutDate ? item.payoutDate : today), [chosenCredit, setCredit] = useState(''), [busy, setBusy] = useState(false);
+  const [amount, setAmount] = useState(String(Number(item.amount.toFixed(2)))), [date, setDate] = useState(item.payoutDate), [chosenCredit, setCredit] = useState(''), [busy, setBusy] = useState(false);
   const ownAccount = dividendAccountFor(accounts, item.account), creditId = chosenCredit || ownAccount?.id || NEW_DIVIDEND_ACCOUNT;
   const run = async (action: () => Promise<boolean>) => { setBusy(true); try { await action(); } finally { setBusy(false); } };
   const foreign = item.currency !== 'INR', error = validateReceipt(item, date, num(amount), today);
-  const question = item.state === 'awaiting' ? `Expected by ${item.payoutDate}. We will ask once that date arrives, or answer now if it has already been credited.` : item.state === 'overdue' ? `The payout date ${item.payoutDate} has passed by some time. Has this dividend reached your account?` : `The payout date ${item.payoutDate} has arrived. Have you received this dividend?`;
+  const awaiting = item.state === 'awaiting';
+  const question = awaiting ? `Expected on ${item.payoutDate}. We will ask on that date. If it has already been credited, change the payout date to when it was paid.` : item.state === 'overdue' ? `The payout date ${item.payoutDate} has passed by some time. Has this dividend reached your account?` : `The payout date ${item.payoutDate} has arrived. Have you received this dividend?`;
   return <article className={`div-card ${item.state === 'overdue' ? 'div-overdue' : ''}`}>
     <div>
       <strong>{item.name} · {item.account}</strong>
@@ -32,18 +33,18 @@ function PendingRow({ item, accounts, today, canEdit, onReceived, onNotReceived,
     {canEdit && <div className="div-fields">
       <label>Payout date {item.payoutEstimated ? '(estimated)' : '(entered)'}<input type="date" defaultValue={item.payoutDate} min={item.exDate} disabled={busy} onBlur={event => { const value = event.target.value; if (value && value !== item.payoutDate) void run(() => onPayoutDate(item, value)); }} /></label>
       <label>Amount received (₹)<input inputMode="decimal" value={amount} onChange={event => setAmount(event.target.value)} /></label>
-      <label>Date received<input type="date" value={date} max={today} min={item.exDate} onChange={event => setDate(event.target.value)} /></label>
+      <label>Date received<input type="date" value={date} min={item.payoutDate} max={awaiting ? item.payoutDate : today} disabled={awaiting} onChange={event => setDate(event.target.value)} /></label>
       <label>Credited to<select value={creditId} onChange={event => setCredit(event.target.value)}>
         {!ownAccount && <option value={NEW_DIVIDEND_ACCOUNT}>{DIVIDEND_BANK} savings ({item.account}): create</option>}
         {accounts.map(account => <option key={account.id} value={account.id}>{payAccountLabel(account)}</option>)}
         <option value="none">Do not update a balance</option>
       </select></label>
       <div className="pay-actions">
-        <button type="button" className="btn-primary" disabled={busy || !!error} onClick={() => void run(() => onReceived(item, num(amount), date, creditId))}>Yes, received</button>
+        {!awaiting && <button type="button" className="btn-primary" disabled={busy || !!error} onClick={() => void run(() => onReceived(item, num(amount), date, creditId))}>Yes, received</button>}
         <button type="button" className="btn" disabled={busy} onClick={() => void run(() => onNotReceived(item))}>No, not due to me</button>
       </div>
     </div>}
-    {canEdit && error && <p role="alert" className="sale-error">{error}</p>}
+    {canEdit && !awaiting && error && <p role="alert" className="sale-error">{error}</p>}
   </article>;
 }
 

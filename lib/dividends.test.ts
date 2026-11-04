@@ -71,15 +71,19 @@ describe('payout date validation', () => {
     expect(at('2026-09-30', [{ id: 'p', module_key: DIVIDEND_MODULE, data: { key, status: 'awaiting', payout_date: '2026-08-30' } }])).toBeDefined();
   });
   it('rejects answers that do not fit the dates', () => {
-    const item = { exDate: '2026-06-05', payoutDate: '2026-08-30', payoutEstimated: false }, today = '2026-11-04';
+    const item = { exDate: '2026-06-05', payoutDate: '2026-08-30' }, today = '2026-11-04';
     expect(validateReceipt(item, '2026-08-30', 60, today)).toBe('');
+    expect(validateReceipt(item, '2026-09-15', 60, today)).toBe('');
     expect(validateReceipt(item, '2026-08-29', 60, today)).toContain('before the payout date');
-    expect(validateReceipt(item, '2026-06-01', 60, today)).toContain('before the ex-date');
     expect(validateReceipt(item, '2026-12-01', 60, today)).toContain('future');
     expect(validateReceipt(item, '2026-08-30', 0, today)).toContain('amount');
   });
-  it('allows a date before an estimated payout, since the real date may be earlier', () => {
-    expect(validateReceipt({ exDate: '2026-06-05', payoutDate: '2026-07-05', payoutEstimated: true }, '2026-06-25', 60, '2026-11-04')).toBe('');
+  it('cannot be confirmed while the payout date is still ahead, even with today as the date', () => {
+    const item = { exDate: '2026-11-04', payoutDate: '2026-12-04' };
+    expect(validateReceipt(item, '2026-11-04', 5.75, '2026-11-04')).toContain('confirmed from the payout date');
+    expect(validateReceipt(item, '2026-12-04', 5.75, '2026-11-04')).toContain('confirmed from the payout date');
+    expect(validateReceipt(item, '2026-12-04', 5.75, '2026-12-04')).toBe('');
+    expect(validateReceipt({ exDate: '2026-11-04', payoutDate: '2026-11-04' }, '2026-11-04', 5.75, '2026-11-04')).toBe('');
   });
   it('reports timing and any shortfall against the announcement', () => {
     const data = { per_share: 6, quantity: 10, currency: 'INR', payout_date: '2026-07-05', payout_estimated: true };
