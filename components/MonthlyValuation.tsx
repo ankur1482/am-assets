@@ -1,13 +1,13 @@
 "use client";
 
 import { useMemo, useState } from 'react';
-import { fmt, num } from '@/lib/calculations';
+import { fmt, formatMonth, num } from '@/lib/calculations';
 import { financialYearMonths, financialYearOf, financialYearTotal, isFlow, isYearlyRow, ledgerTable, netCashFlow, netWorthOn, sumCells, yearlyLedgerTable, yearlyPeriodFor, type LedgerField, type LedgerRow, type MonthData } from '@/lib/monthlyValuation';
 
 type Measure = 'both' | 'start' | 'end' | 'change' | 'gain';
 type Cadence = 'monthly' | 'yearly';
 type Props = { months: MonthData[]; currentMonth: string; canEdit: boolean; onSave: (period: string, row: LedgerRow, field: LedgerField, value: number | null) => Promise<boolean> };
-const monthLabel = (month: string) => new Date(`${month}-01T12:00:00Z`).toLocaleDateString('en-IN', { month: 'short', year: '2-digit', timeZone: 'UTC' });
+const monthLabel = formatMonth;
 const yearLabel = (year: number) => `FY ${year}-${String(year + 1).slice(2)}`;
 const signed = (value: number | null | undefined) => value === null || value === undefined ? '—' : `${value > 0 ? '+' : ''}${fmt(value)}`;
 const tone = (value: number | null | undefined) => num(value) > 0 ? 'mom-up' : num(value) < 0 ? 'mom-down' : '';

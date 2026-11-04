@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { calculateIndianGratuity, computeRecord, computeTotals, isEarningRent, isRentedProperty, loanPosition, num, occupancyOf, occupiedShareOfMonth, PROPERTY_LOAN_FIELDS, propertyGroupTotals } from "./calculations";
+import { calculateIndianGratuity, computeRecord, computeTotals, formatDate, formatDateTime, formatDateValue, formatMonth, isEarningRent, isRentedProperty, loanPosition, num, occupancyOf, occupiedShareOfMonth, PROPERTY_LOAN_FIELDS, propertyGroupTotals } from "./calculations";
 
 describe("financial calculations", () => {
   it("parses formatted Indian currency values", () => {
@@ -227,6 +227,26 @@ describe("financial calculations", () => {
     expect(occupiedShareOfMonth(flat, "2027-01")).toBe(1);
   });
 
+  it("formats dates as dd-MMM-yyyy", () => {
+    expect(formatDate("2026-11-04")).toBe("04-Nov-2026");
+    expect(formatDate("2027-01-31")).toBe("31-Jan-2027");
+    expect(formatDate("2026-11-04T08:46:07.034Z")).toBe("04-Nov-2026");
+    expect(formatDate("2026-11-04T20:00:00.000Z")).toBe("05-Nov-2026");
+    expect(formatDateTime("2026-11-04T08:46:07.034Z")).toBe("04-Nov-2026 14:16");
+    expect(formatMonth("2026-11")).toBe("Nov-2026");
+    expect(formatMonth("2026-11-01")).toBe("Nov-2026");
+  });
+  it("leaves non-dates alone and tolerates empty or bad values", () => {
+    expect(formatDate("")).toBe("");
+    expect(formatDate(null)).toBe("");
+    expect(formatDate("Add first EMI date")).toBe("Add first EMI date");
+    expect(formatDate("2026-13-01")).toBe("2026-13-01");
+    expect(formatDateTime("nonsense")).toBe("nonsense");
+    for (const value of ["453000", "Residential", "2026", "Covered by OD savings"]) expect(formatDateValue(value)).toBe(value);
+    expect(formatDateValue("2026-11-04")).toBe("04-Nov-2026");
+    expect(formatDateValue("2037-03")).toBe("Mar-2037");
+    expect(formatDateValue("2026-11-04T08:46:07.034Z")).toBe("04-Nov-2026 14:16");
+  });
   it("keeps salary and rent out of assets and net worth", () => {
     for (const category of ["Salary", "Rental Income"]) {
       const data = { category, employee_contribution: 100000, purchase_date: "2020-01-01" };

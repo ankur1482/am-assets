@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from 'react';
-import { fmt, num } from '@/lib/calculations';
+import { fmt, formatDate, num } from '@/lib/calculations';
 import { gainsByFinancialYear, LONG_TERM_MONTHS, planSale, postedSales, type SaleInput, type SaleLot } from '@/lib/transactions';
 
 type LedgerRecord = { id: string; module_key: string; data: Record<string, any> };
@@ -66,7 +66,7 @@ export default function TransactionLedger({ records, buys, annualReturn, returnC
       <thead><tr><th scope="col" className="mom-sticky">Security</th><th scope="col">Date</th><th scope="col">Type</th><th scope="col">Quantity</th><th scope="col">Price</th><th scope="col">Amount</th><th scope="col">Gain or loss</th><th scope="col"><span className="sr-only">Actions</span></th></tr></thead>
       <tbody>{rows.map(row => <tr key={row.key}>
         <th scope="row" className="mom-sticky"><span>{row.name}</span><small>{row.account}</small></th>
-        <td>{row.date || '—'}</td><td>{row.type}</td><td>{Number(row.quantity.toFixed(4))}</td><td>{fmt(row.price)}</td><td>{fmt(row.value)}</td>
+        <td>{row.date ? formatDate(row.date) : '—'}</td><td>{row.type}</td><td>{Number(row.quantity.toFixed(4))}</td><td>{fmt(row.price)}</td><td>{fmt(row.value)}</td>
         <td>{row.record ? amount(num(row.record.data.gain)) : '—'}</td>
         <td>{row.record && canEdit && <button type="button" className="btn" disabled={busyId === row.record.id} onClick={async () => { const record = row.record!; setBusyId(record.id); try { await onUndo(record); } finally { setBusyId(''); } }}>Undo</button>}</td>
       </tr>)}</tbody>

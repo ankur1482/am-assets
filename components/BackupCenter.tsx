@@ -1,6 +1,7 @@
 "use client";
 
 import { CheckCircle2, Download, FolderOpen, HardDrive, TriangleAlert } from 'lucide-react';
+import { formatDateTime } from '@/lib/calculations';
 
 export type BackupTarget = { at: string; error: string };
 type Props = {
@@ -12,7 +13,7 @@ type Props = {
 
 function Status({ target, idle }: { target: BackupTarget; idle: string }) {
   if (target.error) return <p className="backup-status backup-bad"><TriangleAlert size={14} /> {target.error}</p>;
-  if (target.at) return <p className="backup-status backup-good"><CheckCircle2 size={14} /> Last backup: {new Date(target.at).toLocaleString('en-IN')}</p>;
+  if (target.at) return <p className="backup-status backup-good"><CheckCircle2 size={14} /> Last backup: {formatDateTime(target.at)}</p>;
   return <p className="backup-status">{idle}</p>;
 }
 

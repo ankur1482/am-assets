@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { CheckCircle2, FileUp, TriangleAlert } from 'lucide-react';
+import { formatDate } from '@/lib/calculations';
 import { periodLabel, type UploadItem } from '@/lib/monthlyUploads';
 
 type Props = {
@@ -25,7 +26,7 @@ function UploadRow({ item, canSubmit, onUpload, onMarkUnavailable }: { item: Upl
       <strong>{item.label} · {item.account}</strong>
       {item.status === 'uploaded' && <span className="monthly-pill monthly-ok"><CheckCircle2 size={13} /> Uploaded</span>}
       {item.status === 'not_available' && <span className="monthly-pill">Not available: {item.reason}</span>}
-      {item.status === 'missing' && <span className={`monthly-pill ${item.overdue ? 'monthly-late' : ''}`}>{item.overdue ? 'Overdue' : `Due by ${item.dueBy}`}</span>}
+      {item.status === 'missing' && <span className={`monthly-pill ${item.overdue ? 'monthly-late' : ''}`}>{item.overdue ? 'Overdue' : `Due by ${formatDate(item.dueBy)}`}</span>}
     </div>
     {canSubmit && <div className="monthly-actions">
       <label className={`btn ${busy ? 'monthly-disabled' : ''}`}>

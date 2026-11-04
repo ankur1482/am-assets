@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { CheckCircle2 } from 'lucide-react';
-import { fmt, num } from '@/lib/calculations';
+import { fmt, formatDate, num } from '@/lib/calculations';
 import { defaultSource, payAccountLabel, mergeRecurring, monthName, parseRecurringImport, paymentTotals, type PayAccount, type PaymentItem, type RecurringKind, type RecurringPayment, type YearlyCommitment } from '@/lib/monthlyPayments';
 
 type Props = {
@@ -22,14 +22,14 @@ function PaymentRow({ item, accounts, fromId, canEdit, onPay, onUndo, onRemove, 
   const source = chosen || fromId;
   const run = async (action: () => Promise<boolean>) => { setBusy(true); try { await action(); } finally { setBusy(false); } };
   const name = <th scope="row" className="mom-sticky"><span>{item.label}</span><small>{[item.type, item.bank, item.note].filter(Boolean).join(' · ')}</small></th>;
-  if (item.informational && !item.paid) return <tr>{name}<td>{item.dueDate || '—'}</td><td>{fmt(item.amount)}</td><td>{item.bank || '—'}{item.transfer && item.to ? ` to ${item.to}` : ''}</td><td><span className="monthly-pill">{item.transfer ? 'Automatic, no action needed' : 'Included in the card bill'}</span></td><td /></tr>;
+  if (item.informational && !item.paid) return <tr>{name}<td>{item.dueDate ? formatDate(item.dueDate) : '—'}</td><td>{fmt(item.amount)}</td><td>{item.bank || '—'}{item.transfer && item.to ? ` to ${item.to}` : ''}</td><td><span className="monthly-pill">{item.transfer ? 'Automatic, no action needed' : 'Included in the card bill'}</span></td><td /></tr>;
   return <tr>
     {name}
-    <td>{item.dueDate || (item.recurringId || item.custom ? '—' : 'Add first EMI date')}</td>
+    <td>{item.dueDate ? formatDate(item.dueDate) : (item.recurringId || item.custom ? '—' : 'Add first EMI date')}</td>
     {item.paid ? <>
       <td>{canEdit && !item.transfer ? <input className="mom-input" inputMode="decimal" aria-label={`Amount paid for ${item.label}`} disabled={busy} value={amount} onChange={event => setAmount(event.target.value)} onBlur={() => { if (num(amount) > 0 && num(amount) !== num(item.paid?.amount)) void run(() => onEditPaid(item, num(amount))); }} /> : fmt(item.paid.amount)}</td>
       <td><strong>{item.paid.from_name}{item.paid.from_kind ? ` ${item.paid.from_kind === 'od' ? 'OD' : 'savings'}` : ''}</strong>{item.transfer ? ` to ${item.paid.to_name}` : ''}</td>
-      <td><span className="monthly-pill monthly-ok"><CheckCircle2 size={13} /> {item.transfer ? 'Moved' : 'Paid'} {item.paid.paid_on}</span></td>
+      <td><span className="monthly-pill monthly-ok"><CheckCircle2 size={13} /> {item.transfer ? 'Moved' : 'Paid'} {formatDate(item.paid.paid_on)}</span></td>
       <td>{canEdit && <button type="button" className="btn" disabled={busy} onClick={() => void run(() => onUndo(item))}>Undo</button>}</td>
     </> : <>
       <td>{canEdit ? <input className="mom-input" inputMode="decimal" aria-label={`Amount for ${item.label}`} value={amount} onChange={event => setAmount(event.target.value)} onBlur={() => { if (item.recurringId && num(amount) !== item.amount) void onAmount(item, num(amount)); }} /> : fmt(item.amount)}</td>

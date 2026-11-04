@@ -3,6 +3,35 @@ export const fmt=(v:any)=>'₹'+Math.round(num(v)).toLocaleString('en-IN');
 export const fmtInr=(v:any,decimals=2)=>num(v).toLocaleString('en-IN',{minimumFractionDigits:decimals,maximumFractionDigits:decimals});
 export const pct=(v:any)=>`${num(v).toFixed(2)}%`;
 
+const MONTH_ABBR=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+const ISO_DATE=/^(\d{4})-(\d{2})-(\d{2})$/,ISO_MONTH=/^(\d{4})-(\d{2})$/,ISO_TIMESTAMP=/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/;
+const validMonth=(m:string)=>Number(m)>=1&&Number(m)<=12;
+/** dd-MMM-yyyy, the app's date format, for a stored date or timestamp. Anything else is returned unchanged. */
+export function formatDate(v:any):string{
+  if(v instanceof Date||ISO_TIMESTAMP.test(String(v??'')))return formatDateTime(v).slice(0,11);
+  const text=String(v??''),match=text.match(ISO_DATE);
+  return match&&validMonth(match[2])?`${match[3]}-${MONTH_ABBR[Number(match[2])-1]}-${match[1]}`:text;
+}
+/** dd-MMM-yyyy HH:mm in India time. Anything that is not a date is returned unchanged. */
+export function formatDateTime(v:any):string{
+  const date=v instanceof Date?v:new Date(String(v??''));
+  if(Number.isNaN(date.getTime()))return String(v??'');
+  const parts=new Intl.DateTimeFormat('en-GB',{timeZone:'Asia/Kolkata',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).formatToParts(date),part=(type:string)=>parts.find(item=>item.type===type)?.value||'';
+  return `${part('day')}-${MONTH_ABBR[Number(part('month'))-1]}-${part('year')} ${part('hour')}:${part('minute')}`;
+}
+/** MMM-yyyy for a stored month such as 2026-11. Anything else is returned unchanged. */
+export function formatMonth(v:any):string{
+  const text=String(v??''),match=text.match(ISO_MONTH)||text.match(/^(\d{4})-(\d{2})-\d{2}$/);
+  return match&&validMonth(match[2])?`${MONTH_ABBR[Number(match[2])-1]}-${match[1]}`:text;
+}
+/** Formats a table value if it is a date, timestamp or month, and leaves everything else alone. */
+export function formatDateValue(v:any):string{
+  const text=String(v??'');
+  if(ISO_TIMESTAMP.test(text))return formatDateTime(text);
+  if(ISO_DATE.test(text))return formatDate(text);
+  return ISO_MONTH.test(text)?formatMonth(text):text;
+}
+
 export type IndianGratuityInput={
   dateOfJoining:string;
   calculationDate?:string;

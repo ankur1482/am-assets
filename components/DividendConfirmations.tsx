@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from 'react';
-import { fmt, num } from '@/lib/calculations';
+import { fmt, formatDate, num } from '@/lib/calculations';
 import { PAYOUT_ESTIMATE_DAYS, receiptCheck, validateReceipt, type PendingDividend } from '@/lib/dividends';
 import { DIVIDEND_BANK, dividendAccountFor, payAccountLabel, type PayAccount } from '@/lib/monthlyPayments';
 
@@ -23,11 +23,11 @@ function PendingRow({ item, accounts, today, canEdit, onReceived, onNotReceived,
   const run = async (action: () => Promise<boolean>) => { setBusy(true); try { await action(); } finally { setBusy(false); } };
   const foreign = item.currency !== 'INR', error = validateReceipt(item, date, num(amount), today);
   const awaiting = item.state === 'awaiting';
-  const question = awaiting ? `Expected on ${item.payoutDate}. We will ask on that date. If it has already been credited, change the payout date to when it was paid.` : item.state === 'overdue' ? `The payout date ${item.payoutDate} has passed by some time. Has this dividend reached your account?` : `The payout date ${item.payoutDate} has arrived. Have you received this dividend?`;
+  const question = awaiting ? `Expected on ${formatDate(item.payoutDate)}. We will ask on that date. If it has already been credited, change the payout date to when it was paid.` : item.state === 'overdue' ? `The payout date ${formatDate(item.payoutDate)} has passed by some time. Has this dividend reached your account?` : `The payout date ${formatDate(item.payoutDate)} has arrived. Have you received this dividend?`;
   return <article className={`div-card ${item.state === 'overdue' ? 'div-overdue' : ''}`}>
     <div>
       <strong>{item.name} · {item.account}</strong>
-      <p>{foreign ? `${item.currency} ` : '₹'}{item.perShare} a share, ex-date {item.exDate}, on {Number(item.quantity.toFixed(4))} shares.{item.uncertain ? ' Some lots have no purchase date, so check the quantity.' : ''}{foreign ? ` The amount is in ${item.currency}, so enter what you received in rupees.` : ''}</p>
+      <p>{foreign ? `${item.currency} ` : '₹'}{item.perShare} a share, ex-date {formatDate(item.exDate)}, on {Number(item.quantity.toFixed(4))} shares.{item.uncertain ? ' Some lots have no purchase date, so check the quantity.' : ''}{foreign ? ` The amount is in ${item.currency}, so enter what you received in rupees.` : ''}</p>
       <p className="div-question">{question}</p>
     </div>
     {canEdit && <div className="div-fields">
@@ -65,7 +65,7 @@ export default function DividendConfirmations({ pending, received, accounts, can
       <thead><tr><th scope="col" className="mom-sticky">Stock</th><th scope="col">Ex-date</th><th scope="col">Payout date</th><th scope="col">Received</th><th scope="col">Amount</th><th scope="col">Check</th><th scope="col">Credited to</th><th scope="col"><span className="sr-only">Actions</span></th></tr></thead>
       <tbody>{received.map(record => <tr key={record.id}>
         <th scope="row" className="mom-sticky"><span>{record.data.security_name}</span><small>{record.data.account_name}</small></th>
-        <td>{record.data.ex_date}</td><td>{record.data.payout_date || '—'}</td><td>{record.data.received_on}</td><td>{fmt(record.data.amount)}</td><td className="div-check">{receiptCheck(record.data) || '—'}</td><td>{record.data.credit_name || '—'}</td>
+        <td>{formatDate(record.data.ex_date)}</td><td>{record.data.payout_date ? formatDate(record.data.payout_date) : '—'}</td><td>{formatDate(record.data.received_on)}</td><td>{fmt(record.data.amount)}</td><td className="div-check">{receiptCheck(record.data) || '—'}</td><td>{record.data.credit_name || '—'}</td>
         <td>{canEdit && <button type="button" className="btn" disabled={busyId === record.id} onClick={async () => { setBusyId(record.id); try { await onUndo(record); } finally { setBusyId(''); } }}>Undo</button>}</td>
       </tr>)}</tbody>
     </table></div>}

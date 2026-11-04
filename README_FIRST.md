@@ -132,6 +132,11 @@ the amount to the cash flow of the month it was received and to Month on Month, 
 person's own HDFC savings row, creating it if needed. Available data sources do not publish payout dates, so the date is
 estimated at 30 days after the ex-date until you enter the real one from the company's notice.
 
+**Investments → Dividend Buy Radar** lists announced dividends you can still qualify for, across
+holdings, the watchlist and, on request, about 50 large companies, with a marker on stock rows.
+It shows the last day to buy, not a recommendation. Dividends confirmed as received stay listed
+on the Stocks page after the shares are sold.
+
 **Planning → Earnings by Person** totals what each account received in a financial year:
 recorded salary, rent, confirmed dividends, accrued interest and realised gains. It projects
 nothing and is a starting point for tax planning, not a tax calculation.

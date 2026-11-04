@@ -43,6 +43,8 @@ import BackupCenter, { type BackupTarget } from "@/components/BackupCenter";
 import { backupFileName, backupFingerprint } from "@/lib/backups";
 import { chooseBackupFolder, folderPermission, forgetBackupFolder, loadBackupFolder, requestFolderPermission, supportsBackupFolder, writeBackupFile } from "@/lib/backupFolder";
 import DividendConfirmations, { NEW_DIVIDEND_ACCOUNT } from "@/components/DividendConfirmations";
+import DividendRadar, { BuyBadge, DividendHistory } from "@/components/DividendRadar";
+import { buySignals, dividendHistory, LARGE_COMPANIES, type BuySource, type StockCalendar } from "@/lib/dividendCalendar";
 import EarningsByPerson from "@/components/EarningsByPerson";
 import { dividendSymbols, DIVIDEND_MODULE, pendingDividends, receivedDividends, validateReceipt, type DividendEvent, type PendingDividend } from "@/lib/dividends";
 import MonthlyPayments from "@/components/MonthlyPayments";
@@ -58,6 +60,10 @@ import { researchLinks } from "@/lib/researchLinks";
 import { ACCOUNT_TYPES, MODULES, RELATIONS } from "@/lib/modules";
 import { controlsOtherFields, isFieldVisible } from "@/lib/fieldVisibility";
 import {
+  formatDate,
+  formatDateTime,
+  formatDateValue,
+  formatMonth,
   isIncomeRecord,
   isEarningRent,
   isRentedProperty,
@@ -211,6 +217,7 @@ const views = [
   ["futureWealth", "FW", "Predictive Planner"],
   [MONTHLY_VALUATION_MODULE, "MM", "Month on Month"],
   ["earnings", "EP", "Earnings by Person"],
+  ["dividendRadar", "DR", "Dividend Buy Radar"],
   [MONTHLY_UPLOAD_MODULE, "MU", "Monthly Uploads"],
   ["watchlist", "WL", "Watchlist"],
   ["alerts", "AL", "Alerts"],
@@ -226,6 +233,7 @@ const groups = [
     [
       "allInvestments",
       TRANSACTION_MODULE,
+      "dividendRadar",
       "stocks",
       "property",
       "bullion",
@@ -1175,6 +1183,12 @@ export default function AssetManagerApp() {
     snapshotRef = useRef(""),
     valuationWriteRef = useRef({ scope: "", at: 0 }),
     dividendLookupRef = useRef(""),
+    calendarLookupRef = useRef(""),
+    [stockCalendars, setStockCalendars] = useState<Record<string, StockCalendar>>({}),
+    [calendarMissing, setCalendarMissing] = useState<string[]>([]),
+    [calendarLoading, setCalendarLoading] = useState(false),
+    [exploring, setExploring] = useState(false),
+    [explored, setExplored] = useState(false),
     [dividendEvents, setDividendEvents] = useState<Record<string, DividendEvent[]>>({}),
     [dividendLoading, setDividendLoading] = useState(false),
     backupBaselineRef = useRef({ scope: "", fingerprint: "" }),
@@ -2001,6 +2015,16 @@ export default function AssetManagerApp() {
       setDividendLoading(false);
     })();
   }, [session?.access_token, loading, records]);
+  // Finds announced dividends for holdings and the watchlist once per session, or when that set changes.
+  useEffect(() => {
+    if (!session?.access_token || loading) return;
+    const symbols = [...new Set(radarStocks().map((stock) => stock.symbol))].sort(),
+      lookup = symbols.join(",");
+    if (!lookup || calendarLookupRef.current === lookup) return;
+    calendarLookupRef.current = lookup;
+    setCalendarLoading(true);
+    void loadCalendars(symbols).finally(() => setCalendarLoading(false));
+  }, [session?.access_token, loading, records]);
   // Saves a new backup shortly after any real change, so a burst of edits makes one file.
   useEffect(() => {
     if (!user?.id || loading || (!records.length && !accounts.length)) return;
@@ -2245,7 +2269,7 @@ export default function AssetManagerApp() {
           price = Number(q.price);
           assignStockQuoteFields(d, q, "current_price");
           d.live_price = d.current_price;
-          d.last_synced = new Date().toLocaleString();
+          d.last_synced = new Date().toISOString();
         }
       } catch {}
     }
@@ -2851,6 +2875,77 @@ export default function AssetManagerApp() {
       />
     );
   }
+  /** Indian holdings and watchlist stocks, with what is held of each. */
+  function radarStocks() {
+    const stocks = new Map<string, { symbol: string; name: string; source: BuySource; price: number; heldQuantity: number }>();
+    for (const record of records) {
+      if (!["stocks", "watchlist"].includes(record.module_key) || record.data?.sold_out) continue;
+      const symbol = String(record.data?.ticker_symbol || "").trim().toUpperCase().replace(/\.(NS|BO)$/, ""),
+        exchange = String(record.data?.exchange || "NSE").toUpperCase();
+      if (!symbol || !["NSE", "BSE"].includes(exchange)) continue;
+      const holding = record.module_key === "stocks",
+        existing = stocks.get(symbol);
+      stocks.set(symbol, {
+        symbol,
+        name: existing?.name || String(record.data?.security_name || symbol),
+        source: holding || existing?.source === "Holding" ? "Holding" : "Watchlist",
+        price: existing?.price || num(record.data?.live_price || record.data?.current_price),
+        heldQuantity: (existing?.heldQuantity || 0) + (holding ? num(computeLiveRecord("stocks", record.data).quantity) : 0),
+      });
+    }
+    return [...stocks.values()];
+  }
+  async function loadCalendars(symbols: string[]) {
+    const token = session?.access_token;
+    if (!token) return;
+    const found: Record<string, StockCalendar> = {},
+      missing: string[] = [],
+      queue = [...symbols];
+    await Promise.all(Array.from({ length: 4 }, async () => {
+      for (let next = queue.shift(); next; next = queue.shift()) {
+        try {
+          const res = await fetch(`/api/dividend-calendar?symbol=${encodeURIComponent(next)}`, { headers: { Authorization: `Bearer ${token}` } }),
+            json = await res.json();
+          if (res.ok && json.found) found[next] = json;
+          else if (res.ok) missing.push(next);
+        } catch {}
+      }
+    }));
+    setStockCalendars((prev) => ({ ...prev, ...found }));
+    setCalendarMissing((prev) => [...new Set([...prev, ...missing])].sort());
+  }
+  function currentBuySignals() {
+    const own = radarStocks(),
+      known = new Set(own.map((stock) => stock.symbol)),
+      extra = LARGE_COMPANIES.filter((symbol) => !known.has(symbol) && stockCalendars[symbol]).map((symbol) => ({ symbol, name: "", source: "Large company" as const, price: 0, heldQuantity: 0 }));
+    return buySignals([...own, ...extra], stockCalendars, istCalendar().iso);
+  }
+  /** The soonest deadline for a stock, shown as a marker on its row. */
+  function buyBadgeFor(ticker: any) {
+    const symbol = String(ticker || "").trim().toUpperCase().replace(/\.(NS|BO)$/, "");
+    return symbol ? <div><BuyBadge signal={currentBuySignals().find((signal) => signal.symbol === symbol)} /></div> : null;
+  }
+  function dividendRadarPanel() {
+    return (
+      <DividendRadar
+        signals={currentBuySignals()}
+        loading={calendarLoading}
+        exploring={exploring}
+        explored={explored}
+        checked={Object.keys(stockCalendars).length}
+        missing={calendarMissing}
+        onExplore={async () => {
+          setExploring(true);
+          try {
+            await loadCalendars(LARGE_COMPANIES.filter((symbol) => !stockCalendars[symbol]));
+            setExplored(true);
+          } finally {
+            setExploring(false);
+          }
+        }}
+      />
+    );
+  }
   function dividendsPending() {
     const today = istCalendar().iso;
     return pendingDividends(records, dividendEvents, computeLiveRecord, `${financialYearOf(today.slice(0, 7))}-04-01`, today);
@@ -3374,7 +3469,7 @@ export default function AssetManagerApp() {
         d.latest_value = (num(d.quantity) * num(d.live_price)).toFixed(2);
         if (!num(d.investment_amount) && num(d.quantity) && num(d.inv_price))
           d.investment_amount = (num(d.quantity) * num(d.inv_price)).toFixed(2);
-        d.last_synced = new Date().toLocaleString();
+        d.last_synced = new Date().toISOString();
         await saveRecordData(r.id, d);
         ok++;
       } catch (e: any) {
@@ -3432,7 +3527,7 @@ export default function AssetManagerApp() {
           assignStockQuoteFields(d, q);
           d.today_gain = (num(d.quantity) * num(d.day_change)).toFixed(2);
           d.latest_value = (num(d.quantity) * num(d.live_price)).toFixed(2);
-          d.last_synced = new Date().toLocaleString();
+          d.last_synced = new Date().toISOString();
           updates.set(r.id, d);
         } catch (e: any) {
           firstError ||= e?.message || `${d.security_name || d.ticker_symbol} refresh failed`;
@@ -3492,7 +3587,7 @@ export default function AssetManagerApp() {
         d.latest_value = (qty * num(d.current_price)).toFixed(2);
         if (num(d.inv_price))
           d.investment_amount = (qty * num(d.inv_price)).toFixed(2);
-        d.last_synced = new Date().toLocaleString();
+        d.last_synced = new Date().toISOString();
         await saveRecordData(r.id, d);
         ok++;
       } catch (e: any) {
@@ -3641,7 +3736,7 @@ export default function AssetManagerApp() {
         d.pricing_city = d.city || profile?.city || "";
         d.rate_provider = q.provider || "";
         d.rate_source_url = q.sourceUrl || "";
-        d.last_synced = new Date().toLocaleString();
+        d.last_synced = new Date().toISOString();
         await saveRecordData(r.id, d);
         ok++;
       } catch (e: any) {
@@ -4600,6 +4695,7 @@ export default function AssetManagerApp() {
       [TRANSACTION_MODULE]: ArrowUpDown,
       backups: HardDrive,
       earnings: Users,
+      dividendRadar: Sparkles,
       [MONTHLY_UPLOAD_MODULE]: Paperclip,
       watchlist: Eye,
       alerts: Bell,
@@ -5264,6 +5360,7 @@ export default function AssetManagerApp() {
     if (view === "payments") return <div className="phone-screen p-3">{monthlyPaymentsPanel()}</div>;
     if (view === "dividends") return <div className="phone-screen p-3">{dividendsPanel()}</div>;
     if (view === "earnings") return <div className="phone-screen p-3">{earningsPanel()}</div>;
+    if (view === "dividendRadar") return <div className="phone-screen p-3">{dividendRadarPanel()}</div>;
     if (view === "settings")
       return <div className="phone-screen">{settings()}</div>;
     if (view === "purchaseCalculator")
@@ -7835,7 +7932,7 @@ export default function AssetManagerApp() {
         {canSubmitUploads && uploadStatus.missing.length > 0 && view !== MONTHLY_UPLOAD_MODULE && (
           <button type="button" className="monthly-banner" onClick={() => setView(MONTHLY_UPLOAD_MODULE)}>
             <Paperclip size={15} />
-            <span>{uploadStatus.missing.length} monthly document{uploadStatus.missing.length === 1 ? "" : "s"} outstanding, due by {uploadStatus.missing[0].dueBy}</span>
+            <span>{uploadStatus.missing.length} monthly document{uploadStatus.missing.length === 1 ? "" : "s"} outstanding, due by {formatDate(uploadStatus.missing[0].dueBy)}</span>
             <strong>Upload now</strong>
           </button>
         )}
@@ -7894,6 +7991,8 @@ export default function AssetManagerApp() {
           {MODULES[view] &&
             !["watchlist", "settings", "admin"].includes(view) &&
             moduleView(view)}
+          {view === "stocks" && <div className="mt-5"><DividendHistory history={dividendHistory(records)} /></div>}
+          {view === "dividendRadar" && dividendRadarPanel()}
         </div>
         {uploadsLocked && (
           <div className="monthly-lock" role="dialog" aria-modal="true" aria-label="Monthly documents overdue">
@@ -8610,7 +8709,7 @@ export default function AssetManagerApp() {
               {aiReviewMeta && (
                 <span>
                   {aiReviewMeta.model} |{" "}
-                  {new Date(aiReviewMeta.generatedAt).toLocaleString()}
+                  {formatDateTime(aiReviewMeta.generatedAt)}
                 </span>
               )}
             </div>
@@ -8675,7 +8774,7 @@ export default function AssetManagerApp() {
             </h3>
             <span className="text-lg text-[#004080]">Today</span>
             <span className="text-xs font-semibold text-gray-500">
-              {new Date(marketTime).toLocaleDateString()}{" "}
+              {formatDate(new Date(marketTime))}{" "}
               {new Date(marketTime).toLocaleTimeString([], {
                 hour: "2-digit",
                 minute: "2-digit",
@@ -10060,6 +10159,7 @@ export default function AssetManagerApp() {
     return <div className="space-y-5">
       {phoneMode && canViewModule(MONTHLY_VALUATION_MODULE) && <button type="button" className="btn" onClick={() => setView(MONTHLY_VALUATION_MODULE)}><BarChart3 size={15} /> Month on Month</button>}
       {phoneMode && workspaceAccess.all_modules && <button type="button" className="btn" onClick={() => setView("earnings")}><Users size={15} /> Earnings by Person</button>}
+      {phoneMode && workspaceAccess.all_modules && <button type="button" className="btn" onClick={() => setView("dividendRadar")}><Sparkles size={15} /> Dividend Buy Radar</button>}
       <PredictivePlanner key={`${user?.id}:${activeWorkspaceId}:${plannerTab}`} records={records} netWorth={totals.net} accessToken={session?.access_token || ""} initialTab={plannerTab} />
       <details className="forecast-legacy">
         <summary>Advanced contribution combinations and AI commentary</summary>
@@ -10387,7 +10487,7 @@ export default function AssetManagerApp() {
               )}
               <p className="text-[10px] italic text-gray-400">{wealthForecast.disclaimer}</p>
               {wealthForecastMeta && (
-                <p className="text-[10px] text-gray-400">{wealthForecastMeta.model} · {new Date(wealthForecastMeta.generatedAt).toLocaleString()}</p>
+                <p className="text-[10px] text-gray-400">{wealthForecastMeta.model} · {formatDateTime(wealthForecastMeta.generatedAt)}</p>
               )}
             </div>
           )}
@@ -10551,7 +10651,7 @@ export default function AssetManagerApp() {
           {snaps.map((x) => (
             <div
               key={x.date}
-              title={`${x.date}: ${fmt(x.net)}`}
+              title={`${formatDate(x.date)}: ${fmt(x.net)}`}
               className="flex min-w-5 flex-1 items-end"
             >
               <div
@@ -11002,7 +11102,7 @@ export default function AssetManagerApp() {
                   <g key={`${point.date}-${index}`}>
                     <circle cx={pointX} cy={currentY} r="5" fill="#115c45">
                       <title>
-                        {point.date} {point.type} current value:{" "}
+                        {formatDate(point.date)} {point.type} current value:{" "}
                         {fmt(point.current)}
                       </title>
                     </circle>
@@ -11021,7 +11121,7 @@ export default function AssetManagerApp() {
                     </text>}
                     <circle cx={pointX} cy={investedY} r="4" fill="#c69632">
                       <title>
-                        {point.date} {point.type} cost basis:{" "}
+                        {formatDate(point.date)} {point.type} cost basis:{" "}
                         {fmt(point.invested)}
                       </title>
                     </circle>
@@ -11710,7 +11810,7 @@ export default function AssetManagerApp() {
                         </div>
                       </td>
                       <td className="p-3 whitespace-nowrap text-xs font-semibold text-gray-600">
-                        {row.purchaseDate}
+                        {formatDate(row.purchaseDate)}
                       </td>
                       <td className="p-3 text-right font-bold tabular-nums">
                         {row.quantity}
@@ -12188,7 +12288,7 @@ export default function AssetManagerApp() {
                             : ""}
                         </div>
                         <div className="text-xs font-semibold text-gray-500">
-                          {x.baseDate}
+                          {formatDate(x.baseDate)}
                         </div>
                       </td>
                       <td
@@ -12679,9 +12779,7 @@ export default function AssetManagerApp() {
               <p className="mt-1 text-xs text-gray-600">
                 Overall portfolio excluding Watchlist. Baseline captured{" "}
                 {monthStartSnapshot?.data?.snapshot_date
-                  ? new Date(
-                      `${monthStartSnapshot.data.snapshot_date}T00:00:00`,
-                    ).toLocaleDateString("en-IN")
+                  ? formatDate(monthStartSnapshot.data.snapshot_date)
                   : "when this dashboard loaded"}
                 .
               </p>
@@ -13178,7 +13276,7 @@ export default function AssetManagerApp() {
                   <td>{d.module_key === MONTHLY_UPLOAD_MODULE ? "Monthly Uploads" : MODULES[d.module_key]?.title || d.module_key}</td>
                   <td className="text-xs">
                     {d.created_at
-                      ? new Date(d.created_at).toLocaleString()
+                      ? formatDateTime(d.created_at)
                       : ""}
                   </td>
                   <td className="space-x-2">
@@ -13928,7 +14026,7 @@ export default function AssetManagerApp() {
                       </td>
                       <td className="text-xs">
                         {u.last_sign_in_at
-                          ? new Date(u.last_sign_in_at).toLocaleString()
+                          ? formatDateTime(u.last_sign_in_at)
                           : "Never"}
                       </td>
                       <td className="space-y-2 p-3">
@@ -15317,6 +15415,7 @@ export default function AssetManagerApp() {
                             : k === "bullion"
                             ? bullionHoldingCell(col, c, r)
                             : formatModuleCell(k, col, c, r)}
+                          {k === "stocks" && col === "security_name" && buyBadgeFor(c.ticker_symbol)}
                           {k === "property" && col === "security_name" && lots.length > 1 && (
                             <div className="mt-1">{lotToggle}</div>
                           )}
@@ -15703,7 +15802,7 @@ export default function AssetManagerApp() {
             </p>
           </div>
           <span className="rounded-full border border-[#d8cba9] bg-white px-3 py-1 text-xs font-semibold text-[#40584c]">
-            As of {new Date().toLocaleDateString("en-IN")}
+            As of {formatDate(new Date())}
           </span>
         </div>
         <div className="mt-4 grid grid-cols-4 gap-3 max-xl:grid-cols-2 max-md:grid-cols-1">
@@ -15877,6 +15976,7 @@ export default function AssetManagerApp() {
                           <small>
                             {row.exchange}
                             {row.sector ? ` · ${row.sector}` : ""}
+                            {buyBadgeFor(row.symbol)}
                           </small>
                         </td>
                         <td className="number-cell">
@@ -16135,7 +16235,7 @@ export default function AssetManagerApp() {
               </div>
               <div className="rounded-2xl border border-[#e3dccc] bg-white px-3 py-2 text-sm font-semibold text-[#17382b]">
                 {salaryDetail && f === "purchase_date"
-                  ? String(computed[f]).slice(0, 7)
+                  ? formatMonth(computed[f])
                   : formatCell(f, computed[f])}
               </div>
             </div>
@@ -16967,7 +17067,7 @@ export default function AssetManagerApp() {
         if (qty && buy) set("investment_amount", (qty * buy).toFixed(2));
         if (qty) set("latest_value", (qty * Number(q.price)).toFixed(2));
         set("today_gain", (qty * num(q.change)).toFixed(2));
-        set("last_synced", new Date().toLocaleString());
+        set("last_synced", new Date().toISOString());
       }
     } catch {
       setToast("Could not fetch price. Enter manually.");
@@ -17082,6 +17182,6 @@ export default function AssetManagerApp() {
       );
     if (k.includes("pct") || k.includes("interest_rate"))
       return <span>{pct(v)}</span>;
-    return <span>{String(v ?? "")}</span>;
+    return <span>{formatDateValue(v)}</span>;
   }
 }

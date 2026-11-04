@@ -1,4 +1,4 @@
-import { num } from './calculations';
+import { formatDate, num } from './calculations';
 import { postedSales } from './transactions';
 
 export const DIVIDEND_MODULE = 'dividendReceipt';
@@ -20,9 +20,9 @@ export const payoutState = (payoutDate: string, today: string): PayoutState =>
 export function validateReceipt(item: Pick<PendingDividend, 'exDate' | 'payoutDate'>, receivedOn: string, amount: number, today: string) {
   if (!(amount > 0)) return 'Enter the amount received.';
   if (!/^\d{4}-\d{2}-\d{2}$/.test(receivedOn)) return 'Enter the date it was received.';
-  if (item.payoutDate > today) return `This can be confirmed from the payout date, ${item.payoutDate}. If it has already been credited, change the payout date.`;
+  if (item.payoutDate > today) return `This can be confirmed from the payout date, ${formatDate(item.payoutDate)}. If it has already been credited, change the payout date.`;
   if (receivedOn > today) return 'The date received cannot be in the future.';
-  if (receivedOn < item.payoutDate) return `The date received cannot be before the payout date, ${item.payoutDate}. If it arrived earlier, change the payout date.`;
+  if (receivedOn < item.payoutDate) return `The date received cannot be before the payout date, ${formatDate(item.payoutDate)}. If it arrived earlier, change the payout date.`;
   return '';
 }
 
