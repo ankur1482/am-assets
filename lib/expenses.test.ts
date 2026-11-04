@@ -18,8 +18,8 @@ describe('daily expenses and card spend', () => {
   it('treats a row named credit card as a card even if saved as same each month', () => {
     expect(paymentCards([list]).map(card => card.label)).toEqual(['hdfc credit card', 'Credit card 2']);
   });
-  it('offers cards first, then Google Pay, cash and other', () => {
-    expect(expenseTags([list]).map(tag => [tag.label, tag.onCard])).toEqual([['hdfc credit card', true], ['Credit card 2', true], ['Google Pay', false], ['Cash', false], ['Other', false]]);
+  it('offers Google Pay first, then cards, cash and other', () => {
+    expect(expenseTags([list]).map(tag => [tag.label, tag.onCard])).toEqual([['Google Pay', false], ['hdfc credit card', true], ['Credit card 2', true], ['Cash', false], ['Other', false]]);
   });
   it('shows where the month’s money went, biggest first', () => {
     const records = [expense('a', 100, 'card:h', 'hdfc credit card'), expense('b', 300, 'google-pay', 'Google Pay'), expense('c', 50, 'card:h', 'hdfc credit card'), expense('d', 999, 'cash', 'Cash', '2026-10-30')];
@@ -35,6 +35,31 @@ describe('daily expenses and card spend', () => {
     expect(monthlyDirectExpenses(records, '2026-11')).toBe(500);
     expect(planningSnapshot([...records, { id: 's', module_key: 'fixedIncome', data: { category: 'Salary', employee_contribution: 10000 } }], '2026-11-04')).toMatchObject({ monthlyDirectExpenses: 500, availableCashFlow: 9500 });
     expect(planningSnapshot(records, '2026-12-01').monthlyDirectExpenses).toBe(0);
+  });
+  describe('Google Pay', () => {
+    const savings = { id: 'sav', module_key: 'fixedIncome', data: { category: 'Savings in Bank', broker: 'HDFC Bank', account_name: 'Asha', current_value_today: 1000 } };
+    const withCard = { id: 'list', module_key: MONTHLY_PAYMENT_MODULE, data: { ...recurringData([...regular, { id: 'rp', label: 'ICICI RuPay credit card', amount: 0, due_day: null, via: '', kind: 'card' }]), google_pay: { card_id: 'rp', account_id: 'sav' } } };
+    const tags = expenseTags([withCard, savings]);
+    it('offers the chosen card and account as separate Google Pay choices', () => {
+      expect(tags.slice(0, 2)).toEqual([
+        expect.objectContaining({ id: 'gpay:card:rp', label: 'Google Pay · ICICI RuPay credit card', onCard: true, cardId: 'card:rp' }),
+        expect.objectContaining({ id: 'gpay:account:sav', label: 'Google Pay · HDFC Bank savings (Asha)', onCard: false, accountId: 'sav', accountKind: 'savings' }),
+      ]);
+    });
+    it('adds Google Pay on a card to that card’s statement, and not to cash flow', () => {
+      const records = [withCard, savings, { id: 'e', module_key: EXPENSE_MODULE, data: { amount: 700, tag_id: 'gpay:card:rp', card_id: 'card:rp', tag_label: 'Google Pay · ICICI RuPay credit card', date: '2026-11-04' } }];
+      expect(cardSpendIn(records, '2026-11').find(card => card.id === 'card:rp')).toMatchObject({ expenses: 700, spend: 700 });
+      expect(monthlyDirectExpenses(records, '2026-11')).toBe(0);
+    });
+    it('counts Google Pay from a bank in cash flow, not on any card', () => {
+      const records = [withCard, savings, { id: 'e', module_key: EXPENSE_MODULE, data: { amount: 300, tag_id: 'gpay:account:sav', tag_label: 'Google Pay · HDFC', date: '2026-11-04' } }];
+      expect(monthlyDirectExpenses(records, '2026-11')).toBe(300);
+      expect(cardSpendIn(records, '2026-11').every(card => card.expenses === 0)).toBe(true);
+    });
+    it('falls back to plain Google Pay until a source is chosen, keeping older expenses counted', () => {
+      expect(expenseTags([list]).map(tag => tag.id)).toContain('google-pay');
+      expect(monthlyDirectExpenses([expense('old', 50, 'google-pay', 'Google Pay')], '2026-11')).toBe(50);
+    });
   });
   it('makes a new expense trigger a backup', () => {
     expect(backupFingerprint([], [expense('a', 1, 'cash', 'Cash')])).not.toBe(backupFingerprint([], []));

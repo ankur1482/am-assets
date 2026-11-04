@@ -2950,13 +2950,25 @@ export default function AssetManagerApp() {
   }
   async function saveExpense(expense: { amount: number; label: string; tag: ExpenseTag; date: string }) {
     if (!user) return false;
+    // Google Pay from a bank leaves that account now; on a card it waits for the statement.
+    const account = recordsRef.current.find((row) => row.id === expense.tag.accountId),
+      kind = expense.tag.accountKind || "savings",
+      taken = account ? drawFromAccount(account.data, kind, expense.amount) : null;
+    if (account && taken) {
+      const { error: balanceError } = await supabase.from("records").update({ data: taken.data }).eq("id", account.id);
+      if (balanceError) {
+        setToast(balanceError.message);
+        return false;
+      }
+    }
     const { error } = await supabase.from("records").insert({
       user_id: user.id,
       ...(activeWorkspaceId ? { workspace_id: activeWorkspaceId } : {}),
       module_key: EXPENSE_MODULE,
-      data: { amount: expense.amount, label: expense.label, tag_id: expense.tag.id, tag_label: expense.tag.label, date: expense.date },
+      data: { amount: expense.amount, label: expense.label, tag_id: expense.tag.id, tag_label: expense.tag.label, date: expense.date, ...(expense.tag.cardId ? { card_id: expense.tag.cardId } : {}), ...(account && taken ? { account_id: account.id, account_kind: kind, drawn: taken.drawn } : {}) },
     });
     if (error) {
+      if (account) await supabase.from("records").update({ data: account.data }).eq("id", account.id);
       setToast(error.message);
       return false;
     }
@@ -2965,9 +2977,12 @@ export default function AssetManagerApp() {
     await loadAll(true);
     return true;
   }
-  async function deleteExpense(row: { id: string }) {
+  async function deleteExpense(row: { id: string; data: Record<string, any> }) {
     const { error } = await supabase.from("records").delete().eq("id", row.id);
     if (error) setToast(error.message);
+    // Removing a Google Pay expense puts the money back in the account it left.
+    const account = recordsRef.current.find((item) => item.id === row.data.account_id);
+    if (!error && account) await supabase.from("records").update({ data: addToAccount(account.data, row.data.account_kind || "savings", num(row.data.drawn)) }).eq("id", account.id);
     await loadAll(true);
     return !error;
   }
@@ -9788,7 +9803,7 @@ export default function AssetManagerApp() {
   async function saveRecurringList(items: RecurringPayment[]) {
     if (!user) return false;
     const record = recurringRecord(records),
-      data = recurringData(items),
+      data = { ...(record?.data || {}), ...recurringData(items) },
       { error } = record
         ? await supabase.from("records").update({ data }).eq("id", record.id)
         : await supabase.from("records").insert({ user_id: user.id, ...(activeWorkspaceId ? { workspace_id: activeWorkspaceId } : {}), module_key: MONTHLY_PAYMENT_MODULE, data });

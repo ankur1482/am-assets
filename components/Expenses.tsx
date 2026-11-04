@@ -70,6 +70,6 @@ export default function ExpensesPanel({ monthTitle, tags, today, lastTag, rows, 
         <td>{canEdit && <button type="button" className="btn" disabled={busyId === row.id} onClick={async () => { setBusyId(row.id); try { await onDelete(row); } finally { setBusyId(''); } }}>Remove</button>}</td>
       </tr>)}</tbody>
     </table></div>}
-    <p className="mom-note">Card spending counts towards the card&apos;s statement rather than your cash flow today. Google Pay and cash count in this month&apos;s cash flow, but no bank balance changes, so update balances when you reconcile.</p>
+    <p className="mom-note">Spending on a card, including Google Pay on a card, counts towards that card&apos;s statement rather than your cash flow today. Google Pay from a bank account comes out of that account&apos;s balance straight away. Cash counts in this month&apos;s cash flow, but no balance changes.</p>
   </section>;
 }
