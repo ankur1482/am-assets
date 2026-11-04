@@ -48,7 +48,6 @@ GROQ_AI_MODEL=openai/gpt-oss-20b
 OPENAI_API_KEY=YOUR_OPENAI_API_KEY
 OPENAI_AI_MODEL=gpt-5.5
 OPENAI_AI_REASONING_EFFORT=medium
-UPSTOX_REDIRECT_URI=https://gupta.vercel.app/api/upstox/callback
 ```
 
 `SUPABASE_SERVICE_ROLE_KEY` must stay server-only. It is required for the Admin Console because Supabase Auth admin actions cannot run with the public anon key.
@@ -132,6 +131,42 @@ data change, while the app is open, to Google Drive (`Important Documents/Backup
 chosen PC folder (Chrome and Edge only). Price refreshes alone do not trigger one. Files are
 not encrypted and older ones are never deleted automatically. Restore from Settings → Backup.
 Google Drive connections now survive sign-out; disconnect them in Settings.
+
+### Full backup and restore of the whole app
+
+The in-app backup covers your data only. This covers everything needed to rebuild the app.
+Run from the project folder on your PC:
+
+```bash
+npm run backup:full
+```
+
+It asks for a passphrase, then saves to `../asset-manager-backups/full-backup-<date>/`: the
+code with full history, database structure and rows, logins, stored documents, and your
+settings and keys (encrypted with the passphrase). It only reads from Supabase, and checks
+itself when finished. Keep the folder private: apart from the settings it is not encrypted.
+
+To rebuild on any PC with Node.js and Git, using a copy of the project's scripts folder or an
+existing checkout:
+
+```bash
+# Rebuild the app into a new folder
+node scripts/full-restore.mjs <backup folder> --code <new folder>
+
+# Preview loading the data, changing nothing
+node scripts/full-restore.mjs <backup folder> --data --dry-run
+
+# Load the data. It names the project and asks you to type it to confirm
+node scripts/full-restore.mjs <backup folder> --data
+```
+
+For a new Supabase project, first run the four files in the backup's `database/schema` folder
+in the SQL editor, and put the new project's URL and keys in `.env.local`. It refuses to load
+into a project that already has records unless you add `--overwrite`.
+
+Not included: login passwords (Supabase does not export them, so use Forgot password on a new
+project), files held in Google Drive (they stay in Drive), and environment settings in Vercel
+beyond your `.env.local`.
 
 ## 4. Deploy to Vercel
 

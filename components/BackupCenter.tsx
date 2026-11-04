@@ -6,7 +6,7 @@ export type BackupTarget = { at: string; error: string };
 type Props = {
   driveConnected: boolean; drive: BackupTarget;
   folderName: string; folderNeedsPermission: boolean; folderSupported: boolean; folder: BackupTarget;
-  busy: boolean;
+  busy: boolean; contents: string;
   onConnectDrive: () => void; onChooseFolder: () => void; onAllowFolder: () => void; onForgetFolder: () => void; onBackupNow: () => void; onDownload: () => void;
 };
 
@@ -17,7 +17,7 @@ function Status({ target, idle }: { target: BackupTarget; idle: string }) {
 }
 
 export default function BackupCenter(props: Props) {
-  const { driveConnected, drive, folderName, folderNeedsPermission, folderSupported, folder, busy } = props;
+  const { driveConnected, drive, folderName, folderNeedsPermission, folderSupported, folder, busy, contents } = props;
   return <section className="backup-center" aria-label="Automatic backups">
     <p>Every time data is added, changed or deleted, a new backup file is saved within about 10 seconds to each place you connect here. Price refreshes alone do not create a backup. The app must be open for this to happen.</p>
     <div className="backup-cards">
@@ -44,6 +44,7 @@ export default function BackupCenter(props: Props) {
       <button type="button" className="btn" disabled={busy || (!driveConnected && !folderName)} onClick={props.onBackupNow}>{busy ? 'Backing up…' : 'Back up now'}</button>
       <button type="button" className="btn" onClick={props.onDownload}><Download size={15} /> Download a copy</button>
     </div>
-    <p className="backup-note">Backups contain your accounts and financial records as a readable JSON file, without encryption, so keep them somewhere private. Attached documents are listed but not copied into the file. To restore, use the reinstate option in Settings → Backup. Older backups are never deleted automatically.</p>
+    <p className="backup-note"><strong>Each backup holds:</strong> {contents}. It is a readable JSON file without encryption, so keep it somewhere private. Older backups are never deleted automatically. To restore, use the reinstate option in Settings → Backup.</p>
+    <p className="backup-note"><strong>Not in this file:</strong> attached document files (only their names and links), household members and permissions, logins, and the app itself. To cover those as well, run the full backup on your PC: <code>npm run backup:full</code>.</p>
   </section>;
 }

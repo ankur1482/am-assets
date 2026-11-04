@@ -43,7 +43,7 @@ import BackupCenter, { type BackupTarget } from "@/components/BackupCenter";
 import { backupFileName, backupFingerprint } from "@/lib/backups";
 import { chooseBackupFolder, folderPermission, forgetBackupFolder, loadBackupFolder, requestFolderPermission, supportsBackupFolder, writeBackupFile } from "@/lib/backupFolder";
 import MonthlyPayments from "@/components/MonthlyPayments";
-import { drawFromOd, MONTHLY_PAYMENT_MODULE, odAccounts, paymentsDue, paymentTotals, recurringData, recurringPayments, recurringRecord, returnToOd, type PaymentItem, type PaymentMonth, type RecurringPayment } from "@/lib/monthlyPayments";
+import { addToAccount, drawFromAccount, firstWordMatch, MONTHLY_PAYMENT_MODULE, payAccounts, paymentsDue, paymentTotals, recurringData, recurringPayments, recurringRecord, type PaymentItem, type PaymentMonth, type RecurringPayment } from "@/lib/monthlyPayments";
 import MonthlyValuation from "@/components/MonthlyValuation";
 import TransactionLedger, { RecordSaleForm, type BuyRow } from "@/components/TransactionLedger";
 import { planSale, postedSales, reduceLot, restoreLot, TRANSACTION_MODULE, xirr, type CashFlow, type SaleInput, type SaleLot } from "@/lib/transactions";
@@ -4089,6 +4089,7 @@ export default function AssetManagerApp() {
         folderSupported={supportsBackupFolder()}
         folder={folderBackup}
         busy={backupBusy}
+        contents={`your profile, ${accounts.length} accounts, ${records.length} records (holdings, loans, income, history, sales and payments) and ${docs.length} document links`}
         onConnectDrive={() => void connectGoogleDrive()}
         onChooseFolder={() => void pickBackupFolder()}
         onAllowFolder={() => void allowBackupFolder()}
@@ -9324,25 +9325,44 @@ export default function AssetManagerApp() {
   async function markPaymentPaid(item: PaymentItem, amount: number, fromId: string) {
     const { month, record } = currentPayments(),
       saved = (record?.data || { period: month }) as PaymentMonth,
-      account = fromId === "other" ? undefined : recordsRef.current.find((r) => r.id === fromId);
-    let drawn = 0, shortBy = 0, fromName = "another account";
-    if (account) {
-      const result = drawFromOd(account.data, amount);
+      accounts = payAccounts(recordsRef.current),
+      source = accounts.find((account) => account.id === fromId),
+      sourceRecord = recordsRef.current.find((r) => r.id === source?.id),
+      target = item.transfer ? accounts.find((account) => account.kind === "savings" && firstWordMatch(item.to || "", account)) : undefined,
+      targetRecord = recordsRef.current.find((r) => r.id === target?.id);
+    if (item.transfer && (!source || !target)) {
+      setToast(source ? `Add a Savings in Bank row for ${item.to} in Fixed Income first, so the money has somewhere to go.` : "Choose the account this transfer comes from.");
+      return false;
+    }
+    let drawn = 0, shortBy = 0;
+    if (source && sourceRecord) {
+      const result = drawFromAccount(sourceRecord.data, source.kind, amount);
       ({ drawn, shortBy } = result);
-      fromName = String(account.data?.loan_institution || account.data?.broker || "OD account");
-      const { error } = await supabase.from("records").update({ data: result.data }).eq("id", account.id);
+      const { error } = await supabase.from("records").update({ data: result.data }).eq("id", sourceRecord.id);
       if (error) {
         setToast(error.message);
         return false;
       }
     }
-    const data: PaymentMonth = { ...saved, period: month, paid: { ...(saved.paid || {}), [item.id]: { label: item.label, type: item.type, amount, paid_on: istCalendar().iso, from_id: account?.id || "", from_name: fromName, drawn } } };
+    const undoBalances = async () => {
+      if (sourceRecord) await supabase.from("records").update({ data: sourceRecord.data }).eq("id", sourceRecord.id);
+      if (targetRecord) await supabase.from("records").update({ data: targetRecord.data }).eq("id", targetRecord.id);
+    };
+    if (target && targetRecord) {
+      const { error } = await supabase.from("records").update({ data: addToAccount(targetRecord.data, target.kind, drawn) }).eq("id", targetRecord.id);
+      if (error) {
+        await undoBalances();
+        setToast(error.message);
+        return false;
+      }
+    }
+    const data: PaymentMonth = { ...saved, period: month, paid: { ...(saved.paid || {}), [item.id]: { label: item.label, type: item.type, amount: item.transfer ? drawn : amount, paid_on: istCalendar().iso, from_id: source?.id || "", from_name: source?.name || "another account", from_kind: source?.kind, drawn, ...(target ? { to_id: target.id, to_name: target.name } : {}) } } };
     if (!(await savePaymentMonth(month, record, data))) {
-      if (account) await supabase.from("records").update({ data: account.data }).eq("id", account.id);
+      await undoBalances();
       return false;
     }
     await loadAll(true);
-    setToast(shortBy ? `Paid, but only ${fmt(drawn)} was available in the OD account. ${fmt(shortBy)} came from elsewhere.` : `${item.label} marked paid`);
+    setToast(shortBy ? `Only ${fmt(drawn)} was available in ${source?.name}. ${item.transfer ? `${fmt(shortBy)} was not moved.` : `${fmt(shortBy)} came from elsewhere.`}` : `${item.label} ${item.transfer ? "moved" : "marked paid"}`);
     return true;
   }
   async function undoPayment(item: PaymentItem) {
@@ -9350,9 +9370,17 @@ export default function AssetManagerApp() {
       saved = record?.data as PaymentMonth | undefined,
       entry = saved?.paid?.[item.id];
     if (!saved || !entry) return false;
-    const account = recordsRef.current.find((r) => r.id === entry.from_id);
+    const account = recordsRef.current.find((r) => r.id === entry.from_id),
+      target = recordsRef.current.find((r) => r.id === entry.to_id);
     if (account) {
-      const { error } = await supabase.from("records").update({ data: returnToOd(account.data, entry.drawn) }).eq("id", account.id);
+      const { error } = await supabase.from("records").update({ data: addToAccount(account.data, entry.from_kind || "od", entry.drawn) }).eq("id", account.id);
+      if (error) {
+        setToast(error.message);
+        return false;
+      }
+    }
+    if (target) {
+      const { error } = await supabase.from("records").update({ data: drawFromAccount(target.data, "savings", entry.drawn).data }).eq("id", target.id);
       if (error) {
         setToast(error.message);
         return false;
@@ -9412,7 +9440,7 @@ export default function AssetManagerApp() {
         onSaveRecurring={saveRecurringList}
         monthTitle={periodLabel(month)}
         items={items}
-        accounts={odAccounts(records)}
+        accounts={payAccounts(records)}
         liquidity={planningSnapshot(records).liquidity}
         canEdit={canEditModule(MONTHLY_PAYMENT_MODULE)}
         onPay={markPaymentPaid}

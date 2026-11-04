@@ -1,9 +1,5 @@
-import { FlatCompat } from "@eslint/eslintrc";
-import { fileURLToPath } from "node:url";
-import path from "node:path";
-
-const directory = path.dirname(fileURLToPath(import.meta.url));
-const compat = new FlatCompat({ baseDirectory: directory });
+import nextVitals from "eslint-config-next/core-web-vitals";
+import nextTypescript from "eslint-config-next/typescript";
 
 const config = [
   {
@@ -17,7 +13,8 @@ const config = [
       "next-env.d.ts",
     ],
   },
-  ...compat.extends("next/core-web-vitals", "next/typescript"),
+  ...nextVitals,
+  ...nextTypescript,
   {
     rules: {
       "@typescript-eslint/no-explicit-any": "off",
@@ -26,6 +23,7 @@ const config = [
         { argsIgnorePattern: "^_", varsIgnorePattern: "^_" },
       ],
       "react/no-unescaped-entities": "off",
+      "react-hooks/set-state-in-effect": "warn",
     },
   },
 ];

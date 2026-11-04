@@ -1,22 +1,22 @@
-import { isOverdraftLoan, num } from './calculations';
+import { isCashAtHome, isOverdraftLoan, isSavingsAccount, num } from './calculations';
 
 export const MONTHLY_PAYMENT_MODULE = 'monthlyPayment';
 
 type PaymentRecord = { id: string; module_key: string; data: Record<string, any> };
-export type PaidEntry = { label: string; type: string; amount: number; paid_on: string; from_id: string; from_name: string; drawn: number };
+export type PaidEntry = { label: string; type: string; amount: number; paid_on: string; from_id: string; from_name: string; drawn: number; from_kind?: 'od' | 'savings'; to_id?: string; to_name?: string };
 export type CustomPayment = { id: string; label: string; amount: number; due_date: string };
 export type PaymentMonth = { period: string; paid?: Record<string, PaidEntry>; custom?: CustomPayment[]; amounts?: Record<string, number> };
-export type PaymentItem = { id: string; label: string; type: string; bank: string; amount: number; dueDate: string; paid?: PaidEntry; custom: boolean; recurringId?: string; informational?: boolean; note?: string };
-/** regular: same each month. card: amount changes monthly. on_card: already inside a card bill, so never counted again. */
-export type RecurringKind = 'regular' | 'card' | 'on_card';
-export type RecurringPayment = { id: string; label: string; amount: number; due_day: number | null; via: string; kind: RecurringKind; note?: string };
+export type PaymentItem = { id: string; label: string; type: string; bank: string; amount: number; dueDate: string; paid?: PaidEntry; custom: boolean; recurringId?: string; informational?: boolean; transfer?: boolean; to?: string; note?: string };
+/** regular: same each month. card: amount changes monthly. on_card: already inside a card bill, so never counted again. transfer: moves money between your own accounts. */
+export type RecurringKind = 'regular' | 'card' | 'on_card' | 'transfer';
+export type RecurringPayment = { id: string; label: string; amount: number; due_day: number | null; via: string; kind: RecurringKind; note?: string; to?: string };
 const RECURRING_PERIOD = 'recurring';
 
 export const recurringRecord = (records: PaymentRecord[]) => records.find(record => record.module_key === MONTHLY_PAYMENT_MODULE && record.data?.period === RECURRING_PERIOD);
 export const recurringPayments = (records: PaymentRecord[]): RecurringPayment[] => recurringRecord(records)?.data?.items || [];
 export const recurringData = (items: RecurringPayment[]) => ({ period: RECURRING_PERIOD, items });
 /** What regular payments take out of cash flow each month. */
-export const monthlyRegularTotal = (items: RecurringPayment[]) => items.reduce((sum, item) => sum + (item.kind === 'on_card' ? 0 : Math.max(0, num(item.amount))), 0);
+export const monthlyRegularTotal = (items: RecurringPayment[]) => items.reduce((sum, item) => sum + (item.kind === 'on_card' || item.kind === 'transfer' ? 0 : Math.max(0, num(item.amount))), 0);
 
 /** Reads a payment list from an imported file, ignoring anything without a name. Throws if it is not a list. */
 export function parseRecurringImport(text: string): RecurringPayment[] {
@@ -24,9 +24,15 @@ export function parseRecurringImport(text: string): RecurringPayment[] {
   if (!Array.isArray(list)) throw new Error('This file does not contain a payment list.');
   return list.filter(row => String(row?.label || '').trim()).map((row, index) => ({
     id: `r${Date.now()}-${index}`, label: String(row.label).trim(), amount: Math.max(0, num(row.amount)), due_day: num(row.due_day) >= 1 && num(row.due_day) <= 31 ? num(row.due_day) : null,
-    via: String(row.via || '').trim(), kind: row.kind === 'card' || row.kind === 'on_card' ? row.kind : 'regular', note: String(row.note || '').trim(),
+    via: String(row.via || '').trim(), kind: ['card', 'on_card', 'transfer'].includes(row.kind) ? row.kind : 'regular', note: String(row.note || '').trim(), to: String(row.to || '').trim(),
   }));
 }
+
+/** Adds imported rows; a row with the same name replaces the old one, so importing twice makes no duplicates. */
+export const mergeRecurring = (existing: RecurringPayment[], imported: RecurringPayment[]) => {
+  const names = new Set(imported.map(row => row.label.toLowerCase()));
+  return [...existing.filter(row => !names.has(row.label.toLowerCase())), ...imported];
+};
 export type OdAccount = { id: string; name: string; parked: number };
 
 const inMonth = (date: any, month: string) => String(date || '').slice(0, 7) === month;
@@ -42,8 +48,8 @@ function emiDueDate(start: any, month: string) {
 export function paymentsDue(records: PaymentRecord[], compute: (moduleKey: string, data: any) => any, month: string, saved?: PaymentMonth): PaymentItem[] {
   const items: PaymentItem[] = [];
   for (const row of recurringPayments(records)) {
-    const id = `rec:${row.id}`, informational = row.kind === 'on_card';
-    items.push({ id, recurringId: row.id, label: row.label, type: row.kind === 'card' ? 'Credit card' : informational ? 'Auto-debited on a card' : 'Regular payment', bank: row.via, note: row.note, amount: saved?.amounts?.[id] ?? Math.max(0, num(row.amount)), dueDate: row.due_day ? emiDueDate(`0000-00-${String(row.due_day).padStart(2, '0')}`, month) : '', custom: false, informational });
+    const id = `rec:${row.id}`, informational = row.kind === 'on_card', transfer = row.kind === 'transfer';
+    items.push({ id, recurringId: row.id, label: row.label, type: row.kind === 'card' ? 'Credit card' : informational ? 'Auto-debited on a card' : transfer ? 'Transfer between your accounts' : 'Regular payment', bank: row.via, to: row.to, note: row.note, amount: saved?.amounts?.[id] ?? Math.max(0, num(row.amount)), dueDate: row.due_day ? emiDueDate(`0000-00-${String(row.due_day).padStart(2, '0')}`, month) : '', custom: false, informational, transfer });
   }
   for (const record of records) {
     const k = record.module_key, d = record.data || {};
@@ -65,10 +71,28 @@ export function paymentsDue(records: PaymentRecord[], compute: (moduleKey: strin
 }
 
 export function paymentTotals(items: PaymentItem[]) {
-  const paid = items.reduce((sum, item) => sum + (item.paid ? num(item.paid.amount) : 0), 0);
-  const remaining = items.reduce((sum, item) => sum + (item.paid || item.informational ? 0 : item.amount), 0);
+  // A transfer stays inside liquidity, so it is neither money spent nor money still to pay.
+  const paid = items.reduce((sum, item) => sum + (item.paid && !item.transfer ? num(item.paid.amount) : 0), 0);
+  const remaining = items.reduce((sum, item) => sum + (item.paid || item.informational || item.transfer ? 0 : item.amount), 0);
   return { paid, remaining, total: paid + remaining, unpaidCount: items.filter(item => !item.paid && !item.informational).length };
 }
+
+export type PayAccount = OdAccount & { kind: 'od' | 'savings' };
+const BALANCE_FIELD = { od: 'od_parked_balance', savings: 'current_value_today' } as const;
+/** Where money can come from: OD accounts with the most parked first, then bank savings. */
+export function payAccounts(records: PaymentRecord[]): PayAccount[] {
+  const savings = records
+    .filter(record => record.module_key === 'fixedIncome' && isSavingsAccount(record.data) && !isCashAtHome(record.data))
+    .map(record => ({ id: record.id, name: String(record.data.broker || 'Bank savings'), parked: Math.max(0, num(record.data.current_value_today)), kind: 'savings' as const }));
+  return [...odAccounts(records).map(account => ({ ...account, kind: 'od' as const })), ...savings];
+}
+export const firstWordMatch = (text: string, account: { name: string }) => Boolean(text) && text.toLowerCase().includes(account.name.split(/\s+/)[0].toLowerCase());
+/** Takes money out of an OD account or a savings balance, never below zero. */
+export function drawFromAccount(data: Record<string, any>, kind: 'od' | 'savings', amount: number) {
+  const field = BALANCE_FIELD[kind], balance = Math.max(0, num(data[field])), drawn = Math.min(balance, Math.max(0, amount));
+  return { data: { ...data, [field]: balance - drawn }, drawn, shortBy: Math.max(0, amount) - drawn };
+}
+export const addToAccount = (data: Record<string, any>, kind: 'od' | 'savings', amount: number) => ({ ...data, [BALANCE_FIELD[kind]]: Math.max(0, num(data[BALANCE_FIELD[kind]])) + Math.max(0, amount) });
 
 /** OD accounts payments can come from, with the most parked money first. */
 export function odAccounts(records: PaymentRecord[]): OdAccount[] {
@@ -78,10 +102,3 @@ export function odAccounts(records: PaymentRecord[]): OdAccount[] {
     .sort((a, b) => b.parked - a.parked);
 }
 
-/** Takes a payment out of an OD account. It can only draw what is parked; the rest is reported, not hidden. */
-export function drawFromOd(data: Record<string, any>, amount: number) {
-  const parked = Math.max(0, num(data.od_parked_balance)), drawn = Math.min(parked, Math.max(0, amount));
-  return { data: { ...data, od_parked_balance: parked - drawn }, drawn, shortBy: Math.max(0, amount) - drawn };
-}
-
-export const returnToOd = (data: Record<string, any>, drawn: number) => ({ ...data, od_parked_balance: Math.max(0, num(data.od_parked_balance)) + Math.max(0, drawn) });

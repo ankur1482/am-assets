@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { computeRecord } from './calculations';
-import { drawFromOd, monthlyRegularTotal, MONTHLY_PAYMENT_MODULE, odAccounts, parseRecurringImport, paymentsDue, paymentTotals, recurringData, returnToOd, type PaidEntry, type RecurringPayment } from './monthlyPayments';
+import { addToAccount, drawFromAccount, firstWordMatch, mergeRecurring, monthlyRegularTotal, MONTHLY_PAYMENT_MODULE, odAccounts, parseRecurringImport, payAccounts, paymentsDue, paymentTotals, recurringData, type PaidEntry, type RecurringPayment } from './monthlyPayments';
 import { planningSnapshot } from './predictions';
 
 const loan = (id: string, data: Record<string, any> = {}) => ({ id, module_key: 'property', data: { broker: 'Example Heights', loan_institution: 'HDFC Bank', loan_balance: 1000000, loan_interest_rate: 12, emi_amount: 20000, loan_start_date: '2022-03-31', ...data } });
@@ -55,6 +55,32 @@ describe('monthly payments', () => {
       expect(paymentsDue([list(rows)], computeRecord, '2026-11', saved).find(item => item.recurringId === 'b')?.amount).toBe(75000);
       expect(paymentsDue([list(rows)], computeRecord, '2026-12').find(item => item.recurringId === 'b')?.amount).toBe(0);
     });
+    it('keeps a transfer between your own accounts out of payments and cash flow', () => {
+      const transfer: RecurringPayment = { id: 't', label: 'Axis to HDFC', amount: 250000, due_day: 4, via: 'Axis OD', to: 'HDFC', kind: 'transfer' };
+      const items = paymentsDue([list([transfer])], computeRecord, '2026-11');
+      expect(items[0]).toMatchObject({ transfer: true, to: 'HDFC', dueDate: '2026-11-04' });
+      expect(paymentTotals(items)).toMatchObject({ remaining: 0, paid: 0, unpaidCount: 1 });
+      expect(monthlyRegularTotal([transfer])).toBe(0);
+      const moved = paymentsDue([list([transfer])], computeRecord, '2026-11', { period: '2026-11', paid: { 'rec:t': paid(250000) } });
+      expect(paymentTotals(moved)).toMatchObject({ paid: 0, unpaidCount: 0 });
+    });
+    it('moves money from the OD account to savings, keeping liquidity the same', () => {
+      const od = drawFromAccount({ od_parked_balance: 300000 }, 'od', 250000), savings = addToAccount({ current_value_today: 1000 }, 'savings', od.drawn);
+      expect(od.data.od_parked_balance).toBe(50000);
+      expect(savings.current_value_today).toBe(251000);
+      expect(drawFromAccount(savings, 'savings', 251000).data.current_value_today).toBe(0);
+    });
+    it('offers OD accounts then bank savings, and matches them by bank name', () => {
+      const accounts = payAccounts([loan('a', { loan_structure: 'Overdraft (OD)', loan_institution: 'Axis Bank', od_parked_balance: 5 }), { id: 's', module_key: 'fixedIncome', data: { category: 'Savings in Bank', broker: 'HDFC Bank', current_value_today: 9 } }, { id: 'h', module_key: 'fixedIncome', data: { category: 'Cash at Home', current_value_today: 7 } }]);
+      expect(accounts.map(account => [account.id, account.kind])).toEqual([['a', 'od'], ['s', 'savings']]);
+      expect(firstWordMatch('Axis OD', accounts[0])).toBe(true);
+      expect(firstWordMatch('HDFC Bank', accounts[0])).toBe(false);
+    });
+    it('replaces rows of the same name when imported again', () => {
+      const merged = mergeRecurring(rows, parseRecurringImport(JSON.stringify([{ label: 'household', amount: 1 }])));
+      expect(merged.filter(row => row.label.toLowerCase() === 'household')).toEqual([expect.objectContaining({ amount: 1 })]);
+      expect(merged).toHaveLength(3);
+    });
     it('imports a list and rejects a bad file', () => {
       const imported = parseRecurringImport(JSON.stringify([{ label: ' Rent ', amount: '500', due_day: 40, kind: 'odd' }, { amount: 1 }, { label: 'Card', kind: 'card', due_day: 21 }]));
       expect(imported).toHaveLength(2);
@@ -73,12 +99,12 @@ describe('monthly payments', () => {
     expect(accounts.map(account => account.id)).toEqual(['b', 'a']);
   });
   it('takes a payment out of the OD account and puts it back on undo', () => {
-    const { data, drawn, shortBy } = drawFromOd({ od_parked_balance: 1000 }, 300);
+    const { data, drawn, shortBy } = drawFromAccount({ od_parked_balance: 1000 }, 'od', 300);
     expect(data.od_parked_balance).toBe(700);
     expect([drawn, shortBy]).toEqual([300, 0]);
-    expect(returnToOd(data, drawn).od_parked_balance).toBe(1000);
+    expect(addToAccount(data, 'od', drawn).od_parked_balance).toBe(1000);
   });
   it('never takes the OD account below zero and reports the shortfall', () => {
-    expect(drawFromOd({ od_parked_balance: 100 }, 300)).toMatchObject({ data: { od_parked_balance: 0 }, drawn: 100, shortBy: 200 });
+    expect(drawFromAccount({ od_parked_balance: 100 }, 'od', 300)).toMatchObject({ data: { od_parked_balance: 0 }, drawn: 100, shortBy: 200 });
   });
 });
