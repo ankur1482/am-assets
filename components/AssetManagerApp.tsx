@@ -9306,8 +9306,9 @@ export default function AssetManagerApp() {
       </div>
     );
   }
-  const paymentRecordFor = (month: string) =>
-    records.find((r) => r.module_key === MONTHLY_PAYMENT_MODULE && r.data?.period === month);
+  function paymentRecordFor(month: string) {
+    return records.find((r) => r.module_key === MONTHLY_PAYMENT_MODULE && r.data?.period === month);
+  }
   function currentPayments() {
     const month = istCalendar().iso.slice(0, 7),
       record = paymentRecordFor(month),
