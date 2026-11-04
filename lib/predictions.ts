@@ -1,6 +1,7 @@
 import { isCashAtHome, isDividendIncome, isEarningRent, isOverdraftLoan, isRentedProperty, isSavingsAccount, LOAN_FIELDS, occupiedShareOfMonth, loanPosition, num, parkedAgainstLoan, PROPERTY_LOAN_FIELDS } from './calculations';
 import { calculateInsurance } from './insurance';
 import { dividendsReceivedIn } from './dividends';
+import { monthlyDirectExpenses } from './expenses';
 import { monthlyRegularTotal, recurringPayments } from './monthlyPayments';
 
 const clamp = (value: number, low: number, high: number) => Math.min(high, Math.max(low, Number.isFinite(value) ? value : low));
@@ -64,8 +65,9 @@ export function planningSnapshot(records: PlanningRecord[], asOf = indiaDate()) 
   monthlyDividend += dividendsReceivedIn(records, asOf.slice(0, 7));
   const monthlyIncome = monthlySalary + monthlyRent + monthlyDividend;
   const monthlyRegular = monthlyRegularTotal(recurringPayments(records));
-  const availableCashFlow = monthlyIncome - monthlyEmi - monthlyPremium - monthlyInvestment - monthlyRegular;
-  return { monthlyRegular, rentals, monthlySalary, monthlyRent, monthlyDividend, savingsBalance, cashAtHome, odParked, liquidity: savingsBalance + cashAtHome + odParked, monthlyIncome, monthlyEmi, availableCashFlow, monthlyInvestment, monthlyPremium, debts, warnings };
+  const directExpenses = monthlyDirectExpenses(records, asOf.slice(0, 7));
+  const availableCashFlow = monthlyIncome - monthlyEmi - monthlyPremium - monthlyInvestment - monthlyRegular - directExpenses;
+  return { monthlyDirectExpenses: directExpenses, monthlyRegular, rentals, monthlySalary, monthlyRent, monthlyDividend, savingsBalance, cashAtHome, odParked, liquidity: savingsBalance + cashAtHome + odParked, monthlyIncome, monthlyEmi, availableCashFlow, monthlyInvestment, monthlyPremium, debts, warnings };
 }
 
 export function projectWealth(input: { starting: number; years: number; annualReturn: number; inflation: number; monthly: number; annualStepUp: number; contributionYears: number; retirementMonthly: number }) {

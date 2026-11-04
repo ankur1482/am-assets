@@ -45,15 +45,18 @@ export default function DividendRadar({ signals, loading, exploring, explored, c
 /** Dividends received, kept after the shares are sold. */
 export function DividendHistory({ history }: { history: ReturnType<typeof dividendHistory> }) {
   const total = history.reduce((sum, group) => sum + group.total, 0);
-  return <details className="pay-recurring" open={history.length > 0 && history.length <= 5}>
-    <summary>Dividends earned: {fmt(total)}{history.length ? ` from ${history.length} holding${history.length === 1 ? '' : 's'}` : ''}</summary>
-    {!history.length && <p className="mom-note">Dividends you confirm as received appear here, and stay here even after you sell the shares.</p>}
-    {!!history.length && <div className="mom-scroll" tabIndex={0} role="region" aria-label="Dividends earned"><table>
-      <thead><tr><th scope="col" className="mom-sticky">Stock</th><th scope="col">Received on</th><th scope="col">Ex-date</th><th scope="col">Shares</th><th scope="col">Amount</th></tr></thead>
-      <tbody>{history.flatMap(group => [
-        <tr key={`${group.account}|${group.ticker}`} className="mom-group"><th scope="rowgroup" className="mom-sticky">{group.name} · {group.account}{group.stillHeld ? '' : ' (sold)'}</th><td /><td /><td /><td>{fmt(group.total)}</td></tr>,
-        ...group.receipts.map((receipt, index) => <tr key={`${group.account}|${group.ticker}|${receipt.ex_date}|${index}`}><th scope="row" className="mom-sticky"><small>{receipt.credit_name || 'Not credited to a balance'}</small></th><td>{formatDate(receipt.received_on)}</td><td>{formatDate(receipt.ex_date)}</td><td>{Number(Number(receipt.quantity || 0).toFixed(4))}</td><td>{fmt(receipt.amount)}</td></tr>),
-      ])}</tbody>
+  const rows = history.flatMap(group => group.receipts.map(receipt => ({ group, receipt }))).sort((a, b) => String(b.receipt.received_on).localeCompare(String(a.receipt.received_on)));
+  return <section className="mom" aria-label="Dividends earned">
+    <p className="mom-note">Every dividend you confirmed as received. These stay here even after you sell the shares.</p>
+    {!rows.length && <p className="mom-note">Nothing yet. Answer “Yes, received” under Dashboard → Dividends to Confirm.</p>}
+    {!!rows.length && <div className="mom-scroll" tabIndex={0} role="region" aria-label="Dividends earned table"><table>
+      <thead><tr><th scope="col" className="mom-sticky">Stock</th><th scope="col">Person</th><th scope="col">Still held</th><th scope="col">Ex-date</th><th scope="col">Payout date</th><th scope="col">Received on</th><th scope="col">Shares</th><th scope="col">Per share</th><th scope="col">Amount</th><th scope="col">Credited to</th></tr></thead>
+      <tbody>{rows.map(({ group, receipt }, index) => <tr key={`${group.account}|${group.ticker}|${receipt.ex_date}|${index}`}>
+        <th scope="row" className="mom-sticky"><span>{group.name}</span><small>{group.ticker}</small></th>
+        <td>{group.account}</td><td>{group.stillHeld ? 'Yes' : 'Sold'}</td><td>{formatDate(receipt.ex_date)}</td><td>{receipt.payout_date ? formatDate(receipt.payout_date) : '—'}</td><td>{formatDate(receipt.received_on)}</td>
+        <td>{Number(Number(receipt.quantity || 0).toFixed(4))}</td><td>{receipt.per_share ? `₹${receipt.per_share}` : '—'}</td><td>{fmt(receipt.amount)}</td><td>{receipt.credit_name || '—'}</td>
+      </tr>)}</tbody>
+      <tfoot><tr><th scope="row" className="mom-sticky">Total</th><td colSpan={7} /><td>{fmt(total)}</td><td /></tr></tfoot>
     </table></div>}
-  </details>;
+  </section>;
 }

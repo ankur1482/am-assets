@@ -3,7 +3,7 @@ import { isCashAtHome, isIncomeRecord, isOverdraftLoan, isSavingsAccount, num } 
 export const MONTHLY_PAYMENT_MODULE = 'monthlyPayment';
 
 type PaymentRecord = { id: string; module_key: string; data: Record<string, any> };
-export type PaidEntry = { label: string; type: string; amount: number; paid_on: string; from_id: string; from_name: string; drawn: number; from_kind?: 'od' | 'savings'; to_id?: string; to_name?: string };
+export type PaidEntry = { label: string; type: string; amount: number; paid_on: string; from_id: string; from_name: string; drawn: number; from_kind?: 'od' | 'savings' | 'card'; to_id?: string; to_name?: string };
 export type CustomPayment = { id: string; label: string; amount: number; due_date: string };
 export type PaymentMonth = { period: string; paid?: Record<string, PaidEntry>; custom?: CustomPayment[]; amounts?: Record<string, number> };
 export type PaymentItem = { id: string; label: string; type: string; bank: string; amount: number; dueDate: string; paid?: PaidEntry; custom: boolean; recurringId?: string; informational?: boolean; transfer?: boolean; to?: string; note?: string };

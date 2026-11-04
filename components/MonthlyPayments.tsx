@@ -1,12 +1,13 @@
 "use client";
 
 import { useState } from 'react';
-import { CheckCircle2 } from 'lucide-react';
+import { CheckCircle2, Plus } from 'lucide-react';
 import { fmt, formatDate, num } from '@/lib/calculations';
+import { CARD_PREFIX, type CardSpend } from '@/lib/expenses';
 import { defaultSource, payAccountLabel, mergeRecurring, monthName, parseRecurringImport, paymentTotals, type PayAccount, type PaymentItem, type RecurringKind, type RecurringPayment, type YearlyCommitment } from '@/lib/monthlyPayments';
 
 type Props = {
-  monthTitle: string; items: PaymentItem[]; accounts: PayAccount[]; liquidity: number; canEdit: boolean; recurring: RecurringPayment[]; yearly: YearlyCommitment[];
+  monthTitle: string; items: PaymentItem[]; accounts: PayAccount[]; cards: CardSpend[]; liquidity: number; canEdit: boolean; recurring: RecurringPayment[]; yearly: YearlyCommitment[];
   onPay: (item: PaymentItem, amount: number, fromId: string) => Promise<boolean>;
   onUndo: (item: PaymentItem) => Promise<boolean>;
   onAdd: (label: string, amount: number, dueDate: string, fromId: string, alreadyPaid: boolean) => Promise<boolean>;
@@ -17,7 +18,15 @@ type Props = {
 };
 const KINDS: { id: RecurringKind; title: string }[] = [{ id: 'regular', title: 'Same each month' }, { id: 'card', title: 'Credit card (changes monthly)' }, { id: 'on_card', title: 'Auto-debited on a card' }, { id: 'transfer', title: 'Transfer between my accounts' }];
 
-function PaymentRow({ item, accounts, fromId, canEdit, onPay, onUndo, onRemove, onAmount, onEditPaid }: { item: PaymentItem; accounts: PayAccount[]; fromId: string } & Pick<Props, 'canEdit' | 'onPay' | 'onUndo' | 'onRemove' | 'onAmount' | 'onEditPaid'>) {
+function SourceOptions({ accounts, cards }: { accounts: PayAccount[]; cards: CardSpend[] }) {
+  return <>
+    {accounts.map(account => <option key={account.id} value={account.id}>{payAccountLabel(account)}: {fmt(account.parked)}</option>)}
+    {cards.map(card => <option key={card.id} value={card.id}>{card.label}</option>)}
+    <option value="other">Another account (no deduction)</option>
+  </>;
+}
+
+function PaymentRow({ item, accounts, cards, fromId, canEdit, onPay, onUndo, onRemove, onAmount, onEditPaid }: { item: PaymentItem; accounts: PayAccount[]; cards: CardSpend[]; fromId: string } & Pick<Props, 'canEdit' | 'onPay' | 'onUndo' | 'onRemove' | 'onAmount' | 'onEditPaid'>) {
   const [amount, setAmount] = useState(String(Math.round(item.paid?.amount ?? item.amount))), [busy, setBusy] = useState(false), [chosen, setChosen] = useState('');
   const source = chosen || fromId;
   const run = async (action: () => Promise<boolean>) => { setBusy(true); try { await action(); } finally { setBusy(false); } };
@@ -28,15 +37,14 @@ function PaymentRow({ item, accounts, fromId, canEdit, onPay, onUndo, onRemove, 
     <td>{item.dueDate ? formatDate(item.dueDate) : (item.recurringId || item.custom ? '—' : 'Add first EMI date')}</td>
     {item.paid ? <>
       <td>{canEdit && !item.transfer ? <input className="mom-input" inputMode="decimal" aria-label={`Amount paid for ${item.label}`} disabled={busy} value={amount} onChange={event => setAmount(event.target.value)} onBlur={() => { if (num(amount) > 0 && num(amount) !== num(item.paid?.amount)) void run(() => onEditPaid(item, num(amount))); }} /> : fmt(item.paid.amount)}</td>
-      <td><strong>{item.paid.from_name}{item.paid.from_kind ? ` ${item.paid.from_kind === 'od' ? 'OD' : 'savings'}` : ''}</strong>{item.transfer ? ` to ${item.paid.to_name}` : ''}</td>
+      <td><strong>{item.paid.from_name}{item.paid.from_kind === 'od' ? ' OD' : item.paid.from_kind === 'savings' ? ' savings' : ''}</strong>{item.transfer ? ` to ${item.paid.to_name}` : ''}</td>
       <td><span className="monthly-pill monthly-ok"><CheckCircle2 size={13} /> {item.transfer ? 'Moved' : 'Paid'} {formatDate(item.paid.paid_on)}</span></td>
       <td>{canEdit && <button type="button" className="btn" disabled={busy} onClick={() => void run(() => onUndo(item))}>Undo</button>}</td>
     </> : <>
       <td>{canEdit ? <input className="mom-input" inputMode="decimal" aria-label={`Amount for ${item.label}`} value={amount} onChange={event => setAmount(event.target.value)} onBlur={() => { if (item.recurringId && num(amount) !== item.amount) void onAmount(item, num(amount)); }} /> : fmt(item.amount)}</td>
       <td>{canEdit
         ? <select className="pay-source" aria-label={`Paid from for ${item.label}`} value={source} onChange={event => setChosen(event.target.value)}>
-            {accounts.map(account => <option key={account.id} value={account.id}>{payAccountLabel(account)}: {fmt(account.parked)}</option>)}
-            <option value="other">Another account (no deduction)</option>
+            <SourceOptions accounts={accounts} cards={cards.filter(card => card.id !== `${CARD_PREFIX}${item.recurringId}`)} />
           </select>
         : item.bank || '—'}</td>
       <td><span className="monthly-pill">{item.type === 'Credit card' && !num(amount) ? 'Enter this month\'s bill' : 'To pay'}</span></td>
@@ -78,9 +86,9 @@ function RecurringEditor({ recurring, onSaveRecurring }: Pick<Props, 'recurring'
   </details>;
 }
 
-export default function MonthlyPayments({ monthTitle, items, accounts, liquidity, canEdit, recurring, yearly, onPay, onUndo, onAdd, onRemove, onAmount, onEditPaid, onSaveRecurring }: Props) {
-  const [fromId, setFromId] = useState(''), [label, setLabel] = useState(''), [amount, setAmount] = useState(''), [dueDate, setDueDate] = useState(''), [addFrom, setAddFrom] = useState(''), [alreadyPaid, setAlreadyPaid] = useState(true), [adding, setAdding] = useState(false);
-  const totals = paymentTotals(items), selected = fromId || accounts[0]?.id || 'other', after = liquidity - totals.remaining;
+export default function MonthlyPayments({ monthTitle, items, accounts, cards, liquidity, canEdit, recurring, yearly, onPay, onUndo, onAdd, onRemove, onAmount, onEditPaid, onSaveRecurring }: Props) {
+  const [fromId, setFromId] = useState(''), [label, setLabel] = useState(''), [amount, setAmount] = useState(''), [dueDate, setDueDate] = useState(''), [addFrom, setAddFrom] = useState(''), [alreadyPaid, setAlreadyPaid] = useState(true), [adding, setAdding] = useState(false), [showAdd, setShowAdd] = useState(false);
+  const totals = paymentTotals(items), selected = fromId || accounts[0]?.id || 'other', after = liquidity - totals.remaining, statements = cards.reduce((sum, card) => sum + card.spend, 0);
   return <section className="mom" aria-label={`Payments for ${monthTitle}`}>
     <div className="sale-preview">
       <span><small>Payments in {monthTitle}</small><strong>{fmt(totals.total)}</strong></span>
@@ -88,33 +96,35 @@ export default function MonthlyPayments({ monthTitle, items, accounts, liquidity
       <span><small>Still to pay</small><strong className={totals.remaining ? 'mom-down' : 'mom-up'}>{fmt(totals.remaining)}</strong></span>
       <span><small>Liquidity now</small><strong>{fmt(liquidity)}</strong></span>
       <span><small>Liquidity after payments</small><strong className={after < 0 ? 'mom-down' : ''}>{fmt(after)}</strong></span>
+      {statements > 0 && <span><small>Estimated next card statement</small><strong>{fmt(statements)}</strong><small>Spent on cards this month, due later</small></span>}
+      {statements > 0 && <span><small>Liquidity after that statement</small><strong className={after - statements < 0 ? 'mom-down' : ''}>{fmt(after - statements)}</strong></span>}
     </div>
     {canEdit && <label className="pay-from">Default account for each row<select value={selected} onChange={event => setFromId(event.target.value)}>
-      {accounts.map(account => <option key={account.id} value={account.id}>{payAccountLabel(account)}: {fmt(account.parked)}</option>)}
-      <option value="other">Another account (do not deduct anything)</option>
+      <SourceOptions accounts={accounts} cards={cards} />
     </select></label>}
-    <p className="mom-note">Marking a payment paid deducts it from the account shown, lowering liquidity; taking it from an OD account also raises the balance that bears interest. Choose the account in each row's Paid From column before marking it paid. Paid amounts can be changed, and the difference goes back to or comes out of that account. Salary or rent paid into an account is not added automatically, so update that balance when it comes in.</p>
+    <p className="mom-note">Marking a payment paid deducts it from the account shown, lowering liquidity. Paying by credit card deducts nothing now and adds to that card's estimated statement instead; taking it from an OD account also raises the balance that bears interest. Choose the account in each row's Paid From column before marking it paid. Paid amounts can be changed, and the difference goes back to or comes out of that account. Salary or rent paid into an account is not added automatically, so update that balance when it comes in.</p>
     {!items.length && <p className="mom-note">No payments due this month. Add your regular payments below. Loans with an EMI and premiums falling due this month appear automatically.</p>}
     {!!items.length && <div className="mom-scroll" tabIndex={0} role="region" aria-label="Payments due"><table>
       <thead><tr><th scope="col" className="mom-sticky">Payment</th><th scope="col">Due</th><th scope="col">Amount</th><th scope="col">Paid from</th><th scope="col">Status</th><th scope="col"><span className="sr-only">Actions</span></th></tr></thead>
-      <tbody>{items.map(item => <PaymentRow key={item.id} item={item} accounts={accounts} fromId={defaultSource(item, items, accounts, selected)} canEdit={canEdit} onPay={onPay} onUndo={onUndo} onRemove={onRemove} onAmount={onAmount} onEditPaid={onEditPaid} />)}</tbody>
+      <tbody>{items.map(item => <PaymentRow key={item.id} item={item} accounts={accounts} cards={cards} fromId={defaultSource(item, items, accounts, selected)} canEdit={canEdit} onPay={onPay} onUndo={onUndo} onRemove={onRemove} onAmount={onAmount} onEditPaid={onEditPaid} />)}</tbody>
     </table></div>}
-    {canEdit && <form className="pay-add pay-add-row" onSubmit={async event => {
+    {canEdit && !showAdd && <button type="button" className="btn-primary pay-plus" onClick={() => setShowAdd(true)}><Plus size={16} /> Add a payment</button>}
+    {canEdit && showAdd && <form className="pay-add pay-add-row" onSubmit={async event => {
       event.preventDefault();
       if (!label.trim() || num(amount) <= 0 || adding) return;
       setAdding(true);
-      try { if (await onAdd(label.trim(), num(amount), dueDate, addFrom || selected, alreadyPaid)) { setLabel(''); setAmount(''); setDueDate(''); } } finally { setAdding(false); }
+      try { if (await onAdd(label.trim(), num(amount), dueDate, addFrom || selected, alreadyPaid)) { setLabel(''); setAmount(''); setDueDate(''); setShowAdd(false); } } finally { setAdding(false); }
     }}>
-      <h4>Add a payment row</h4>
-      <label>What was it for<input required maxLength={80} value={label} placeholder="For example: credit card, school fees" onChange={event => setLabel(event.target.value)} /></label>
+      <h4>Add a payment</h4>
+      <label>Payment against<input required autoFocus maxLength={80} value={label} placeholder="For example: credit card, school fees" onChange={event => setLabel(event.target.value)} /></label>
       <label>Amount (₹)<input required inputMode="decimal" value={amount} onChange={event => setAmount(event.target.value)} /></label>
       <label>Date<input type="date" value={dueDate} onChange={event => setDueDate(event.target.value)} /></label>
       <label>Paid from<select value={addFrom || selected} onChange={event => setAddFrom(event.target.value)}>
-        {accounts.map(account => <option key={account.id} value={account.id}>{payAccountLabel(account)}: {fmt(account.parked)}</option>)}
-        <option value="other">Another account (no deduction)</option>
+        <SourceOptions accounts={accounts} cards={cards} />
       </select></label>
       <label className="pay-check"><input type="checkbox" checked={alreadyPaid} onChange={event => setAlreadyPaid(event.target.checked)} /> Already paid</label>
-      <button type="submit" className="btn-primary" disabled={adding}>{adding ? 'Adding…' : 'Add row'}</button>
+      <button type="submit" className="btn-primary" disabled={adding}>{adding ? 'Adding…' : 'Add'}</button>
+      <button type="button" className="btn" onClick={() => setShowAdd(false)}>Cancel</button>
     </form>}
     {!!yearly.length && <div className="mom-scroll" tabIndex={0} role="region" aria-label="Yearly investments and premiums"><table>
       <caption className="pay-caption">Yearly investments and premiums: {fmt(yearly.reduce((sum, row) => sum + row.amount, 0))} a year. Each joins the payments above in its due month.</caption>

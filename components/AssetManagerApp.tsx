@@ -47,6 +47,8 @@ import DividendRadar, { BuyBadge, DividendHistory } from "@/components/DividendR
 import { buySignals, dividendHistory, LARGE_COMPANIES, type BuySource, type StockCalendar } from "@/lib/dividendCalendar";
 import EarningsByPerson from "@/components/EarningsByPerson";
 import { dividendSymbols, DIVIDEND_MODULE, pendingDividends, receivedDividends, validateReceipt, type DividendEvent, type PendingDividend } from "@/lib/dividends";
+import ExpensesPanel, { QuickExpenseButton } from "@/components/Expenses";
+import { CARD_PREFIX, cardSpendIn, EXPENSE_MODULE, expensesByTag, expensesIn, expenseTags, paymentCards, type ExpenseTag } from "@/lib/expenses";
 import MonthlyPayments from "@/components/MonthlyPayments";
 import { addToAccount, DIVIDEND_BANK, drawFromAccount, payAccountLabel, MONTHLY_PAYMENT_MODULE, payAccounts, paymentsDue, paymentTotals, recurringData, recurringPayments, recurringRecord, yearlyCommitments, type PaymentItem, type PaymentMonth, type RecurringPayment } from "@/lib/monthlyPayments";
 import MonthlyValuation from "@/components/MonthlyValuation";
@@ -217,7 +219,6 @@ const views = [
   ["futureWealth", "FW", "Predictive Planner"],
   [MONTHLY_VALUATION_MODULE, "MM", "Month on Month"],
   ["earnings", "EP", "Earnings by Person"],
-  ["dividendRadar", "DR", "Dividend Buy Radar"],
   [MONTHLY_UPLOAD_MODULE, "MU", "Monthly Uploads"],
   ["watchlist", "WL", "Watchlist"],
   ["alerts", "AL", "Alerts"],
@@ -520,6 +521,8 @@ const compactName = (value: any) => {
     .trim();
   return cleaned || name;
 };
+const DIVIDENDS_EARNED_TAB = "Dividends Earned";
+const DIVIDEND_RADAR_TAB = "Dividend Buy Radar";
 const OD_LOAN_LABELS: Record<string, string> = {
   loan_structure: "Repayment Structure",
   od_parked_balance: "Parked in OD Account",
@@ -2945,6 +2948,50 @@ export default function AssetManagerApp() {
       />
     );
   }
+  async function saveExpense(expense: { amount: number; label: string; tag: ExpenseTag; date: string }) {
+    if (!user) return false;
+    const { error } = await supabase.from("records").insert({
+      user_id: user.id,
+      ...(activeWorkspaceId ? { workspace_id: activeWorkspaceId } : {}),
+      module_key: EXPENSE_MODULE,
+      data: { amount: expense.amount, label: expense.label, tag_id: expense.tag.id, tag_label: expense.tag.label, date: expense.date },
+    });
+    if (error) {
+      setToast(error.message);
+      return false;
+    }
+    try { localStorage.setItem("asset-manager-last-expense-tag", expense.tag.id); } catch {}
+    setToast(`${fmt(expense.amount)} saved on ${expense.tag.label}`);
+    await loadAll(true);
+    return true;
+  }
+  async function deleteExpense(row: { id: string }) {
+    const { error } = await supabase.from("records").delete().eq("id", row.id);
+    if (error) setToast(error.message);
+    await loadAll(true);
+    return !error;
+  }
+  function lastExpenseTag() {
+    try { return localStorage.getItem("asset-manager-last-expense-tag") || ""; } catch { return ""; }
+  }
+  function expensesPanel() {
+    const today = istCalendar().iso,
+      month = today.slice(0, 7);
+    return (
+      <ExpensesPanel
+        monthTitle={periodLabel(month)}
+        tags={expenseTags(records)}
+        today={today}
+        lastTag={lastExpenseTag()}
+        rows={expensesIn(records, month).sort((a, b) => String(b.data.date).localeCompare(String(a.data.date)))}
+        byTag={expensesByTag(records, month)}
+        cards={cardSpendIn(records, month)}
+        canEdit={canEditModule(EXPENSE_MODULE)}
+        onSave={saveExpense}
+        onDelete={deleteExpense}
+      />
+    );
+  }
   function dividendsPending() {
     const today = istCalendar().iso;
     return pendingDividends(records, dividendEvents, computeLiveRecord, `${financialYearOf(today.slice(0, 7))}-04-01`, today);
@@ -3149,6 +3196,7 @@ export default function AssetManagerApp() {
           ["Loan EMIs", -flow.monthlyEmi],
           ["Premiums + Investments", -(flow.monthlyPremium + flow.monthlyInvestment)],
           ["Regular Payments", -flow.monthlyRegular],
+          ["Daily Expenses", -flow.monthlyDirectExpenses, "Google Pay and cash this month"],
           ["Available Cash Flow", flow.availableCashFlow, "Each month, after the payments you have listed"],
         ])}
       </div>
@@ -4694,7 +4742,6 @@ export default function AssetManagerApp() {
       [TRANSACTION_MODULE]: ArrowUpDown,
       backups: HardDrive,
       earnings: Users,
-      dividendRadar: Sparkles,
       [MONTHLY_UPLOAD_MODULE]: Paperclip,
       watchlist: Eye,
       alerts: Bell,
@@ -5358,8 +5405,10 @@ export default function AssetManagerApp() {
     if (view === "backups") return <div className="phone-screen p-3">{backupCenterPanel()}</div>;
     if (view === "payments") return <div className="phone-screen p-3">{monthlyPaymentsPanel()}</div>;
     if (view === "dividends") return <div className="phone-screen p-3">{dividendsPanel()}</div>;
+    if (view === "expenses") return <div className="phone-screen p-3">{expensesPanel()}</div>;
     if (view === "earnings") return <div className="phone-screen p-3">{earningsPanel()}</div>;
     if (view === "dividendRadar") return <div className="phone-screen p-3">{dividendRadarPanel()}</div>;
+    if (view === "dividendsEarned") return <div className="phone-screen p-3"><DividendHistory history={dividendHistory(records)} /></div>;
     if (view === "settings")
       return <div className="phone-screen">{settings()}</div>;
     if (view === "purchaseCalculator")
@@ -7936,9 +7985,23 @@ export default function AssetManagerApp() {
           </button>
         )}
         {phoneMode && view === "stocks" && (
+          <button type="button" className="monthly-banner" onClick={() => setView("dividendsEarned")}>
+            <Sparkles size={15} />
+            <span>Dividends earned: {receivedDividends(records).length}</span>
+            <strong>View</strong>
+          </button>
+        )}
+        {phoneMode && view === "stocks" && (
           <button type="button" className="monthly-banner" onClick={() => setView("dividendRadar")}>
             <Sparkles size={15} />
             <span>Dividend Buy Radar{currentBuySignals().length ? `: ${currentBuySignals().length} to look at` : ""}</span>
+            <strong>View</strong>
+          </button>
+        )}
+        {phoneMode && view === "dashboard" && (
+          <button type="button" className="monthly-banner" onClick={() => setView("expenses")}>
+            <Paperclip size={15} />
+            <span>This month's expenses: {fmt(expensesByTag(records, istCalendar().iso.slice(0, 7)).reduce((sum, row) => sum + row.total, 0))}</span>
             <strong>View</strong>
           </button>
         )}
@@ -7988,6 +8051,7 @@ export default function AssetManagerApp() {
           {view === "backups" && backupCenterPanel()}
           {view === "payments" && monthlyPaymentsPanel()}
           {view === "dividends" && dividendsPanel()}
+          {view === "expenses" && expensesPanel()}
           {view === "earnings" && earningsPanel()}
           {view === "purchaseCalculator" && !phoneMode && bullionCalculatorPanel()}
           {view === "watchlist" && utilityWatchlistView()}
@@ -7997,16 +8061,6 @@ export default function AssetManagerApp() {
           {MODULES[view] &&
             !["watchlist", "settings", "admin"].includes(view) &&
             moduleView(view)}
-          {view === "stocks" && (
-            <div className="mt-5 space-y-5">
-              <details className="pay-recurring" open>
-                <summary>Dividend Buy Radar{currentBuySignals().length ? ` (${currentBuySignals().length})` : ""}</summary>
-                {dividendRadarPanel()}
-              </details>
-              <DividendHistory history={dividendHistory(records)} />
-            </div>
-          )}
-          {view === "dividendRadar" && dividendRadarPanel()}
         </div>
         {uploadsLocked && (
           <div className="monthly-lock" role="dialog" aria-modal="true" aria-label="Monthly documents overdue">
@@ -8020,6 +8074,9 @@ export default function AssetManagerApp() {
           <Modal title="Where should automatic backups go?" onClose={() => setBackupPromptOpen(false)}>
             {backupCenterPanel()}
           </Modal>
+        )}
+        {phoneMode && canEditModule(EXPENSE_MODULE) && !uploadsLocked && !detail && !editing && (
+          <QuickExpenseButton tags={expenseTags(records)} today={istCalendar().iso} lastTag={lastExpenseTag()} onSave={saveExpense} />
         )}
         {detail && detailModal()}
         {saleTarget && (
@@ -8751,7 +8808,7 @@ export default function AssetManagerApp() {
             { name: "Crude $ / Barrel" },
           ],
       inr = (v: number, d = 2) =>
-        `â‚¹${Number(v).toLocaleString("en-IN", { minimumFractionDigits: d, maximumFractionDigits: d })}`,
+        `₹${Number(v).toLocaleString("en-IN", { minimumFractionDigits: d, maximumFractionDigits: d })}`,
       plain = (v: number, d = 2) =>
         Number(v).toLocaleString("en-IN", {
           minimumFractionDigits: d,
@@ -9557,6 +9614,7 @@ export default function AssetManagerApp() {
   function dashboardTabs() {
     const onPayments = detailTabs.dashboard === "payments",
       onDividends = detailTabs.dashboard === "dividends",
+      onExpenses = detailTabs.dashboard === "expenses",
       unpaid = currentPayments().unpaidCount,
       unconfirmed = dividendsPending().filter((item) => item.state !== "awaiting").length,
       tabClass = (active: boolean) =>
@@ -9565,8 +9623,8 @@ export default function AssetManagerApp() {
       <div className="flex gap-2 overflow-auto rounded-2xl border border-[#e3dccc] bg-white p-1">
         <button
           onClick={() => setDetailTabs((p) => ({ ...p, dashboard: "summary" }))}
-          aria-pressed={!onPayments && !onDividends}
-          className={tabClass(!onPayments && !onDividends)}
+          aria-pressed={!onPayments && !onDividends && !onExpenses}
+          className={tabClass(!onPayments && !onDividends && !onExpenses)}
         >
           Overall Dashboard
         </button>
@@ -9583,6 +9641,13 @@ export default function AssetManagerApp() {
           className={tabClass(onDividends)}
         >
           Dividends to Confirm{unconfirmed ? ` (${unconfirmed})` : ""}
+        </button>
+        <button
+          onClick={() => setDetailTabs((p) => ({ ...p, dashboard: "expenses" }))}
+          aria-pressed={onExpenses}
+          className={tabClass(onExpenses)}
+        >
+          Expenses
         </button>
       </div>
     );
@@ -9609,7 +9674,7 @@ export default function AssetManagerApp() {
       saved = (record?.data || { period: month }) as PaymentMonth,
       taken = await takeFromAccount(fromId, amount);
     if (!taken) return false;
-    const data: PaymentMonth = { ...saved, period: month, paid: { ...(saved.paid || {}), [item.id]: paidEntry(item.label, item.type, amount, taken) } };
+    const data: PaymentMonth = { ...saved, period: month, paid: { ...(saved.paid || {}), [item.id]: paidEntry(item.label, item.type, amount, taken, fromId) } };
     if (!(await savePaymentMonth(month, record, data))) {
       await taken.restore();
       return false;
@@ -9639,8 +9704,10 @@ export default function AssetManagerApp() {
       },
     };
   }
-  function paidEntry(label: string, type: string, amount: number, taken: NonNullable<Awaited<ReturnType<typeof takeFromAccount>>>) {
-    return { label, type, amount, paid_on: istCalendar().iso, from_id: taken.source?.id || "", from_name: taken.source?.name || "another account", from_kind: taken.source?.kind, drawn: taken.drawn };
+  function paidEntry(label: string, type: string, amount: number, taken: NonNullable<Awaited<ReturnType<typeof takeFromAccount>>>, fromId: string) {
+    // A card payment moves no money today. It counts towards that card's statement instead.
+    const card = fromId.startsWith(CARD_PREFIX) ? paymentCards(recordsRef.current).find((row) => row.id === fromId) : undefined;
+    return { label, type, amount, paid_on: istCalendar().iso, from_id: card?.id || taken.source?.id || "", from_name: card?.label || taken.source?.name || "another account", from_kind: card ? ("card" as const) : taken.source?.kind, drawn: taken.drawn };
   }
   /** Changes a paid amount, moving the difference in or out of the account it came from. */
   async function editPaidAmount(item: PaymentItem, amount: number) {
@@ -9651,7 +9718,7 @@ export default function AssetManagerApp() {
     const account = recordsRef.current.find((r) => r.id === entry.from_id);
     let drawn = 0, shortBy = 0;
     if (account) {
-      const kind = entry.from_kind || "od",
+      const kind = entry.from_kind === "savings" ? "savings" : "od",
         result = drawFromAccount(addToAccount(account.data, kind, entry.drawn), kind, amount);
       ({ drawn, shortBy } = result);
       const { error } = await supabase.from("records").update({ data: result.data }).eq("id", account.id);
@@ -9674,7 +9741,7 @@ export default function AssetManagerApp() {
     const account = recordsRef.current.find((r) => r.id === entry.from_id),
       target = recordsRef.current.find((r) => r.id === entry.to_id);
     if (account) {
-      const { error } = await supabase.from("records").update({ data: addToAccount(account.data, entry.from_kind || "od", entry.drawn) }).eq("id", account.id);
+      const { error } = await supabase.from("records").update({ data: addToAccount(account.data, entry.from_kind === "savings" ? "savings" : "od", entry.drawn) }).eq("id", account.id);
       if (error) {
         setToast(error.message);
         return false;
@@ -9703,7 +9770,7 @@ export default function AssetManagerApp() {
       ...saved,
       period: month,
       custom: [...(saved.custom || []), { id, label, amount, due_date: dueDate }],
-      ...(taken ? { paid: { ...(saved.paid || {}), [id]: paidEntry(label, "Other payment", amount, taken) } } : {}),
+      ...(taken ? { paid: { ...(saved.paid || {}), [id]: paidEntry(label, "Other payment", amount, taken, fromId) } } : {}),
     });
     if (!done && taken) await taken.restore();
     if (done) await loadAll(true);
@@ -9754,6 +9821,7 @@ export default function AssetManagerApp() {
         monthTitle={periodLabel(month)}
         items={items}
         accounts={payAccounts(records)}
+        cards={cardSpendIn(records, month)}
         liquidity={planningSnapshot(records).liquidity}
         canEdit={canEditModule(MONTHLY_PAYMENT_MODULE)}
         onPay={markPaymentPaid}
@@ -12729,11 +12797,11 @@ export default function AssetManagerApp() {
       monthMove = totals.net - monthStartNet,
       monthMovePct = monthStartNet ? (monthMove / monthStartNet) * 100 : 0,
       yearlyGain = totals.gain;
-    if (detailTabs.dashboard === "payments" || detailTabs.dashboard === "dividends")
+    if (["payments", "dividends", "expenses"].includes(detailTabs.dashboard))
       return (
         <div className="space-y-5">
           {dashboardTabs()}
-          {detailTabs.dashboard === "payments" ? monthlyPaymentsPanel() : dividendsPanel()}
+          {detailTabs.dashboard === "payments" ? monthlyPaymentsPanel() : detailTabs.dashboard === "expenses" ? expensesPanel() : dividendsPanel()}
         </div>
       );
     return (
@@ -14692,10 +14760,10 @@ export default function AssetManagerApp() {
           moduleRecords.map((r) => String(r.data?.account_name || "Unassigned")),
         ),
       ),
-      tabs = k === "stocks" ? ["All", ...accountNames, "Watchlist"] : ["All", ...accountNames],
+      tabs = k === "stocks" ? ["All", ...accountNames, "Watchlist", DIVIDENDS_EARNED_TAB, DIVIDEND_RADAR_TAB] : ["All", ...accountNames],
       selected = tabs.includes(accountTab(k)) ? accountTab(k) : "All",
       filtered =
-        k === "stocks" && selected === "Watchlist"
+        k === "stocks" && ["Watchlist", DIVIDENDS_EARNED_TAB, DIVIDEND_RADAR_TAB].includes(selected)
           ? []
           : moduleRecords.filter(
               (r) =>
@@ -14766,7 +14834,7 @@ export default function AssetManagerApp() {
         "otherAssets",
       ].includes(k),
       hasAccountTabs = isInvestment || k === "insurance" || k === "loans",
-      mode = k === "stocks" && selected === "Watchlist" ? "watchlist" : "holdings",
+      mode = k === "stocks" && ["Watchlist", DIVIDENDS_EARNED_TAB, DIVIDEND_RADAR_TAB].includes(selected) ? "watchlist" : "holdings",
       reviewRows =
         k === "fixedIncome" ? filtered.filter(fixedIncomeReviewDue) : [],
       maturityRows =
@@ -14926,6 +14994,10 @@ export default function AssetManagerApp() {
                 const count =
                   t === "All"
                     ? moduleRecords.length
+                    : k === "stocks" && t === DIVIDENDS_EARNED_TAB
+                      ? receivedDividends(records).length
+                    : k === "stocks" && t === DIVIDEND_RADAR_TAB
+                      ? currentBuySignals().length
                     : k === "stocks" && t === "Watchlist"
                       ? stockWatchlistCount
                       : moduleRecords.filter(
@@ -14945,8 +15017,16 @@ export default function AssetManagerApp() {
               })}
             </div>
           )}
-          {marketTodayHeader()}
-          {stockWatchlistTable()}
+          {selected === DIVIDENDS_EARNED_TAB ? (
+            <DividendHistory history={dividendHistory(records)} />
+          ) : selected === DIVIDEND_RADAR_TAB ? (
+            dividendRadarPanel()
+          ) : (
+            <>
+              {marketTodayHeader()}
+              {stockWatchlistTable()}
+            </>
+          )}
         </div>
       );
     return (
@@ -14981,6 +15061,10 @@ export default function AssetManagerApp() {
               const count =
                 t === "All"
                   ? moduleRecords.length
+                  : k === "stocks" && t === DIVIDENDS_EARNED_TAB
+                    ? receivedDividends(records).length
+                  : k === "stocks" && t === DIVIDEND_RADAR_TAB
+                    ? currentBuySignals().length
                   : k === "stocks" && t === "Watchlist"
                     ? stockWatchlistCount
                     : moduleRecords.filter(
