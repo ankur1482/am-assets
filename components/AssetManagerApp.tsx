@@ -42,11 +42,11 @@ import MonthlyUploads from "@/components/MonthlyUploads";
 import BackupCenter, { type BackupTarget } from "@/components/BackupCenter";
 import { backupFileName, backupFingerprint } from "@/lib/backups";
 import { chooseBackupFolder, folderPermission, forgetBackupFolder, loadBackupFolder, requestFolderPermission, supportsBackupFolder, writeBackupFile } from "@/lib/backupFolder";
-import DividendConfirmations from "@/components/DividendConfirmations";
+import DividendConfirmations, { NEW_DIVIDEND_ACCOUNT } from "@/components/DividendConfirmations";
 import EarningsByPerson from "@/components/EarningsByPerson";
 import { dividendSymbols, DIVIDEND_MODULE, pendingDividends, receivedDividends, validateReceipt, type DividendEvent, type PendingDividend } from "@/lib/dividends";
 import MonthlyPayments from "@/components/MonthlyPayments";
-import { addToAccount, drawFromAccount, firstWordMatch, MONTHLY_PAYMENT_MODULE, payAccounts, paymentsDue, paymentTotals, recurringData, recurringPayments, recurringRecord, yearlyCommitments, type PaymentItem, type PaymentMonth, type RecurringPayment } from "@/lib/monthlyPayments";
+import { addToAccount, DIVIDEND_BANK, drawFromAccount, payAccountLabel, MONTHLY_PAYMENT_MODULE, payAccounts, paymentsDue, paymentTotals, recurringData, recurringPayments, recurringRecord, yearlyCommitments, type PaymentItem, type PaymentMonth, type RecurringPayment } from "@/lib/monthlyPayments";
 import MonthlyValuation from "@/components/MonthlyValuation";
 import TransactionLedger, { RecordSaleForm, type BuyRow } from "@/components/TransactionLedger";
 import { planSale, postedSales, reduceLot, restoreLot, TRANSACTION_MODULE, xirr, type CashFlow, type SaleInput, type SaleLot } from "@/lib/transactions";
@@ -2882,17 +2882,36 @@ export default function AssetManagerApp() {
       setToast(problem);
       return false;
     }
-    const account = payAccounts(recordsRef.current).find((row) => row.id === creditId),
-      record = recordsRef.current.find((row) => row.id === account?.id);
-    if (account && record) {
+    let account = payAccounts(recordsRef.current).find((row) => row.id === creditId),
+      created = "";
+    const record = recordsRef.current.find((row) => row.id === account?.id);
+    if (creditId === NEW_DIVIDEND_ACCOUNT && user) {
+      const { data: row, error } = await supabase
+        .from("records")
+        .insert({
+          user_id: user.id,
+          ...(activeWorkspaceId ? { workspace_id: activeWorkspaceId } : {}),
+          module_key: "fixedIncome",
+          data: withSystemDates({ account_name: item.account, category: "Savings in Bank", broker: DIVIDEND_BANK, current_value_today: amount, notes: `Created automatically for dividends. Enter the actual balance.` }),
+        })
+        .select("id")
+        .single();
+      if (error || !row) {
+        setToast(error?.message || "Could not create the savings account");
+        return false;
+      }
+      created = row.id as string;
+      account = { id: created, name: DIVIDEND_BANK, parked: amount, kind: "savings", holder: item.account };
+    } else if (account && record) {
       const { error } = await supabase.from("records").update({ data: addToAccount(record.data, account.kind, amount) }).eq("id", record.id);
       if (error) {
         setToast(error.message);
         return false;
       }
     }
-    const saved = await saveDividendAnswer(item, "received", { amount, received_on: receivedOn, credit_id: account?.id || "", credit_kind: account?.kind || "", credit_name: account?.name || "" });
-    if (!saved && account && record) await supabase.from("records").update({ data: record.data }).eq("id", record.id);
+    const saved = await saveDividendAnswer(item, "received", { amount, received_on: receivedOn, credit_id: account?.id || "", credit_kind: account?.kind || "", credit_name: account ? payAccountLabel(account) : "" });
+    if (!saved && created) await supabase.from("records").delete().eq("id", created);
+    if (!saved && !created && account && record) await supabase.from("records").update({ data: record.data }).eq("id", record.id);
     if (saved) setToast(`${fmt(amount)} dividend added to cash flow`);
     await loadAll(true);
     return saved;
@@ -9475,15 +9494,21 @@ export default function AssetManagerApp() {
   async function markPaymentPaid(item: PaymentItem, amount: number, fromId: string) {
     const { month, record } = currentPayments(),
       saved = (record?.data || { period: month }) as PaymentMonth,
-      accounts = payAccounts(recordsRef.current),
-      source = accounts.find((account) => account.id === fromId),
-      sourceRecord = recordsRef.current.find((r) => r.id === source?.id),
-      target = item.transfer ? accounts.find((account) => account.kind === "savings" && firstWordMatch(item.to || "", account)) : undefined,
-      targetRecord = recordsRef.current.find((r) => r.id === target?.id);
-    if (item.transfer && (!source || !target)) {
-      setToast(source ? `Add a Savings in Bank row for ${item.to} in Fixed Income first, so the money has somewhere to go.` : "Choose the account this transfer comes from.");
+      taken = await takeFromAccount(fromId, amount);
+    if (!taken) return false;
+    const data: PaymentMonth = { ...saved, period: month, paid: { ...(saved.paid || {}), [item.id]: paidEntry(item.label, item.type, amount, taken) } };
+    if (!(await savePaymentMonth(month, record, data))) {
+      await taken.restore();
       return false;
     }
+    await loadAll(true);
+    setToast(taken.shortBy ? `Only ${fmt(taken.drawn)} was available in ${taken.source?.name}. ${fmt(taken.shortBy)} came from elsewhere.` : `${item.label} marked paid`);
+    return true;
+  }
+  /** Deducts a payment from an account, returning how to put it back if a later step fails. */
+  async function takeFromAccount(fromId: string, amount: number) {
+    const source = payAccounts(recordsRef.current).find((account) => account.id === fromId),
+      sourceRecord = recordsRef.current.find((r) => r.id === source?.id);
     let drawn = 0, shortBy = 0;
     if (source && sourceRecord) {
       const result = drawFromAccount(sourceRecord.data, source.kind, amount);
@@ -9491,29 +9516,42 @@ export default function AssetManagerApp() {
       const { error } = await supabase.from("records").update({ data: result.data }).eq("id", sourceRecord.id);
       if (error) {
         setToast(error.message);
-        return false;
+        return null;
       }
     }
-    const undoBalances = async () => {
-      if (sourceRecord) await supabase.from("records").update({ data: sourceRecord.data }).eq("id", sourceRecord.id);
-      if (targetRecord) await supabase.from("records").update({ data: targetRecord.data }).eq("id", targetRecord.id);
+    return {
+      source, drawn, shortBy,
+      restore: async () => {
+        if (sourceRecord) await supabase.from("records").update({ data: sourceRecord.data }).eq("id", sourceRecord.id);
+      },
     };
-    if (target && targetRecord) {
-      const { error } = await supabase.from("records").update({ data: addToAccount(targetRecord.data, target.kind, drawn) }).eq("id", targetRecord.id);
+  }
+  function paidEntry(label: string, type: string, amount: number, taken: NonNullable<Awaited<ReturnType<typeof takeFromAccount>>>) {
+    return { label, type, amount, paid_on: istCalendar().iso, from_id: taken.source?.id || "", from_name: taken.source?.name || "another account", from_kind: taken.source?.kind, drawn: taken.drawn };
+  }
+  /** Changes a paid amount, moving the difference in or out of the account it came from. */
+  async function editPaidAmount(item: PaymentItem, amount: number) {
+    const { month, record } = currentPayments(),
+      saved = record?.data as PaymentMonth | undefined,
+      entry = saved?.paid?.[item.id];
+    if (!saved || !entry || amount <= 0) return false;
+    const account = recordsRef.current.find((r) => r.id === entry.from_id);
+    let drawn = 0, shortBy = 0;
+    if (account) {
+      const kind = entry.from_kind || "od",
+        result = drawFromAccount(addToAccount(account.data, kind, entry.drawn), kind, amount);
+      ({ drawn, shortBy } = result);
+      const { error } = await supabase.from("records").update({ data: result.data }).eq("id", account.id);
       if (error) {
-        await undoBalances();
         setToast(error.message);
         return false;
       }
     }
-    const data: PaymentMonth = { ...saved, period: month, paid: { ...(saved.paid || {}), [item.id]: { label: item.label, type: item.type, amount: item.transfer ? drawn : amount, paid_on: istCalendar().iso, from_id: source?.id || "", from_name: source?.name || "another account", from_kind: source?.kind, drawn, ...(target ? { to_id: target.id, to_name: target.name } : {}) } } };
-    if (!(await savePaymentMonth(month, record, data))) {
-      await undoBalances();
-      return false;
-    }
+    const done = await savePaymentMonth(month, record, { ...saved, paid: { ...saved.paid, [item.id]: { ...entry, amount, drawn } } });
+    if (!done && account) await supabase.from("records").update({ data: account.data }).eq("id", account.id);
     await loadAll(true);
-    setToast(shortBy ? `Only ${fmt(drawn)} was available in ${source?.name}. ${item.transfer ? `${fmt(shortBy)} was not moved.` : `${fmt(shortBy)} came from elsewhere.`}` : `${item.label} ${item.transfer ? "moved" : "marked paid"}`);
-    return true;
+    setToast(shortBy ? `Only ${fmt(drawn)} was available in ${entry.from_name}. ${fmt(shortBy)} came from elsewhere.` : `${item.label} updated to ${fmt(amount)}`);
+    return done;
   }
   async function undoPayment(item: PaymentItem) {
     const { month, record } = currentPayments(),
@@ -9542,11 +9580,21 @@ export default function AssetManagerApp() {
     await loadAll(true);
     return done;
   }
-  async function addPayment(label: string, amount: number, dueDate: string) {
+  async function addPayment(label: string, amount: number, dueDate: string, fromId: string, alreadyPaid: boolean) {
     const { month, record } = currentPayments(),
       saved = (record?.data || { period: month }) as PaymentMonth,
-      done = await savePaymentMonth(month, record, { ...saved, period: month, custom: [...(saved.custom || []), { id: `custom:${Date.now()}`, label, amount, due_date: dueDate }] });
+      id = `custom:${Date.now()}`,
+      taken = alreadyPaid ? await takeFromAccount(fromId, amount) : null;
+    if (alreadyPaid && !taken) return false;
+    const done = await savePaymentMonth(month, record, {
+      ...saved,
+      period: month,
+      custom: [...(saved.custom || []), { id, label, amount, due_date: dueDate }],
+      ...(taken ? { paid: { ...(saved.paid || {}), [id]: paidEntry(label, "Other payment", amount, taken) } } : {}),
+    });
+    if (!done && taken) await taken.restore();
     if (done) await loadAll(true);
+    if (done && taken?.shortBy) setToast(`Only ${fmt(taken.drawn)} was available in ${taken.source?.name}. ${fmt(taken.shortBy)} came from elsewhere.`);
     return done;
   }
   async function removePayment(item: PaymentItem) {
@@ -9588,6 +9636,7 @@ export default function AssetManagerApp() {
         recurring={recurringPayments(records)}
         yearly={yearlyCommitments(records, computeLiveRecord)}
         onAmount={savePaymentAmount}
+        onEditPaid={editPaidAmount}
         onSaveRecurring={saveRecurringList}
         monthTitle={periodLabel(month)}
         items={items}

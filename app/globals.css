@@ -81,6 +81,9 @@
 /* Payments due this month. */
 .pay-from { display: grid; gap: 4px; max-width: 420px; color: #475569; font-size: 12px; font-weight: 600; }
 .pay-from select, .pay-add input { min-height: 38px; padding: 6px 10px; border: 1px solid #cbd5e1; border-radius: 8px; background: #fff; color: #0f172a; font-size: 13px; }
+.pay-add-row { padding: 14px; border: 1px solid #e2e8f0; border-radius: 14px; background: #fff; }
+.pay-add-row h4 { flex: 1 1 100%; font-size: 13px; font-weight: 650; color: #0f172a; }
+.pay-add-row label.pay-check { display: flex; flex: 0 0 auto; align-items: center; gap: 6px; min-height: 38px; }
 .pay-source { max-width: 220px; min-height: 30px; padding: 2px 6px; border: 1px solid #cbd5e1; border-radius: 6px; background: #fff; color: #0f172a; font-size: 12px; }
 .pay-actions { display: flex; justify-content: flex-end; gap: 6px; }
 .pay-add { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px; }

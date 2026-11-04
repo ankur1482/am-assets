@@ -75,8 +75,9 @@ export function yearlyCommitments(records: PaymentRecord[], compute: (moduleKey:
 export function paymentsDue(records: PaymentRecord[], compute: (moduleKey: string, data: any) => any, month: string, saved?: PaymentMonth): PaymentItem[] {
   const items: PaymentItem[] = [];
   for (const row of recurringPayments(records)) {
-    const id = `rec:${row.id}`, informational = row.kind === 'on_card', transfer = row.kind === 'transfer';
-    items.push({ id, recurringId: row.id, label: row.label, type: row.kind === 'card' ? 'Credit card' : informational ? 'Auto-debited on a card' : transfer ? 'Transfer between your accounts' : 'Regular payment', bank: row.via, to: row.to, note: row.note, amount: saved?.amounts?.[id] ?? Math.max(0, num(row.amount)), dueDate: row.due_day ? emiDueDate(`0000-00-${String(row.due_day).padStart(2, '0')}`, month) : '', custom: false, informational, transfer });
+    // A transfer happens in the background: it is shown for reference and needs no action.
+    const id = `rec:${row.id}`, transfer = row.kind === 'transfer', informational = row.kind === 'on_card' || transfer;
+    items.push({ id, recurringId: row.id, label: row.label, type: row.kind === 'card' ? 'Credit card' : row.kind === 'on_card' ? 'Auto-debited on a card' : transfer ? 'Background transfer' : 'Regular payment', bank: row.via, to: row.to, note: row.note, amount: saved?.amounts?.[id] ?? Math.max(0, num(row.amount)), dueDate: row.due_day ? emiDueDate(`0000-00-${String(row.due_day).padStart(2, '0')}`, month) : '', custom: false, informational, transfer });
   }
   for (const record of records) {
     const k = record.module_key, d = record.data || {};
@@ -108,16 +109,33 @@ export function paymentTotals(items: PaymentItem[]) {
   return { paid, remaining, total: paid + remaining, unpaidCount: items.filter(item => !item.paid && !item.informational).length };
 }
 
-export type PayAccount = OdAccount & { kind: 'od' | 'savings' };
+export type PayAccount = OdAccount & { kind: 'od' | 'savings'; holder?: string };
+/** Dividends are paid into each person's own HDFC savings account. */
+export const DIVIDEND_BANK = 'HDFC Bank';
+export const dividendAccountFor = (accounts: PayAccount[], holder: string) =>
+  accounts.find(account => account.kind === 'savings' && /^hdfc/i.test(account.name) && String(account.holder || '').trim().toLowerCase() === holder.trim().toLowerCase());
+export const payAccountLabel = (account: PayAccount) => `${account.name} ${account.kind === 'od' ? 'OD' : 'savings'}${account.holder ? ` (${account.holder})` : ''}`;
 const BALANCE_FIELD = { od: 'od_parked_balance', savings: 'current_value_today' } as const;
 /** Where money can come from: OD accounts with the most parked first, then bank savings. */
 export function payAccounts(records: PaymentRecord[]): PayAccount[] {
   const savings = records
     .filter(record => record.module_key === 'fixedIncome' && isSavingsAccount(record.data) && !isCashAtHome(record.data))
-    .map(record => ({ id: record.id, name: String(record.data.broker || 'Bank savings'), parked: Math.max(0, num(record.data.current_value_today)), kind: 'savings' as const }));
+    .map(record => ({ id: record.id, name: String(record.data.broker || 'Bank savings'), parked: Math.max(0, num(record.data.current_value_today)), kind: 'savings' as const, holder: String(record.data.account_name || '').trim() }));
   return [...odAccounts(records).map(account => ({ ...account, kind: 'od' as const })), ...savings];
 }
 export const firstWordMatch = (text: string, account: { name: string }) => Boolean(text) && text.toLowerCase().includes(account.name.split(/\s+/)[0].toLowerCase());
+/**
+ * The account a row should default to. A regular payment names its own. A loan pays from wherever a
+ * background transfer funds that lender, otherwise from savings held with the lender, otherwise the default.
+ */
+export function defaultSource(item: PaymentItem, items: PaymentItem[], accounts: PayAccount[], fallback: string) {
+  if (item.recurringId) return accounts.find(account => firstWordMatch(item.bank, account))?.id || fallback;
+  const lender = item.bank.split(/\s+/)[0].toLowerCase();
+  const funding = items.find(other => other.transfer && lender && String(other.to || '').toLowerCase().includes(lender));
+  return (funding && accounts.find(account => firstWordMatch(funding.bank, account))?.id)
+    || accounts.find(account => account.kind === 'savings' && firstWordMatch(item.bank, account))?.id
+    || fallback;
+}
 /** Takes money out of an OD account or a savings balance, never below zero. */
 export function drawFromAccount(data: Record<string, any>, kind: 'od' | 'savings', amount: number) {
   const field = BALANCE_FIELD[kind], balance = Math.max(0, num(data[field])), drawn = Math.min(balance, Math.max(0, amount));

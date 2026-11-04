@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { computeRecord } from './calculations';
-import { addToAccount, drawFromAccount, firstWordMatch, mergeRecurring, monthName, monthlyRegularTotal, MONTHLY_PAYMENT_MODULE, yearlyCommitments, odAccounts, parseRecurringImport, payAccounts, paymentsDue, paymentTotals, recurringData, type PaidEntry, type RecurringPayment } from './monthlyPayments';
+import { addToAccount, defaultSource, dividendAccountFor, drawFromAccount, firstWordMatch, payAccountLabel, mergeRecurring, monthName, monthlyRegularTotal, MONTHLY_PAYMENT_MODULE, yearlyCommitments, odAccounts, parseRecurringImport, payAccounts, paymentsDue, paymentTotals, recurringData, type PaidEntry, type RecurringPayment } from './monthlyPayments';
 import { planningSnapshot } from './predictions';
 
 const loan = (id: string, data: Record<string, any> = {}) => ({ id, module_key: 'property', data: { broker: 'Example Heights', loan_institution: 'HDFC Bank', loan_balance: 1000000, loan_interest_rate: 12, emi_amount: 20000, loan_start_date: '2022-03-31', ...data } });
@@ -88,11 +88,32 @@ describe('monthly payments', () => {
     it('keeps a transfer between your own accounts out of payments and cash flow', () => {
       const transfer: RecurringPayment = { id: 't', label: 'Axis to HDFC', amount: 250000, due_day: 4, via: 'Axis OD', to: 'HDFC', kind: 'transfer' };
       const items = paymentsDue([list([transfer])], computeRecord, '2026-11');
-      expect(items[0]).toMatchObject({ transfer: true, to: 'HDFC', dueDate: '2026-11-04' });
-      expect(paymentTotals(items)).toMatchObject({ remaining: 0, paid: 0, unpaidCount: 1 });
+      expect(items[0]).toMatchObject({ transfer: true, informational: true, type: 'Background transfer', to: 'HDFC', dueDate: '2026-11-04' });
+      expect(paymentTotals(items)).toMatchObject({ remaining: 0, paid: 0, unpaidCount: 0 });
       expect(monthlyRegularTotal([transfer])).toBe(0);
       const moved = paymentsDue([list([transfer])], computeRecord, '2026-11', { period: '2026-11', paid: { 'rec:t': paid(250000) } });
       expect(paymentTotals(moved)).toMatchObject({ paid: 0, unpaidCount: 0 });
+    });
+    it('defaults an HDFC loan to the Axis OD account that funds it in the background', () => {
+      const accounts = payAccounts([
+        loan('od', { loan_structure: 'Overdraft (OD)', loan_institution: 'Axis Bank', od_parked_balance: 5 }),
+        loan('bob', { loan_structure: 'Overdraft (OD)', loan_institution: 'Bank of Baroda', od_parked_balance: 9 }),
+        { id: 'sav', module_key: 'fixedIncome', data: { category: 'Savings in Bank', broker: 'HDFC Bank', current_value_today: 1 } },
+      ]);
+      const emi = { id: 'x:emi', label: 'Example Towers', type: 'Loan EMI', bank: 'HDFC Bank', amount: 1, dueDate: '', custom: false };
+      const transfer = { id: 'rec:t', recurringId: 't', label: 'Move', type: 'Background transfer', bank: 'Axis OD', to: 'HDFC', amount: 1, dueDate: '', custom: false, transfer: true };
+      expect(defaultSource(emi, [emi, transfer], accounts, 'bob')).toBe('od');
+      expect(defaultSource(emi, [emi], accounts, 'bob')).toBe('sav');
+      expect(defaultSource({ ...emi, bank: '' }, [emi, transfer], accounts, 'bob')).toBe('bob');
+      expect(defaultSource({ ...emi, id: 'rec:s', recurringId: 's', bank: 'Axis OD' }, [emi], accounts, 'bob')).toBe('od');
+    });
+    it("finds each person's own HDFC savings for their dividends", () => {
+      const savings = (id: string, broker: string, account_name: string) => ({ id, module_key: 'fixedIncome', data: { category: 'Savings in Bank', broker, account_name, current_value_today: 1 } });
+      const accounts = payAccounts([savings('a', 'HDFC Bank', 'Ankur'), savings('k', 'HDFC Bank', 'Meera'), savings('x', 'Axis Bank', 'Nina')]);
+      expect(dividendAccountFor(accounts, 'meera')?.id).toBe('k');
+      expect(dividendAccountFor(accounts, 'Ankur')?.id).toBe('a');
+      expect(dividendAccountFor(accounts, 'Nina')).toBeUndefined();
+      expect(payAccountLabel(accounts[1])).toBe('HDFC Bank savings (Meera)');
     });
     it('moves money from the OD account to savings, keeping liquidity the same', () => {
       const od = drawFromAccount({ od_parked_balance: 300000 }, 'od', 250000), savings = addToAccount({ current_value_today: 1000 }, 'savings', od.drawn);
