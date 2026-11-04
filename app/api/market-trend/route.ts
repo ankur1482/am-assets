@@ -7,14 +7,14 @@ const TROY_OZ_GRAMS=31.1034768;
 const symbols:Record<string,string>={gold:'GC=F',silver:'SI=F',crude:'CL=F','gold-history':'GOLDBEES.NS','shares-history':'^NSEI'};
 
 async function yahooChart(symbol:string,range='3mo'){
-  const res=await fetch(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1d&range=${encodeURIComponent(range)}`,{headers:{'User-Agent':'Mozilla/5.0 AssetManager/1.0',Accept:'application/json'},cache:'no-store'});
+  const res=await fetch(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1d&range=${encodeURIComponent(range)}`,{headers:{'User-Agent':'Mozilla/5.0 AssetManager/1.0',Accept:'application/json'},cache:'no-store',signal:AbortSignal.timeout(12000)});
   if(!res.ok)throw new Error('Trend data request failed');
   const data=await res.json(),result=data?.chart?.result?.[0],timestamps=result?.timestamp||[],quotes=result?.indicators?.quote?.[0]?.close||[];
-  return timestamps.map((t:number,i:number)=>({date:new Date(t*1000).toISOString().slice(0,10),close:Number(quotes[i])})).filter((p:any)=>Number.isFinite(p.close));
+  return timestamps.map((t:number,i:number)=>({date:new Date(t*1000).toISOString().slice(0,10),close:Number(quotes[i])})).filter((p:any)=>Number.isFinite(p.close)&&p.close>0);
 }
 
 async function yahooPrice(symbol:string){
-  const res=await fetch(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1d&range=1d`,{headers:{'User-Agent':'Mozilla/5.0 AssetManager/1.0',Accept:'application/json'},cache:'no-store'});
+  const res=await fetch(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1d&range=1d`,{headers:{'User-Agent':'Mozilla/5.0 AssetManager/1.0',Accept:'application/json'},cache:'no-store',signal:AbortSignal.timeout(12000)});
   if(!res.ok)throw new Error('FX request failed');
   const meta=(await res.json())?.chart?.result?.[0]?.meta||{},price=Number(meta.regularMarketPrice??meta.previousClose);
   if(!Number.isFinite(price))throw new Error('FX unavailable');
@@ -24,7 +24,7 @@ async function yahooPrice(symbol:string){
 async function newsTone(asset:string){
   try{
     const q=encodeURIComponent(`${asset} price forecast India market news`);
-    const res=await fetch(`https://news.google.com/rss/search?q=${q}&hl=en-IN&gl=IN&ceid=IN:en`,{headers:{'User-Agent':'Mozilla/5.0 AssetManager/1.0'},cache:'no-store'});
+    const res=await fetch(`https://news.google.com/rss/search?q=${q}&hl=en-IN&gl=IN&ceid=IN:en`,{headers:{'User-Agent':'Mozilla/5.0 AssetManager/1.0'},cache:'no-store',signal:AbortSignal.timeout(8000)});
     if(!res.ok)return{score:0,label:'Neutral',headlines:[]};
     const xml=await res.text();
     const titles=Array.from(xml.matchAll(/<title><!\[CDATA\[([\s\S]*?)\]\]><\/title>|<title>([\s\S]*?)<\/title>/gi)).slice(1,7).map(m=>(m[1]||m[2]||'').replace(/&amp;/g,'&'));
@@ -49,7 +49,7 @@ export async function GET(request:Request){
     const historicalProxy=asset.endsWith('-history'),usdInr=asset==='crude'||historicalProxy?1:await yahooPrice('USDINR=X');
     const raw=await yahooChart(symbol,range);
     const points=raw.map(p=>({date:p.date,value:asset==='crude'||historicalProxy?p.close:p.close*usdInr/TROY_OZ_GRAMS*(asset==='gold'?10:1000)})).slice(range==='5d'?-5:range==='1mo'?-22:undefined);
-    const tone=await newsTone(asset),outlook=forecast(points,tone.score);
+    const tone=searchParams.get('historyOnly')==='1'?{score:0,label:'Not requested',headlines:[]}:await newsTone(asset),outlook=forecast(points,tone.score);
     return NextResponse.json({asset,symbol,currency:asset==='crude'?'USD':'INR',unit:historicalProxy?'index':asset==='gold'?'10g':asset==='crude'?'barrel':'kg',market:'Yahoo Finance',points,tone,outlook,time:new Date().toISOString()},{headers:{'Cache-Control':'no-store, max-age=0'}});
   }catch(e:any){
     return NextResponse.json({error:e?.message||'Trend failed'},{status:500});

@@ -68,6 +68,71 @@ npm run dev
 
 Open `http://localhost:3000`.
 
+### Predictive Planner
+
+Open **Planning → Predictive Planner** for wealth/retirement scenarios, goal funding,
+12-month cash-flow and loan-payoff estimates, and on-demand market trend ranges.
+On phones, use the **Forecast** tab. Module-level forecast buttons open the relevant
+planner tab using the active household's records; existing household permissions apply.
+Assumptions are editable and remain in the current session; switching households
+resets the planner. Export Plan downloads assumptions and computed results as JSON.
+Core forecasts run locally without AI credentials. Market trends use the existing
+history routes and require an available upstream data source.
+
+For local UI verification, `/planner-preview` uses fictional records and is available
+only in development. Production returns 404 for this route.
+
+### Overdraft home loans, cash flow and monthly uploads
+
+Set **Repayment Structure** to *Overdraft (OD)* on a Property or Loan to enter the savings
+parked in the OD account. Interest, net worth and liabilities then use the balance not
+covered by those savings. Do not record the same savings under Other Assets as well.
+
+The Dashboard and planner show **Liquidity Now** (bank savings, cash at home and parked OD
+funds) and **Available Cash Flow** (salary, rent and dividends less EMIs, premiums and
+investments). Add these in Fixed Income using the *Savings in Bank*, *Cash at Home* and
+*Dividend Income* types. Do not record money parked in an OD account as Savings in Bank too.
+
+**Planning → Monthly Uploads** requires a salary slip for each account with a Salary record
+and a portfolio ledger for each account with stock or mutual fund holdings, from
+October 2026 onward. Documents are due by the 7th of the following month. After that the
+household owner is locked out until each item is uploaded or marked not available with a
+reason. Change the start month or due day in `lib/monthlyUploads.ts`.
+
+### Month on Month
+
+**Planning → Month on Month** has two views. *Monthly items* covers stocks, funds, gold,
+savings, salary, rent, dividends and loan EMIs, with a column per month. *Yearly items* covers
+property, loan balances, insurance, PPF, Sukanya, FDs and other long-term deposits, with a
+column per financial year. Each period opens at the previous period's close.
+The current month is saved when the app is open, at most every 30 minutes, so a month's close
+is the last value seen in that month. Any figure can be edited, including past months;
+clearing a figure undoes the edit. A one-month edit does not change the underlying record,
+so a permanent rent change belongs on the Property as well.
+
+### Transactions
+
+Open a stock or mutual fund and choose **Record Sale**. The oldest lots are sold first, the
+holding reduces, and **Investments → Transactions** shows purchase versus selling price, gains
+by financial year split into short and long term (12-month listed equity rule), and XIRR.
+Undo restores the holding. It is a record of gains, not tax advice. Add sale proceeds to
+Savings in Bank yourself.
+
+### Payments This Month
+
+The Dashboard's **Payments This Month** tab lists loan EMIs, premiums falling due this month
+and payments added by hand. Marking one paid deducts it from the chosen OD account, lowering
+liquidity and raising the balance that bears interest. Undo puts the money back. Salary or
+rent credited to the OD account is not added automatically; update the parked amount.
+
+### Automatic backups
+
+**Utility → Automatic Backups** saves a new restorable JSON file about 10 seconds after any
+data change, while the app is open, to Google Drive (`Important Documents/Backups`) and to a
+chosen PC folder (Chrome and Edge only). Price refreshes alone do not trigger one. Files are
+not encrypted and older ones are never deleted automatically. Restore from Settings → Backup.
+Google Drive connections now survive sign-out; disconnect them in Settings.
+
 ## 4. Deploy to Vercel
 
 1. Push this folder to GitHub.

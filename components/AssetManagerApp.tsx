@@ -6,6 +6,7 @@ import {
   ArrowUp,
   ArrowUpDown,
   BarChart3,
+  HardDrive,
   Bell,
   BriefcaseBusiness,
   Building2,
@@ -36,8 +37,32 @@ import {
   X,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
+import { startForegroundRefresh } from "@/lib/foregroundRefresh";
+import MonthlyUploads from "@/components/MonthlyUploads";
+import BackupCenter, { type BackupTarget } from "@/components/BackupCenter";
+import { backupFileName, backupFingerprint } from "@/lib/backups";
+import { chooseBackupFolder, folderPermission, forgetBackupFolder, loadBackupFolder, requestFolderPermission, supportsBackupFolder, writeBackupFile } from "@/lib/backupFolder";
+import MonthlyPayments from "@/components/MonthlyPayments";
+import { drawFromOd, MONTHLY_PAYMENT_MODULE, odAccounts, paymentsDue, paymentTotals, recurringData, recurringPayments, recurringRecord, returnToOd, type PaymentItem, type PaymentMonth, type RecurringPayment } from "@/lib/monthlyPayments";
+import MonthlyValuation from "@/components/MonthlyValuation";
+import TransactionLedger, { RecordSaleForm, type BuyRow } from "@/components/TransactionLedger";
+import { planSale, postedSales, reduceLot, restoreLot, TRANSACTION_MODULE, xirr, type CashFlow, type SaleInput, type SaleLot } from "@/lib/transactions";
+import { applyLedgerEdit, ledgerEntries, mergeCurrentMonth, MONTHLY_VALUATION_MODULE, type LedgerField, type LedgerRow, type MonthData } from "@/lib/monthlyValuation";
+import PredictivePlanner, { type ForecastTab } from "@/components/PredictivePlanner";
+import { MONTHLY_UPLOAD_MODULE, periodLabel, requiredUploads, type UploadItem } from "@/lib/monthlyUploads";
+import { planningSnapshot } from "@/lib/predictions";
+import { researchLinks } from "@/lib/researchLinks";
 import { ACCOUNT_TYPES, MODULES, RELATIONS } from "@/lib/modules";
+import { controlsOtherFields, isFieldVisible } from "@/lib/fieldVisibility";
 import {
+  isIncomeRecord,
+  isEarningRent,
+  isRentedProperty,
+  occupancyOf,
+  propertyGroupTotals,
+  LOAN_FIELDS,
+  loanPosition,
+  PROPERTY_LOAN_FIELDS,
   calculateIndianGratuity,
   computeRecord,
   computeTotals,
@@ -167,6 +192,7 @@ type WorkspaceMember = {
 const views = [
   ["dashboard", "DB", "Dashboard"],
   ["allInvestments", "AI", "All Investments"],
+  [TRANSACTION_MODULE, "TX", "Transactions"],
   ["stocks", "ST", "Stocks"],
   ["mutualFunds", "MF", "Mutual Funds"],
   ["ulips", "UL", "ULIPs"],
@@ -179,10 +205,13 @@ const views = [
   ["loans", "LN", "Loans"],
   ["borrowings", "BR", "Borrowings"],
   ["goals", "GO", "Goals"],
-  ["futureWealth", "FW", "Future Wealth"],
+  ["futureWealth", "FW", "Predictive Planner"],
+  [MONTHLY_VALUATION_MODULE, "MM", "Month on Month"],
+  [MONTHLY_UPLOAD_MODULE, "MU", "Monthly Uploads"],
   ["watchlist", "WL", "Watchlist"],
   ["alerts", "AL", "Alerts"],
   ["purchaseCalculator", "CALC", "Purchase Calculator"],
+  ["backups", "BK", "Automatic Backups"],
   ["household", "HH", "Household Access"],
   ["settings", "SET", "Settings"],
 ];
@@ -192,6 +221,7 @@ const groups = [
     "Investments",
     [
       "allInvestments",
+      TRANSACTION_MODULE,
       "stocks",
       "property",
       "bullion",
@@ -204,8 +234,8 @@ const groups = [
     ],
   ],
   ["Liabilities", ["loans", "borrowings"]],
-  ["Planning", ["goals", "futureWealth"]],
-  ["Utility", ["watchlist", "purchaseCalculator", "alerts", "household", "settings"]],
+  ["Planning", ["goals", "futureWealth", MONTHLY_VALUATION_MODULE, MONTHLY_UPLOAD_MODULE]],
+  ["Utility", ["watchlist", "purchaseCalculator", "alerts", "backups", "household", "settings"]],
   ["Admin", ["admin"]],
 ];
 const allViews = [...views, ["admin", "Admin", "Admin Console"]];
@@ -479,6 +509,26 @@ const compactName = (value: any) => {
     .trim();
   return cleaned || name;
 };
+const OD_LOAN_LABELS: Record<string, string> = {
+  loan_structure: "Repayment Structure",
+  od_parked_balance: "Parked in OD Account",
+  emi_amount: "Monthly EMI",
+  monthly_emi: "Monthly EMI",
+  loan_start_date: "First EMI Date",
+  loan_institution: "Loan Bank / OD Account",
+  loan_clears_on: "Loan Clears On",
+  emiFuture: "Total EMIs Remaining",
+  future_interest: "Interest Remaining",
+  next_emi_interest: "Next EMI: Interest",
+  next_emi_principal: "Next EMI: Principal",
+  occupancy: "Occupancy",
+  vacant_from: "Vacant From",
+  vacant_to: "Vacant To",
+  net_loan_balance: "Interest-Bearing Balance",
+  od_monthly_interest: "OD Interest / Month",
+  od_interest_saved_monthly: "Interest Saved / Month",
+  od_months_to_clear: "Months to Clear",
+};
 const FIXED_INCOME_LABELS: Record<string, string> = {
   employee_contribution: "Employee Monthly",
   company_contribution: "Employer Monthly",
@@ -603,7 +653,9 @@ const fieldLabel = (moduleKey: string, field: string) =>
         ? "Monthly Contribution by Employer"
       : moduleKey === "fixedIncome" && field === "latest"
         ? "Current Worth Till Date"
-        : pretty(field);
+      : moduleKey === "property" && field === "security_name"
+        ? "Property Type"
+      : OD_LOAN_LABELS[field] || pretty(field);
 const moneyCols = [
   "invested",
   "latest",
@@ -685,6 +737,15 @@ const moneyCols = [
   "current_price",
   "emiFuture",
   "monthly_emi",
+  "monthly_rent",
+  "od_parked_balance",
+  "emi_amount",
+  "future_interest",
+  "next_emi_interest",
+  "next_emi_principal",
+  "net_loan_balance",
+  "od_monthly_interest",
+  "od_interest_saved_monthly",
 ];
 const priceCols = new Set([
   "live_price",
@@ -722,6 +783,7 @@ function assignStockQuoteFields(data: any, quote: any, priceField = "live_price"
 }
 const fixedIncomeCategoryLabel = (value: any) => {
   const category = String(value || "").trim();
+  if (/^savings\s*account$/i.test(category)) return "Savings in Bank";
   return /^pf$/i.test(category) ? "Company PF" : category;
 };
 const isCompanyPfType = (value: any) =>
@@ -996,6 +1058,7 @@ export default function AssetManagerApp() {
       "weekly" | "monthly" | "ytd"
     >("weekly"),
     [performanceModule, setPerformanceModule] = useState("all"),
+    [plannerTab, setPlannerTab] = useState<ForecastTab>("wealth"),
     [projectionYears, setProjectionYears] = useState(10),
     [projectionMonthlyInput, setProjectionMonthlyInput] = useState(""),
     [projectionReturnInput, setProjectionReturnInput] = useState(""),
@@ -1058,6 +1121,8 @@ export default function AssetManagerApp() {
     [stockResults, setStockResults] = useState<typeof ALL_STOCKS>([]),
     [stockOpen, setStockOpen] = useState(false),
     [fixedIncomeType, setFixedIncomeType] = useState(""),
+    [formControls, setFormControls] = useState<Record<string, any>>({}),
+    [saleTarget, setSaleTarget] = useState<{ moduleKey: string; name: string; account: string; ticker: string; exchange: string; lots: Rec[] } | null>(null),
     [insuranceType, setInsuranceType] = useState(""),
     [insurancePremiumFrequency, setInsurancePremiumFrequency] = useState(""),
     [insurancePremiumTerm, setInsurancePremiumTerm] = useState(""),
@@ -1104,7 +1169,18 @@ export default function AssetManagerApp() {
   const fileRef = useRef<HTMLInputElement | null>(null),
     docFilesRef = useRef<File[]>([]),
     snapshotRef = useRef(""),
-    foregroundRefreshRef = useRef(0),
+    valuationWriteRef = useRef({ scope: "", at: 0 }),
+    backupBaselineRef = useRef({ scope: "", fingerprint: "" }),
+    backupTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null),
+    backupRunRef = useRef<() => void>(() => {}),
+    [backupFolder, setBackupFolder] = useState<any>(null),
+    [backupFolderNeedsPermission, setBackupFolderNeedsPermission] = useState(false),
+    [driveBackup, setDriveBackup] = useState<BackupTarget>({ at: "", error: "" }),
+    [folderBackup, setFolderBackup] = useState<BackupTarget>({ at: "", error: "" }),
+    [backupBusy, setBackupBusy] = useState(false),
+    [backupPromptOpen, setBackupPromptOpen] = useState(false),
+    foregroundRefreshRef = useRef<(initial: boolean) => Promise<void>>(async () => {}),
+    foregroundScopeRef = useRef(""),
     recordsRef = useRef<Rec[]>([]),
     loadEpochRef = useRef(0),
     user = session?.user,
@@ -1127,9 +1203,10 @@ export default function AssetManagerApp() {
       setSession(data.session);
       setLoading(false);
     });
-    const { data: l } = supabase.auth.onAuthStateChange((_e, s) =>
-      setSession(s),
-    );
+    const { data: l } = supabase.auth.onAuthStateChange((_e, s) => {
+      setSession(s);
+      if (!s) setLoading(false);
+    });
     return () => l.subscription.unsubscribe();
   }, []);
   useEffect(() => {
@@ -1173,31 +1250,47 @@ export default function AssetManagerApp() {
       setWorkspaceMembers([]);
     }
   }, [user?.id]);
-  useEffect(() => {
-    if (user?.id && (activeWorkspaceId || householdSetupRequired)) loadAll();
-  }, [user?.id, activeWorkspaceId, householdSetupRequired]);
+  foregroundScopeRef.current = `${user?.id || ""}:${activeWorkspaceId}`;
+  foregroundRefreshRef.current = async (initial) => {
+    const scope = foregroundScopeRef.current;
+    setGlobalRefreshing(true);
+    try {
+      const loaded = await loadAll(!initial);
+      if (!loaded || scope !== foregroundScopeRef.current || editing || detail || accModal) return;
+      if (workspaceAccess.can_edit) {
+        await Promise.allSettled([
+          refreshStocks(true, true),
+          refreshWatchlist(true),
+          refreshMutualFundNavs(true, true),
+          refreshMetals("bullion", true, true),
+          refreshMetals("nsel", true, true),
+        ]);
+      }
+      if (scope !== foregroundScopeRef.current) return;
+      // Refresh displays last, so database reloads cannot replace newer quotes.
+      // Read-only members can update their displays without writing records.
+      await Promise.allSettled([
+        refreshStockDisplay(true),
+        refreshMarketToday(),
+        refreshBullionMarket(),
+      ]);
+    } finally {
+      if (scope === foregroundScopeRef.current) {
+        setGlobalRefreshing(false);
+        if (initial) setLoading(false);
+      }
+    }
+  };
   useEffect(() => {
     if (!user?.id || (!activeWorkspaceId && !householdSetupRequired)) return;
-    const refreshForegroundData = () => {
-      if (document.visibilityState === "hidden") return;
-      const now = Date.now();
-      if (now - foregroundRefreshRef.current < 1500) return;
-      foregroundRefreshRef.current = now;
-      void loadAll(true);
-    };
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === "visible") refreshForegroundData();
-    };
-    window.addEventListener("focus", refreshForegroundData);
-    window.addEventListener("online", refreshForegroundData);
-    window.addEventListener("pageshow", refreshForegroundData);
-    document.addEventListener("visibilitychange", handleVisibilityChange);
-    return () => {
-      window.removeEventListener("focus", refreshForegroundData);
-      window.removeEventListener("online", refreshForegroundData);
-      window.removeEventListener("pageshow", refreshForegroundData);
-      document.removeEventListener("visibilitychange", handleVisibilityChange);
-    };
+    return startForegroundRefresh({
+      windowTarget: window,
+      documentTarget: document,
+      isVisible: () => document.visibilityState !== "hidden",
+      isOnline: () => navigator.onLine !== false,
+      refresh: (initial) => foregroundRefreshRef.current(initial),
+      onError: (error) => setToast(error instanceof Error ? error.message : "Could not refresh data. Check your connection."),
+    });
   }, [user?.id, activeWorkspaceId, householdSetupRequired]);
   useEffect(() => {
     setAiReview(null);
@@ -1219,6 +1312,7 @@ export default function AssetManagerApp() {
         ? fixedIncomeCategoryLabel(editing.record?.data?.category || "")
         : "",
     );
+    setFormControls(editing?.record?.data || editing?.defaults || {});
     if (editing?.moduleKey === "insurance") {
       const policy = normalizeInsurancePolicy(
         editing.record?.data || editing.defaults || {},
@@ -1488,7 +1582,7 @@ export default function AssetManagerApp() {
     const due = records.filter((r) => {
       if (r.module_key !== "property") return false;
       const d = r.data || {};
-      if (String(d.is_rented || "").toLowerCase() !== "yes") return false;
+      if (!isEarningRent(d, String(today).slice(0, 10))) return false;
       const end = String(d.rent_agreement_end_date || "");
       if (!end) return false;
       const daysLeft = Math.round(
@@ -1587,7 +1681,9 @@ export default function AssetManagerApp() {
     }
   }
   async function loadAll(quiet = false) {
-    if (!user) return;
+    if (!user) return false;
+    const requestScope = `${user.id}:${activeWorkspaceId}`;
+    if (requestScope !== foregroundScopeRef.current) return false;
     // Several independent code paths (manual refresh, scheduled intervals,
     // refreshStocks' own post-save reload) can each call loadAll around the
     // same time. Their responses aren't guaranteed to land in request order,
@@ -1618,13 +1714,18 @@ export default function AssetManagerApp() {
       recordQuery.eq(scopeColumn, scopeValue).order("created_at", { ascending: false }),
       documentQuery.eq(scopeColumn, scopeValue).order("created_at", { ascending: false }),
     ]);
-    if (epoch !== loadEpochRef.current) {
+    if (epoch !== loadEpochRef.current || requestScope !== foregroundScopeRef.current) return false;
+    const loadError = [p, r, a, rec, doc].find(result => result.error)?.error;
+    if (loadError) {
       if (!quiet) setLoading(false);
-      return;
+      setToast(`Could not refresh saved data: ${loadError.message}`);
+      return false;
     }
     if (p.data) setProfile(p.data as any);
     if (r.data) setRole((r.data as any).access_role);
     setAccounts((a.data || []) as any);
+    // Foreground quote refresh starts immediately after this promise resolves.
+    recordsRef.current = (rec.data || []) as Rec[];
     setRecords((rec.data || []) as any);
     setDocs((doc.data || []) as any);
     if (!quiet) setLoading(false);
@@ -1634,6 +1735,7 @@ export default function AssetManagerApp() {
         if (active && document.contains(active))
           active.focus?.({ preventScroll: true } as any);
       });
+    return true;
   }
   async function saveRecordData(recordId: string, data: Record<string, any>) {
     if (!user?.id) throw new Error("Not signed in");
@@ -1848,13 +1950,51 @@ export default function AssetManagerApp() {
     accountTab(k) === "All" ||
     String(r.data?.account_name || "Unassigned") === accountTab(k);
   const canViewModule = (moduleKey: string) =>
-    ["dashboard", "purchaseCalculator", "household", "settings"].includes(
+    ["dashboard", "purchaseCalculator", "backups", "household", "settings"].includes(
       moduleKey,
     ) ||
     workspaceAccess.all_modules ||
     workspaceAccess.modules.includes(moduleKey);
   const canEditModule = (moduleKey: string) =>
     workspaceAccess.can_edit && canViewModule(moduleKey);
+  useEffect(() => {
+    captureMonthlyValuation();
+  }, [user?.id, activeWorkspaceId, records, totals.assets, totals.liabilities, loading]);
+  useEffect(() => {
+    if (!user?.id) return;
+    let cancelled = false;
+    loadBackupFolder(user.id).then(async (handle) => {
+      if (cancelled || !handle) return;
+      setBackupFolder(handle);
+      setBackupFolderNeedsPermission((await folderPermission(handle).catch(() => "prompt")) !== "granted");
+    });
+    return () => { cancelled = true; };
+  }, [user?.id]);
+  // Saves a new backup shortly after any real change, so a burst of edits makes one file.
+  useEffect(() => {
+    if (!user?.id || loading || (!records.length && !accounts.length)) return;
+    if (activeWorkspaceId && records.some((r: any) => r.workspace_id && r.workspace_id !== activeWorkspaceId)) return;
+    const scope = `${user.id}:${activeWorkspaceId || ""}`,
+      fingerprint = backupFingerprint(accounts as any[], records);
+    if (backupBaselineRef.current.scope !== scope) {
+      backupBaselineRef.current = { scope, fingerprint };
+      return;
+    }
+    if (backupBaselineRef.current.fingerprint === fingerprint) return;
+    backupBaselineRef.current.fingerprint = fingerprint;
+    if (backupTimerRef.current) clearTimeout(backupTimerRef.current);
+    backupTimerRef.current = setTimeout(() => backupRunRef.current(), 10000);
+  }, [user?.id, activeWorkspaceId, accounts, records, loading]);
+  // First-time prompt for where backups should go. Browsers only open the folder picker from a click.
+  useEffect(() => {
+    if (!user?.id || loading || !records.length) return;
+    const flag = `asset-manager-backup-prompted:${user.id}`;
+    try {
+      if (localStorage.getItem(flag) || googleDriveConnected) return;
+      localStorage.setItem(flag, "1");
+    } catch { return; }
+    loadBackupFolder(user.id).then((handle) => { if (!handle) setBackupPromptOpen(true); });
+  }, [user?.id, loading, records.length, googleDriveConnected]);
   function editChallenge(action = "change data") {
     const moduleKey = editing?.moduleKey || detail?.moduleKey || "";
     if (moduleKey && !canEditModule(moduleKey)) {
@@ -2434,17 +2574,7 @@ export default function AssetManagerApp() {
   }
 
   async function signOutSafely() {
-    const authorization = `Bearer ${session?.access_token || ""}`;
-    await Promise.allSettled([
-      fetch("/api/google-drive/status", {
-        method: "DELETE",
-        headers: { Authorization: authorization },
-      }),
-      fetch("/api/upstox/status", {
-        method: "DELETE",
-        headers: { Authorization: authorization },
-      }),
-    ]);
+    // Google Drive stays connected across sign-outs so automatic backups keep working.
     await supabase.auth.signOut();
   }
   async function uploadDocs(
@@ -2512,6 +2642,276 @@ export default function AssetManagerApp() {
       return 0;
     }
     return rows.length;
+  }
+  function storeValuationRecord(saved: any) {
+    const merge = (list: Rec[]) =>
+      list.some((r) => r.id === saved.id)
+        ? list.map((r) => (r.id === saved.id ? saved : r))
+        : [saved, ...list];
+    recordsRef.current = merge(recordsRef.current);
+    setRecords((prev: any) => merge(prev));
+  }
+  async function writeValuationMonth(existing: Rec | undefined, data: MonthData) {
+    if (!user) return false;
+    const query = existing
+      ? supabase.from("records").update({ data }).eq("id", existing.id)
+      : supabase.from("records").insert({
+          user_id: user.id,
+          ...(activeWorkspaceId ? { workspace_id: activeWorkspaceId } : {}),
+          module_key: MONTHLY_VALUATION_MODULE,
+          data,
+        });
+    const { data: saved, error } = await query.select("*").single();
+    if (error || !saved) return false;
+    storeValuationRecord(saved);
+    return true;
+  }
+  const valuationRecords = () => records.filter((r) => r.module_key === MONTHLY_VALUATION_MODULE);
+  /** Saves the month in progress at most every 30 minutes, so its close is the last value seen in that month. */
+  async function captureMonthlyValuation() {
+    if (!user?.id || loading || !canEditModule(MONTHLY_VALUATION_MODULE)) return;
+    // Records from a household being switched away from must never be saved into the new one.
+    if (activeWorkspaceId && records.some((r: any) => r.workspace_id && r.workspace_id !== activeWorkspaceId)) return;
+    const month = istCalendar().iso.slice(0, 7),
+      entries = ledgerEntries(records, computeLiveRecord, month);
+    if (!entries.length) return;
+    const saved = valuationRecords(),
+      existing = saved.find((r) => r.data?.period === month),
+      previous = saved
+        .filter((r) => String(r.data?.period || "") < month)
+        .sort((a, b) => String(b.data?.period).localeCompare(String(a.data?.period)))[0],
+      { data, changed } = mergeCurrentMonth(existing?.data as MonthData | undefined, previous?.data as MonthData | undefined, entries, month);
+    if (!changed) return;
+    const scope = `${activeWorkspaceId || user.id}:${month}`,
+      now = Date.now();
+    if (valuationWriteRef.current.scope === scope && now - valuationWriteRef.current.at < 30 * 60 * 1000) return;
+    valuationWriteRef.current = { scope, at: now };
+    if (!(await writeValuationMonth(existing, data))) valuationWriteRef.current = { scope: "", at: 0 };
+  }
+  async function saveValuationEdit(period: string, row: LedgerRow, field: LedgerField, value: number | null) {
+    const existing = valuationRecords().find((r) => r.data?.period === period),
+      { cells: _cells, id: _id, purchase, ...meta } = row,
+      data = applyLedgerEdit(existing?.data as MonthData | undefined, period, row.id, { ...meta, ...(purchase === null ? {} : { purchase }) }, field, value);
+    if (await writeValuationMonth(existing, data)) return true;
+    setToast("Could not save this figure. Try again.");
+    return false;
+  }
+  function monthlyValuationPanel() {
+    return (
+      <MonthlyValuation
+        months={valuationRecords().map((r) => r.data as MonthData)}
+        currentMonth={istCalendar().iso.slice(0, 7)}
+        canEdit={canEditModule(MONTHLY_VALUATION_MODULE)}
+        onSave={saveValuationEdit}
+      />
+    );
+  }
+  function openSale(moduleKey: string, record: Rec) {
+    const identity = (d: any) => [key(d?.account_name || ""), key(d?.ticker_symbol || d?.scheme_code || d?.security_name || "")].join("|"),
+      target = identity(record.data);
+    setDetail(null);
+    setSaleTarget({
+      moduleKey,
+      name: String(record.data?.security_name || record.data?.ticker_symbol || "Holding"),
+      account: String(record.data?.account_name || "Unassigned"),
+      ticker: String(record.data?.ticker_symbol || record.data?.scheme_code || ""),
+      exchange: String(record.data?.exchange || ""),
+      lots: records.filter((r) => r.module_key === moduleKey && !r.data?.sold_out && identity(r.data) === target),
+    });
+  }
+  const saleLotsOf = (moduleKey: string, lots: Rec[]): SaleLot[] =>
+    lots.map((lot) => {
+      const c = computeLiveRecord(moduleKey, lot.data);
+      return { id: lot.id, quantity: num(c.quantity), cost: num(c.invested), purchaseDate: String(lot.data?.purchase_date || "").slice(0, 10) };
+    });
+  async function submitSale(input: SaleInput) {
+    if (!user || !saleTarget) return false;
+    if (!canEditModule(saleTarget.moduleKey)) {
+      setToast("This household access is read-only for this module");
+      return false;
+    }
+    const plan = planSale(saleLotsOf(saleTarget.moduleKey, saleTarget.lots), input);
+    if (plan.error) {
+      setToast(plan.error);
+      return false;
+    }
+    if (!editChallenge("record this sale")) return false;
+    const base = {
+      module_key: saleTarget.moduleKey, security_name: saleTarget.name, account_name: saleTarget.account, ticker_symbol: saleTarget.ticker, exchange: saleTarget.exchange,
+      sale_date: input.date, quantity: input.quantity, price: input.price, charges: input.charges,
+      proceeds: plan.proceeds, cost: plan.cost, gain: plan.gain, short_term_gain: plan.shortTerm, long_term_gain: plan.longTerm, unknown_term_gain: plan.unknownTerm,
+    };
+    // Stays "pending" until every lot is reduced, so a failure part way never counts as a recorded sale.
+    const { data: saved, error } = await supabase
+      .from("records")
+      .insert({ user_id: user.id, ...(activeWorkspaceId ? { workspace_id: activeWorkspaceId } : {}), module_key: TRANSACTION_MODULE, data: { ...base, status: "pending", lines: [] } })
+      .select("id")
+      .single();
+    if (error || !saved) {
+      setToast(error?.message || "Could not record the sale");
+      return false;
+    }
+    const lines: any[] = [];
+    for (const line of plan.lines) {
+      const lot = saleTarget.lots.find((r) => r.id === line.lotId)!,
+        { next, removed } = reduceLot(lot.data, line.share, input.date),
+        updated = await supabase.from("records").update({ data: next }).eq("id", lot.id);
+      if (updated.error) {
+        await supabase.from("records").update({ data: { ...base, status: "posted", lines } }).eq("id", saved.id);
+        await loadAll(true);
+        setSaleTarget(null);
+        setToast(`Only part of this sale was saved: ${updated.error.message}. Undo it in Transactions and try again.`);
+        return false;
+      }
+      lines.push({ ...line, removed });
+    }
+    await supabase.from("records").update({ data: { ...base, status: "posted", lines } }).eq("id", saved.id);
+    await loadAll(true);
+    setSaleTarget(null);
+    setToast(`Sale recorded. Add ${fmt(plan.proceeds)} to Savings in Bank if it went there.`);
+    return true;
+  }
+  async function undoSale(sale: { id: string; data: Record<string, any> }) {
+    if (!editChallenge("undo this sale")) return;
+    for (const line of sale.data.lines || []) {
+      const lot = recordsRef.current.find((r) => r.id === line.lotId);
+      if (!lot) continue;
+      const { error } = await supabase.from("records").update({ data: restoreLot(lot.data, line.removed) }).eq("id", lot.id);
+      if (error) {
+        setToast(error.message);
+        await loadAll(true);
+        return;
+      }
+    }
+    await supabase.from("records").update({ data: { ...sale.data, status: "reversed" } }).eq("id", sale.id);
+    await loadAll(true);
+    setToast("Sale undone and holding restored");
+  }
+  function transactionLedgerPanel() {
+    const ledger = records.filter((r) => r.module_key === TRANSACTION_MODULE),
+      sales = postedSales(ledger),
+      soldLines = sales.flatMap((sale) => (sale.data.lines || []) as any[]),
+      lots = records.filter((r) => ["stocks", "mutualFunds"].includes(r.module_key)),
+      flows: CashFlow[] = [],
+      today = istCalendar().iso,
+      buys: BuyRow[] = lots.map((lot) => {
+        const c = computeLiveRecord(lot.module_key, lot.data),
+          sold = soldLines.filter((line) => line.lotId === lot.id),
+          date = String(lot.data?.purchase_date || "").slice(0, 10),
+          amount = num(c.invested) + sold.reduce((sum, line) => sum + num(line.cost), 0);
+        if (date) {
+          flows.push({ date, amount: -amount });
+          flows.push({ date: today, amount: num(c.latest) });
+        }
+        return { id: lot.id, date, name: String(lot.data?.security_name || lot.data?.ticker_symbol || "Holding"), account: String(lot.data?.account_name || "Unassigned"), quantity: num(c.quantity) + sold.reduce((sum, line) => sum + num(line.quantity), 0), amount };
+      }),
+      dated = lots.filter((lot) => lot.data?.purchase_date).length;
+    sales.forEach((sale) => ((sale.data.lines || []) as any[]).forEach((line) => {
+      if (line.purchaseDate) flows.push({ date: String(sale.data.sale_date), amount: num(line.proceeds) });
+    }));
+    return (
+      <TransactionLedger
+        records={ledger}
+        buys={buys}
+        annualReturn={xirr(flows)}
+        returnCoverage={`Stocks and funds: ${dated} of ${lots.length} lots have a purchase date`}
+        canEdit={canEditModule(TRANSACTION_MODULE)}
+        onUndo={undoSale}
+      />
+    );
+  }
+  async function submitMonthlyUpload(item: UploadItem, file: File) {
+    if (!user) return false;
+    const pending = await uploadDocs(MONTHLY_UPLOAD_MODULE, [file], ["Monthly Uploads", item.period]);
+    if (!pending.length) return false;
+    const base = { doc_type: item.docType, period: item.period, account_name: item.account };
+    let recordId = item.recordId;
+    if (!recordId) {
+      // Stays "uploading" until the document is attached, so a failed attach cannot satisfy the requirement.
+      const { data, error } = await supabase
+        .from("records")
+        .insert({
+          user_id: user.id,
+          ...(activeWorkspaceId ? { workspace_id: activeWorkspaceId } : {}),
+          module_key: MONTHLY_UPLOAD_MODULE,
+          data: { ...base, status: "uploading" },
+        })
+        .select("id")
+        .single();
+      if (error || !data) {
+        setToast(error?.message || "Could not save the upload");
+        return false;
+      }
+      recordId = data.id as string;
+    }
+    if (!(await attachDocs(recordId, MONTHLY_UPLOAD_MODULE, pending, `${item.label} · ${item.account} · ${item.period}`)))
+      return false;
+    const { error } = await supabase
+      .from("records")
+      .update({ data: { ...base, status: "uploaded", file_name: file.name, submitted_at: new Date().toISOString(), submitted_by: user.email || "" } })
+      .eq("id", recordId);
+    if (error) {
+      setToast(error.message);
+      return false;
+    }
+    setToast(`${item.label} saved for ${item.account}, ${periodLabel(item.period)}`);
+    await loadAll(true);
+    return true;
+  }
+  async function markMonthlyUploadUnavailable(item: UploadItem, reason: string) {
+    if (!user) return false;
+    const data = { doc_type: item.docType, period: item.period, account_name: item.account, status: "not_available", reason, submitted_at: new Date().toISOString(), submitted_by: user.email || "" };
+    const { error } = item.recordId
+      ? await supabase.from("records").update({ data }).eq("id", item.recordId)
+      : await supabase.from("records").insert({
+          user_id: user.id,
+          ...(activeWorkspaceId ? { workspace_id: activeWorkspaceId } : {}),
+          module_key: MONTHLY_UPLOAD_MODULE,
+          data,
+        });
+    if (error) {
+      setToast(error.message);
+      return false;
+    }
+    await loadAll(true);
+    return true;
+  }
+  function monthlyUploadsPanel(locked = false) {
+    return <MonthlyUploads items={uploadStatus.items} locked={locked} canSubmit={canSubmitUploads} onUpload={submitMonthlyUpload} onMarkUnavailable={markMonthlyUploadUnavailable} />;
+  }
+  function monthlyCashFlowPanel() {
+    const flow = planningSnapshot(records);
+    if (!flow.monthlyIncome && !flow.monthlyEmi && !flow.liquidity) return null;
+    const tiles = (label: string, items: (string | number)[][]) => (
+      <section className="monthly-cashflow" aria-label={label}>
+        {items.map(([name, value, note]) => (
+          <div key={String(name)}>
+            <span>{name}</span>
+            <strong className={num(value) < 0 ? "text-red-700" : "text-[#17382b]"}>{fmt(value)}</strong>
+            {note && <small>{note}</small>}
+          </div>
+        ))}
+      </section>
+    );
+    return (
+      <div className="space-y-3">
+        {tiles("Liquidity available now", [
+          ["Savings in Bank", flow.savingsBalance],
+          ["Cash at Home", flow.cashAtHome],
+          ["Parked in OD", flow.odParked, "Withdrawable, but raises interest if used"],
+          ["Liquidity Now", flow.liquidity],
+        ])}
+        {tiles("Monthly cash flow", [
+          ["Salary In", flow.monthlySalary],
+          ["Rent In", flow.monthlyRent],
+          ["Dividends In", flow.monthlyDividend],
+          ["Loan EMIs", -flow.monthlyEmi],
+          ["Premiums + Investments", -(flow.monthlyPremium + flow.monthlyInvestment)],
+          ["Regular Payments", -flow.monthlyRegular],
+          ["Available Cash Flow", flow.availableCashFlow, "Each month, after the payments you have listed"],
+        ])}
+      </div>
+    );
   }
   async function saveRecord(
     moduleKey: string,
@@ -2592,7 +2992,7 @@ export default function AssetManagerApp() {
   }
   async function syncRentalIncome(propertyId: string, propertyData: any) {
     if (!user) return;
-    const rented = String(propertyData.is_rented || "").toLowerCase() === "yes",
+    const rented = isRentedProperty(propertyData),
       rent = num(propertyData.monthly_rent);
     const linked = recordsRef.current.find(
       (r) => r.module_key === "fixedIncome" && r.data?.linked_property_id === propertyId,
@@ -2959,9 +3359,9 @@ export default function AssetManagerApp() {
       );
     if (ok) await loadAll(true);
   }
-  async function refreshMutualFundNavs() {
-    const rows = records.filter(
-      (r) => r.module_key === "mutualFunds" && inAccountTab("mutualFunds", r),
+  async function refreshMutualFundNavs(silent = false, allAccounts = false) {
+    const rows = recordsRef.current.filter(
+      (r) => r.module_key === "mutualFunds" && (allAccounts || inAccountTab("mutualFunds", r)),
     );
     let ok = 0,
       fail = 0;
@@ -2986,8 +3386,8 @@ export default function AssetManagerApp() {
         fail++;
       }
     }
-    setToast(`NAV refreshed: ${ok} updated${fail ? `, ${fail} failed` : ""}`);
-    await loadAll(true);
+    if (!silent || fail) setToast(`NAV refreshed: ${ok} updated${fail ? `, ${fail} failed` : ""}`);
+    if (ok) await loadAll(true);
   }
   function metalAsset(d: any) {
     const s = String(d.security_name || d.category || "").toLowerCase();
@@ -3199,18 +3599,18 @@ export default function AssetManagerApp() {
     )
       return false;
     if (
-      (isCompanyPfType(t) || t === "salary" || t === "rentalincome") &&
+      (isCompanyPfType(t) || t === "salary" || t === "rentalincome" || t === "dividendincome" || t === "savingsinbank" || t === "cashathome") &&
       ["lock_in_years", "maturity_value", "maturity_date", "gratuity_value"].includes(name)
     )
       return false;
     if (name === "account_creation_date")
       return t === "ppf" || t === "sukanyasamriddhi";
     if (name === "employee_contribution")
-      return t === "epf" || t === "companypf" || t === "pf" || t === "salary" || t === "rentalincome";
+      return t === "epf" || t === "companypf" || t === "pf" || t === "salary" || t === "rentalincome" || t === "dividendincome";
     if (name === "company_contribution")
       return t === "epf" || t === "companypf" || t === "pf";
     if (name === "gratuity_value") return t === "gratuity";
-    if (name === "yearly_total_value") return t === "salary" || t === "rentalincome";
+    if (name === "yearly_total_value") return t === "salary" || t === "rentalincome" || t === "dividendincome";
     if (name === "rent_agreement_start_date" || name === "rentee_name" || name === "rentee_phone")
       return t === "rentalincome";
     return true;
@@ -3596,25 +3996,112 @@ export default function AssetManagerApp() {
       ].join("\n");
     download(`${k}-export.csv`, csv, "text/csv");
   }
+  function restorePointJson() {
+    return JSON.stringify(
+      {
+        format: "asset-manager-restore-point",
+        version: 1,
+        created_at: new Date().toISOString(),
+        workspace: activeWorkspace
+          ? { id: activeWorkspace.id, name: activeWorkspace.name }
+          : null,
+        profile,
+        accounts,
+        records: recordsRef.current,
+        documents: docs,
+      },
+      null,
+      2,
+    );
+  }
   function createRestorePoint() {
     if (!user) return;
-    const payload = {
-      format: "asset-manager-restore-point",
-      version: 1,
-      created_at: new Date().toISOString(),
-      workspace: activeWorkspace
-        ? { id: activeWorkspace.id, name: activeWorkspace.name }
-        : null,
-      profile,
-      accounts,
-      records,
-      documents: docs,
-    };
     download(
       `asset-manager-restore-${isoDate()}-${Date.now()}.json`,
-      JSON.stringify(payload, null, 2),
+      restorePointJson(),
     );
     setToast("Restore point downloaded");
+  }
+  async function runAutoBackup() {
+    if (!user || !session?.access_token) return;
+    const text = restorePointJson(),
+      fileName = backupFileName(),
+      at = new Date().toISOString();
+    setBackupBusy(true);
+    try {
+      if (googleDriveConnected) {
+        try {
+          const res = await fetch("/api/backup", {
+            method: "POST",
+            headers: { Authorization: `Bearer ${session.access_token}`, "Content-Type": "application/json" },
+            body: text,
+          });
+          const json = await res.json().catch(() => ({}));
+          if (!res.ok) throw new Error(json.error || "Could not save to Google Drive");
+          setDriveBackup({ at, error: "" });
+        } catch (e: any) {
+          setDriveBackup((prev) => ({ ...prev, error: `Backup failed: ${e?.message || "Google Drive error"}` }));
+        }
+      }
+      if (backupFolder) {
+        try {
+          if ((await folderPermission(backupFolder)) !== "granted") {
+            setBackupFolderNeedsPermission(true);
+            throw new Error("The browser needs your permission again for this folder");
+          }
+          await writeBackupFile(backupFolder, fileName, text);
+          setFolderBackup({ at, error: "" });
+        } catch (e: any) {
+          setFolderBackup((prev) => ({ ...prev, error: `Backup failed: ${e?.message || "Could not write to the folder"}` }));
+        }
+      }
+    } finally {
+      setBackupBusy(false);
+    }
+  }
+  backupRunRef.current = runAutoBackup;
+  async function pickBackupFolder() {
+    if (!user) return;
+    try {
+      setBackupFolder(await chooseBackupFolder(user.id));
+      setBackupFolderNeedsPermission(false);
+      setFolderBackup({ at: "", error: "" });
+      setTimeout(() => backupRunRef.current(), 0);
+    } catch (e: any) {
+      if (e?.name !== "AbortError") setToast(e?.message || "Could not use that folder");
+    }
+  }
+  async function allowBackupFolder() {
+    if (!backupFolder) return;
+    if ((await requestFolderPermission(backupFolder).catch(() => "denied")) === "granted") {
+      setBackupFolderNeedsPermission(false);
+      setFolderBackup((prev) => ({ ...prev, error: "" }));
+      backupRunRef.current();
+    }
+  }
+  function backupCenterPanel() {
+    return (
+      <BackupCenter
+        driveConnected={googleDriveConnected}
+        drive={driveBackup}
+        folderName={backupFolder?.name || ""}
+        folderNeedsPermission={backupFolderNeedsPermission}
+        folderSupported={supportsBackupFolder()}
+        folder={folderBackup}
+        busy={backupBusy}
+        onConnectDrive={() => void connectGoogleDrive()}
+        onChooseFolder={() => void pickBackupFolder()}
+        onAllowFolder={() => void allowBackupFolder()}
+        onForgetFolder={async () => {
+          if (user) await forgetBackupFolder(user.id);
+          setBackupFolder(null);
+          setBackupFolderNeedsPermission(false);
+          setFolderBackup({ at: "", error: "" });
+        }}
+        onBackupNow={() => void runAutoBackup()}
+        onDownload={createRestorePoint}
+      />
+    );
   }
   async function reinstateRestorePoint(file: File | null) {
     if (!file || !user) return;
@@ -3960,6 +4447,11 @@ export default function AssetManagerApp() {
       loans: ArrowDown,
       borrowings: ArrowUpDown,
       goals: CheckCircle2,
+      futureWealth: Sparkles,
+      [MONTHLY_VALUATION_MODULE]: BarChart3,
+      [TRANSACTION_MODULE]: ArrowUpDown,
+      backups: HardDrive,
+      [MONTHLY_UPLOAD_MODULE]: Paperclip,
       watchlist: Eye,
       alerts: Bell,
       purchaseCalculator: BarChart3,
@@ -3986,6 +4478,7 @@ export default function AssetManagerApp() {
     ["dashboard", "Summary", Home],
     ["investments", "Investments", BriefcaseBusiness],
     ["goals", "Goals", CheckCircle2],
+    ["futureWealth", "Forecast", Sparkles],
     ["settings", "Settings", KeyRound],
   ] as const;
   const mobileInvestmentTabs = [
@@ -4030,6 +4523,10 @@ export default function AssetManagerApp() {
           ]
         : [];
   function selectMobileTab(id: string) {
+    if (id === "futureWealth") {
+      openPredictivePlanner("wealth");
+      return;
+    }
     if (id === "investments") {
       setMobileNavMode("investments");
       setMobileAccountMenu(view !== "dashboard" && MODULES[view] ? view : "");
@@ -4464,7 +4961,7 @@ export default function AssetManagerApp() {
       currentValue = num(c.latest || c.latest_value),
       purchaseValue = num(c.invested || c.purchase_price),
       gain = num(c.gain),
-      loanBalance = num(c.loan_balance),
+      loanBalance = num(c.net_loan_balance ?? c.loan_balance),
       netEquity = Math.max(0, currentValue - loanBalance),
       location = String(c.location || c.broker || "Location not entered"),
       usage = String(c.category || "Property"),
@@ -4610,10 +5107,16 @@ export default function AssetManagerApp() {
   }
   function phoneView() {
     if (view === "household") return householdView();
+    if (view === "futureWealth") return phoneMode && canViewModule("futureWealth") ? <div className="phone-screen p-3">{predictivePlannerView()}</div> : null;
+    if (view === MONTHLY_UPLOAD_MODULE) return <div className="phone-screen p-3">{monthlyUploadsPanel()}</div>;
+    if (view === MONTHLY_VALUATION_MODULE) return <div className="phone-screen p-3">{monthlyValuationPanel()}</div>;
+    if (view === TRANSACTION_MODULE) return <div className="phone-screen p-3">{transactionLedgerPanel()}</div>;
+    if (view === "backups") return <div className="phone-screen p-3">{backupCenterPanel()}</div>;
+    if (view === "payments") return <div className="phone-screen p-3">{monthlyPaymentsPanel()}</div>;
     if (view === "settings")
       return <div className="phone-screen">{settings()}</div>;
     if (view === "purchaseCalculator")
-      return <div className="phone-screen">{bullionCalculatorPanel()}</div>;
+      return phoneMode ? <div className="phone-screen">{bullionCalculatorPanel()}</div> : null;
 
     const selectedAccount = accountTab("__phone"),
       isPhoneEtfWatchlist = view === "stocks" && selectedAccount === "ETFs",
@@ -4635,7 +5138,7 @@ export default function AssetManagerApp() {
           ? "ETF Watchlist"
           : "Stock Watchlist"
         : moduleDef?.title,
-      phoneRecords = accountFiltered(records),
+      phoneRecords = accountFiltered(records).filter((r) => !r.data?.sold_out),
       assetRows = Object.entries(MODULES)
         .filter(([k, d]) => d.kind === "asset" || k === "insurance")
         .map(([k, d]) => {
@@ -4662,13 +5165,13 @@ export default function AssetManagerApp() {
                     .filter((r) => r.module_key === "property")
                     .reduce(
                       (s, r) =>
-                        s + num(computeRecord("property", r.data).loan_balance),
+                        s + num(computeRecord("property", r.data).net_loan_balance),
                       0,
                     )
                 : 0,
             latest =
               cs.reduce(
-                (s, c) => s + num(c.latest || c.balance || c.loan_balance),
+                (s, c) => s + num(c.net_loan_balance ?? (c.latest || c.balance || c.loan_balance)),
                 0,
               ) + linkedPropertyLoans,
             invested = cs.reduce(
@@ -4811,6 +5314,7 @@ export default function AssetManagerApp() {
       return (
         <div className="phone-screen">
           {strip}
+          {plannerShortcut(view)}
           <section
             className="phone-module-strip !grid !w-full !max-w-full !grid-cols-2 !gap-2 !overflow-hidden"
             style={{
@@ -4962,6 +5466,7 @@ export default function AssetManagerApp() {
         </div>
         {phoneAccountStrip()}
         <h3 className="phone-section-title">Assets</h3>
+        {plannerShortcut("dashboard")}
         <div className="phone-list">
           {assetRows.map((x) =>
             phoneRow(
@@ -5336,6 +5841,10 @@ export default function AssetManagerApp() {
         </div>
       </main>
     );
+  const uploadStatus = requiredUploads(records),
+    canSubmitUploads = workspaceAccess.can_upload_documents && canEditModule(MONTHLY_UPLOAD_MODULE),
+    // Only the household owner is locked out, so members can still leave a household they merely help with.
+    uploadsLocked = !loading && canSubmitUploads && workspaceAccess.member_role === "owner" && uploadStatus.overdue.length > 0;
   return (
     <div
       className={`app-shell app-theme-${appearance.theme} ${sidebarCollapsed ? "sidebar-collapsed" : ""}`}
@@ -7160,7 +7669,7 @@ export default function AssetManagerApp() {
               <span>Back</span>
             </button>
           )}
-          {(mobileNavMode === "investments" ? mobileInvestmentTabsByValue : mobileMainTabs).map(([id, label, Icon]) => (
+          {(mobileNavMode === "investments" ? mobileInvestmentTabsByValue : mobileMainTabs).filter(([id]) => id !== "futureWealth" || canViewModule("futureWealth")).map(([id, label, Icon]) => (
             <button
               key={id}
               type="button"
@@ -7172,6 +7681,27 @@ export default function AssetManagerApp() {
             </button>
           ))}
         </nav>
+        {canSubmitUploads && uploadStatus.missing.length > 0 && view !== MONTHLY_UPLOAD_MODULE && (
+          <button type="button" className="monthly-banner" onClick={() => setView(MONTHLY_UPLOAD_MODULE)}>
+            <Paperclip size={15} />
+            <span>{uploadStatus.missing.length} monthly document{uploadStatus.missing.length === 1 ? "" : "s"} outstanding, due by {uploadStatus.missing[0].dueBy}</span>
+            <strong>Upload now</strong>
+          </button>
+        )}
+        {phoneMode && view === "dashboard" && currentPayments().unpaidCount > 0 && (
+          <button type="button" className="monthly-banner" onClick={() => setView("payments")}>
+            <Paperclip size={15} />
+            <span>{fmt(currentPayments().remaining)} of payments still to make this month</span>
+            <strong>View</strong>
+          </button>
+        )}
+        {(backupFolderNeedsPermission || driveBackup.error || folderBackup.error) && view !== "backups" && (
+          <button type="button" className="monthly-banner" onClick={() => setView("backups")}>
+            <HardDrive size={15} />
+            <span>{backupFolderNeedsPermission ? "Automatic backups to your PC folder need your permission again" : "An automatic backup failed"}</span>
+            <strong>Fix now</strong>
+          </button>
+        )}
         <div className="phone-content min-w-0 max-w-full overflow-x-hidden">
           {phoneView()}
         </div>
@@ -7190,8 +7720,13 @@ export default function AssetManagerApp() {
           )}
           {view === "dashboard" && dashboardModern()}
           {view === "allInvestments" && allInvestmentsView()}
-          {view === "futureWealth" && futureNetWorthPanel()}
-          {view === "purchaseCalculator" && bullionCalculatorPanel()}
+          {view === "futureWealth" && !phoneMode && canViewModule("futureWealth") && predictivePlannerView()}
+          {view === MONTHLY_UPLOAD_MODULE && monthlyUploadsPanel()}
+          {view === MONTHLY_VALUATION_MODULE && monthlyValuationPanel()}
+          {view === TRANSACTION_MODULE && transactionLedgerPanel()}
+          {view === "backups" && backupCenterPanel()}
+          {view === "payments" && monthlyPaymentsPanel()}
+          {view === "purchaseCalculator" && !phoneMode && bullionCalculatorPanel()}
           {view === "watchlist" && utilityWatchlistView()}
           {view === "household" && householdView()}
           {view === "settings" && settings()}
@@ -7200,7 +7735,25 @@ export default function AssetManagerApp() {
             !["watchlist", "settings", "admin"].includes(view) &&
             moduleView(view)}
         </div>
+        {uploadsLocked && (
+          <div className="monthly-lock" role="dialog" aria-modal="true" aria-label="Monthly documents overdue">
+            <div className="monthly-lock-panel">
+              {monthlyUploadsPanel(true)}
+              <button type="button" className="btn" onClick={signOutSafely}>Sign out</button>
+            </div>
+          </div>
+        )}
+        {backupPromptOpen && !uploadsLocked && (
+          <Modal title="Where should automatic backups go?" onClose={() => setBackupPromptOpen(false)}>
+            {backupCenterPanel()}
+          </Modal>
+        )}
         {detail && detailModal()}
+        {saleTarget && (
+          <Modal title={`Record Sale: ${saleTarget.name}`} onClose={() => setSaleTarget(null)}>
+            <RecordSaleForm name={saleTarget.name} lots={saleLotsOf(saleTarget.moduleKey, saleTarget.lots)} today={istCalendar().iso} onSubmit={submitSale} onCancel={() => setSaleTarget(null)} />
+          </Modal>
+        )}
         {editing && recordModal()}
         {corporateAction && corporateActionModal()}
         {accModal && accountModal()}
@@ -8012,13 +8565,12 @@ export default function AssetManagerApp() {
         .filter((r) => num(r.loan_balance) > 0),
       totalLoanEmi = loanRecords.reduce(
         (s, r) =>
-          s +
-          num(r.balance ? (r.balance * num(r.interest_rate)) / 100 / 12 : 0),
+          s + num(r.monthly_emi),
         0,
       ),
       totalPropertyEmi = propertyLoans.reduce(
         (s, r) =>
-          s + num(r.emiFuture ? r.emiFuture / num(r.emis_left || 1) : 0),
+          s + num(r.monthly_emi),
         0,
       ),
       monthlyObligation = totalLoanEmi + totalPropertyEmi;
@@ -8369,7 +8921,7 @@ export default function AssetManagerApp() {
       }
     };
     return (
-      <section className="rounded-[26px] border border-[#ded6c4] bg-white/90 p-5 shadow-[0_14px_34px_rgba(15,23,42,0.05)]">
+      <section className="purchase-calculator rounded-[26px] border border-[#ded6c4] bg-white/90 p-5 shadow-[0_14px_34px_rgba(15,23,42,0.05)]">
           <h3 className="text-xl font-semibold">Purchase Cost Calculator</h3>
           <p className="mt-1 text-sm text-gray-600">
             Calculate purchase cost using the local 5paisa city rate, then add
@@ -8378,8 +8930,9 @@ export default function AssetManagerApp() {
           </p>
           <div className="mt-4 grid grid-cols-4 gap-3 max-xl:grid-cols-2 max-md:grid-cols-1">
             <div>
-              <label className="field-label">Metal</label>
+              <label className="field-label" htmlFor="purchase-calculator-metal">Metal</label>
               <select
+                id="purchase-calculator-metal"
                 className="field-input"
                 value={calculatorMetal}
                 onChange={(event) => {
@@ -8394,7 +8947,7 @@ export default function AssetManagerApp() {
             </div>
             <div>
               <div className="flex items-center justify-between gap-2">
-                <label className="field-label">Local Rate per Gram (₹)</label>
+                <label className="field-label" htmlFor="purchase-calculator-rate">Local Rate per Gram (₹)</label>
                 {hasManualRate && (
                   <button
                     type="button"
@@ -8411,10 +8964,12 @@ export default function AssetManagerApp() {
                 )}
               </div>
               <input
+                id="purchase-calculator-rate"
                 className="field-input"
                 type="number"
                 min="0"
                 step="0.01"
+                inputMode="decimal"
                 value={
                   hasManualRate
                     ? manualRate
@@ -8442,10 +8997,12 @@ export default function AssetManagerApp() {
               </div>
             </div>
             <div>
-              <label className="field-label">Weight (grams)</label>
+              <label className="field-label" htmlFor="purchase-calculator-weight">Weight (grams)</label>
               <input
+                id="purchase-calculator-weight"
                 className="field-input"
                 type="number"
+                inputMode="decimal"
                 min={calculatorMetal === "gold" ? 5 : 100}
                 max={calculatorMetal === "gold" ? 2000 : 100000}
                 step={calculatorMetal === "gold" ? 1 : 100}
@@ -8454,30 +9011,35 @@ export default function AssetManagerApp() {
               />
             </div>
             <div>
-              <label className="field-label">Wastage %</label>
+              <label className="field-label" htmlFor="purchase-calculator-wastage">Wastage %</label>
               <input
+                id="purchase-calculator-wastage"
                 className="field-input"
                 type="number"
                 min="0"
                 step="0.01"
+                inputMode="decimal"
                 value={calculatorWastage}
                 onChange={(event) => setCalculatorWastage(num(event.target.value))}
               />
             </div>
             <div>
-              <label className="field-label">GST %</label>
+              <label className="field-label" htmlFor="purchase-calculator-gst">GST %</label>
               <input
+                id="purchase-calculator-gst"
                 className="field-input"
                 type="number"
                 min="0"
                 step="0.01"
+                inputMode="decimal"
                 value={calculatorGst}
                 onChange={(event) => setCalculatorGst(num(event.target.value))}
               />
             </div>
             <div>
-              <label className="field-label">Purchase Date</label>
+              <label className="field-label" htmlFor="purchase-calculator-date">Purchase Date</label>
               <input
+                id="purchase-calculator-date"
                 className="field-input"
                 type="date"
                 value={calculatorPurchaseDate}
@@ -8485,8 +9047,9 @@ export default function AssetManagerApp() {
               />
             </div>
             <div>
-              <label className="field-label">Vendor / Jeweller</label>
+              <label className="field-label" htmlFor="purchase-calculator-vendor">Vendor / Jeweller</label>
               <input
+                id="purchase-calculator-vendor"
                 className="field-input"
                 value={calculatorVendor}
                 placeholder="Optional"
@@ -8494,8 +9057,9 @@ export default function AssetManagerApp() {
               />
             </div>
             <div>
-              <label className="field-label">Invoice No.</label>
+              <label className="field-label" htmlFor="purchase-calculator-invoice">Invoice No.</label>
               <input
+                id="purchase-calculator-invoice"
                 className="field-input"
                 value={calculatorInvoice}
                 placeholder="Optional"
@@ -8513,7 +9077,7 @@ export default function AssetManagerApp() {
           >
             {ratePerGram ? "Calculate Total" : "Fetch Benchmark Rate"}
           </button>
-          <div className="mt-5 rounded-2xl border border-[#e3dccc] bg-[#fbfcfe] p-4">
+          <div className="purchase-calculator-summary mt-5 rounded-2xl border border-[#e3dccc] bg-[#fbfcfe] p-4" aria-live="polite">
             <h4 className="text-lg font-semibold">
               {summary.metal} Calculation Summary
             </h4>
@@ -8529,7 +9093,7 @@ export default function AssetManagerApp() {
                   <b>{fmt(value)}</b>
                 </div>
               ))}
-              <div className="flex justify-between gap-3 py-3 text-lg font-semibold">
+              <div className="purchase-calculator-total flex justify-between gap-3 py-3 text-lg font-semibold">
                 <span>Total Price</span>
                 <b>{fmt(totalPrice)}</b>
               </div>
@@ -8718,15 +9282,144 @@ export default function AssetManagerApp() {
     return 0;
   }
   function dashboardTabs() {
+    const onPayments = detailTabs.dashboard === "payments",
+      unpaid = currentPayments().unpaidCount,
+      tabClass = (active: boolean) =>
+        `shrink-0 rounded-xl px-3 py-2 text-sm font-semibold ${active ? "bg-sage text-white" : "text-[#17382b]"}`;
     return (
       <div className="flex gap-2 overflow-auto rounded-2xl border border-[#e3dccc] bg-white p-1">
         <button
           onClick={() => setDetailTabs((p) => ({ ...p, dashboard: "summary" }))}
-          className="shrink-0 rounded-xl bg-sage px-3 py-2 text-sm font-semibold text-white"
+          aria-pressed={!onPayments}
+          className={tabClass(!onPayments)}
         >
           Overall Dashboard
         </button>
+        <button
+          onClick={() => setDetailTabs((p) => ({ ...p, dashboard: "payments" }))}
+          aria-pressed={onPayments}
+          className={tabClass(onPayments)}
+        >
+          Payments This Month{unpaid ? ` (${unpaid})` : ""}
+        </button>
       </div>
+    );
+  }
+  const paymentRecordFor = (month: string) =>
+    records.find((r) => r.module_key === MONTHLY_PAYMENT_MODULE && r.data?.period === month);
+  function currentPayments() {
+    const month = istCalendar().iso.slice(0, 7),
+      record = paymentRecordFor(month),
+      items = paymentsDue(records, computeLiveRecord, month, record?.data as PaymentMonth | undefined);
+    return { month, record, items, ...paymentTotals(items) };
+  }
+  async function savePaymentMonth(month: string, record: Rec | undefined, data: PaymentMonth) {
+    if (!user) return false;
+    const { error } = record
+      ? await supabase.from("records").update({ data }).eq("id", record.id)
+      : await supabase.from("records").insert({ user_id: user.id, ...(activeWorkspaceId ? { workspace_id: activeWorkspaceId } : {}), module_key: MONTHLY_PAYMENT_MODULE, data });
+    if (error) setToast(error.message);
+    return !error;
+  }
+  async function markPaymentPaid(item: PaymentItem, amount: number, fromId: string) {
+    const { month, record } = currentPayments(),
+      saved = (record?.data || { period: month }) as PaymentMonth,
+      account = fromId === "other" ? undefined : recordsRef.current.find((r) => r.id === fromId);
+    let drawn = 0, shortBy = 0, fromName = "another account";
+    if (account) {
+      const result = drawFromOd(account.data, amount);
+      ({ drawn, shortBy } = result);
+      fromName = String(account.data?.loan_institution || account.data?.broker || "OD account");
+      const { error } = await supabase.from("records").update({ data: result.data }).eq("id", account.id);
+      if (error) {
+        setToast(error.message);
+        return false;
+      }
+    }
+    const data: PaymentMonth = { ...saved, period: month, paid: { ...(saved.paid || {}), [item.id]: { label: item.label, type: item.type, amount, paid_on: istCalendar().iso, from_id: account?.id || "", from_name: fromName, drawn } } };
+    if (!(await savePaymentMonth(month, record, data))) {
+      if (account) await supabase.from("records").update({ data: account.data }).eq("id", account.id);
+      return false;
+    }
+    await loadAll(true);
+    setToast(shortBy ? `Paid, but only ${fmt(drawn)} was available in the OD account. ${fmt(shortBy)} came from elsewhere.` : `${item.label} marked paid`);
+    return true;
+  }
+  async function undoPayment(item: PaymentItem) {
+    const { month, record } = currentPayments(),
+      saved = record?.data as PaymentMonth | undefined,
+      entry = saved?.paid?.[item.id];
+    if (!saved || !entry) return false;
+    const account = recordsRef.current.find((r) => r.id === entry.from_id);
+    if (account) {
+      const { error } = await supabase.from("records").update({ data: returnToOd(account.data, entry.drawn) }).eq("id", account.id);
+      if (error) {
+        setToast(error.message);
+        return false;
+      }
+    }
+    const paid = { ...saved.paid };
+    delete paid[item.id];
+    const done = await savePaymentMonth(month, record, { ...saved, paid });
+    await loadAll(true);
+    return done;
+  }
+  async function addPayment(label: string, amount: number, dueDate: string) {
+    const { month, record } = currentPayments(),
+      saved = (record?.data || { period: month }) as PaymentMonth,
+      done = await savePaymentMonth(month, record, { ...saved, period: month, custom: [...(saved.custom || []), { id: `custom:${Date.now()}`, label, amount, due_date: dueDate }] });
+    if (done) await loadAll(true);
+    return done;
+  }
+  async function removePayment(item: PaymentItem) {
+    const { month, record } = currentPayments(),
+      saved = record?.data as PaymentMonth | undefined;
+    if (!saved) return false;
+    const done = await savePaymentMonth(month, record, { ...saved, custom: (saved.custom || []).filter((payment) => payment.id !== item.id) });
+    if (done) await loadAll(true);
+    return done;
+  }
+  async function saveRecurringList(items: RecurringPayment[]) {
+    if (!user) return false;
+    const record = recurringRecord(records),
+      data = recurringData(items),
+      { error } = record
+        ? await supabase.from("records").update({ data }).eq("id", record.id)
+        : await supabase.from("records").insert({ user_id: user.id, ...(activeWorkspaceId ? { workspace_id: activeWorkspaceId } : {}), module_key: MONTHLY_PAYMENT_MODULE, data });
+    if (error) {
+      setToast(error.message);
+      return false;
+    }
+    await loadAll(true);
+    return true;
+  }
+  /** A card bill is saved for this month and becomes the estimate for later months. */
+  async function savePaymentAmount(item: PaymentItem, amount: number) {
+    const { month, record } = currentPayments(),
+      saved = (record?.data || { period: month }) as PaymentMonth;
+    if (!(await savePaymentMonth(month, record, { ...saved, period: month, amounts: { ...(saved.amounts || {}), [item.id]: amount } }))) return false;
+    if (item.type === "Credit card")
+      return saveRecurringList(recurringPayments(records).map((row) => (row.id === item.recurringId ? { ...row, amount } : row)));
+    await loadAll(true);
+    return true;
+  }
+  function monthlyPaymentsPanel() {
+    const { month, items } = currentPayments();
+    return (
+      <MonthlyPayments
+        recurring={recurringPayments(records)}
+        onAmount={savePaymentAmount}
+        onSaveRecurring={saveRecurringList}
+        monthTitle={periodLabel(month)}
+        items={items}
+        accounts={odAccounts(records)}
+        liquidity={planningSnapshot(records).liquidity}
+        canEdit={canEditModule(MONTHLY_PAYMENT_MODULE)}
+        onPay={markPaymentPaid}
+        onUndo={undoPayment}
+        onAdd={addPayment}
+        onRemove={removePayment}
+      />
     );
   }
   function portfolioSummaryTable() {
@@ -8817,7 +9510,7 @@ export default function AssetManagerApp() {
         .map((r) => computeRecord("property", r.data))
         .filter((r) => num(r.loan_balance) > 0),
       propertyLoanBalance = propertyLoanRecords.reduce(
-        (s, r) => s + num(r.loan_balance),
+        (s, r) => s + num(r.net_loan_balance),
         0,
       );
     const liabilityRows = liabilityKeys
@@ -9115,6 +9808,37 @@ export default function AssetManagerApp() {
         return sum + (direct || payroll || num(d.yearly_investment) / 12);
       }, 0);
   }
+  function openPredictivePlanner(tab: ForecastTab) {
+    if (!canViewModule("futureWealth")) {
+      setToast("Predictive Planner is not included in your household access");
+      return;
+    }
+    setPlannerTab(tab);
+    setMobileNavMode("main");
+    setMobileAccountMenu("");
+    setView("futureWealth");
+  }
+  function plannerShortcut(moduleKey: string) {
+    if (!canViewModule("futureWealth") || moduleKey === "alerts") return null;
+    const tab: ForecastTab = ["stocks", "bullion", "watchlist"].includes(moduleKey)
+      ? "market"
+      : moduleKey === "goals" ? "goals"
+      : ["loans", "borrowings", "property", "insurance"].includes(moduleKey) ? "cash"
+      : "wealth";
+    const label = tab === "market" ? "Explore market trends" : tab === "goals" ? "Forecast goal funding" : tab === "cash" ? "Forecast cash flow & payoff" : "Open Predictive Planner";
+    return <button type="button" className="btn" onClick={() => openPredictivePlanner(tab)}><Sparkles size={15} />{label}</button>;
+  }
+  function predictivePlannerView() {
+    return <div className="space-y-5">
+      {phoneMode && canViewModule(MONTHLY_VALUATION_MODULE) && <button type="button" className="btn" onClick={() => setView(MONTHLY_VALUATION_MODULE)}><BarChart3 size={15} /> Month on Month</button>}
+      <PredictivePlanner key={`${user?.id}:${activeWorkspaceId}:${plannerTab}`} records={records} netWorth={totals.net} accessToken={session?.access_token || ""} initialTab={plannerTab} />
+      <details className="forecast-legacy">
+        <summary>Advanced contribution combinations and AI commentary</summary>
+        <p className="forecast-note">This separate calculator keeps its own assumptions. Its outputs may differ from the Predictive Planner above.</p>
+        {futureNetWorthPanel()}
+      </details>
+    </div>;
+  }
   function futureNetWorthPanel() {
     const inferredMonthly = recurringMonthlyInvestment();
     const monthly = Math.max(0, projectionMonthlyInput === "" ? inferredMonthly : num(projectionMonthlyInput));
@@ -9145,7 +9869,7 @@ export default function AssetManagerApp() {
       .reduce((sum, r) => sum + num(computeLiveRecord(r.module_key, r.data).latest), 0);
     const sharesBase = moduleValue(["stocks", "mutualFunds", "ulips"]);
     const goldBase = moduleValue(["bullion"]);
-    const fixedRecords = records.filter((r) => r.module_key === "fixedIncome").map((r) => computeLiveRecord("fixedIncome", r.data));
+    const fixedRecords = records.filter((r) => r.module_key === "fixedIncome" && !isIncomeRecord(r.data)).map((r) => computeLiveRecord("fixedIncome", r.data));
     const fixedBase = fixedRecords.reduce((sum, r) => sum + num(r.latest), 0);
     const otherBase = base - sharesBase - goldBase - fixedBase;
     const project = (starting: number, years: number, contribution: number, annualPct: number) => {
@@ -10169,7 +10893,7 @@ export default function AssetManagerApp() {
       propertyLoanBalance = records
         .filter((r) => r.module_key === "property")
         .reduce(
-          (s, r) => s + num(computeRecord("property", r.data).loan_balance),
+          (s, r) => s + num(computeRecord("property", r.data).net_loan_balance),
           0,
         ),
       rows = [
@@ -11664,6 +12388,13 @@ export default function AssetManagerApp() {
       monthMove = totals.net - monthStartNet,
       monthMovePct = monthStartNet ? (monthMove / monthStartNet) * 100 : 0,
       yearlyGain = totals.gain;
+    if (detailTabs.dashboard === "payments")
+      return (
+        <div className="space-y-5">
+          {dashboardTabs()}
+          {monthlyPaymentsPanel()}
+        </div>
+      );
     return (
       <div className="space-y-5">
         {dashboardTabs()}
@@ -11709,6 +12440,7 @@ export default function AssetManagerApp() {
             ))}
           </div>
         </section>
+        {monthlyCashFlowPanel()}
         <section className="rounded-2xl border border-[#ded6c4] bg-white/90 p-4 shadow-[0_8px_22px_rgba(15,23,42,0.04)]">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
@@ -11742,15 +12474,15 @@ export default function AssetManagerApp() {
         {executiveAnalyticsPanel()}
         <section
           className="flex cursor-pointer flex-wrap items-center justify-between gap-3 overflow-hidden rounded-[26px] border border-[#cddfd4] bg-[linear-gradient(135deg,#f4fbf7_0%,#ffffff_50%,#f7f2ff_100%)] p-5 shadow-[0_18px_46px_rgba(23,56,43,0.09)] transition hover:shadow-[0_22px_54px_rgba(23,56,43,0.14)]"
-          onClick={() => setView("futureWealth")}
+          onClick={() => openPredictivePlanner("wealth")}
         >
           <div>
-            <div className="mb-2 inline-flex items-center gap-2 rounded-full bg-[#17382b] px-3 py-1 text-[11px] font-semibold uppercase tracking-[.14em] text-white"><Sparkles size={13} /> Future wealth outlook</div>
+            <div className="mb-2 inline-flex items-center gap-2 rounded-full bg-[#17382b] px-3 py-1 text-[11px] font-semibold uppercase tracking-[.14em] text-white"><Sparkles size={13} /> Predictive Planner</div>
             <h3 className="text-xl font-semibold tracking-tight text-[#17382b]">What could my net worth become?</h3>
-            <p className="mt-1 max-w-xl text-sm text-gray-600">Plan retirement age, extra income and every combination of contributions on the Future Wealth tab.</p>
+            <p className="mt-1 max-w-xl text-sm text-gray-600">Explore wealth scenarios, goal readiness, cash shortfalls, loan payoff and market trends.</p>
           </div>
-          <button type="button" className="btn-primary shrink-0" onClick={() => setView("futureWealth")}>
-            Open Future Wealth →
+          <button type="button" className="btn-primary shrink-0" disabled={!canViewModule("futureWealth")} onClick={() => openPredictivePlanner("wealth")}>
+            Open Predictive Planner →
           </button>
         </section>
         {portfolioPerformancePanel()}
@@ -11805,7 +12537,7 @@ export default function AssetManagerApp() {
         .filter((r) => r.module_key === "property")
         .map((r) => computeRecord("property", r.data))
         .filter((r) => num(r.loan_balance) > 0),
-      loanBalance = propertyLoans.reduce((s, r) => s + num(r.loan_balance), 0),
+      loanBalance = propertyLoans.reduce((s, r) => s + num(r.net_loan_balance), 0),
       emiFuture = propertyLoans.reduce((s, r) => s + num(r.emiFuture), 0),
       emisLeft = propertyLoans.reduce((s, r) => s + num(r.emis_left), 0);
     return (
@@ -12214,7 +12946,7 @@ export default function AssetManagerApp() {
                     </span>
                   </td>
                   <td>{recordTitle(r)}</td>
-                  <td>{MODULES[d.module_key]?.title || d.module_key}</td>
+                  <td>{d.module_key === MONTHLY_UPLOAD_MODULE ? "Monthly Uploads" : MODULES[d.module_key]?.title || d.module_key}</td>
                   <td className="text-xs">
                     {d.created_at
                       ? new Date(d.created_at).toLocaleString()
@@ -13066,19 +13798,15 @@ export default function AssetManagerApp() {
             : key(d.account_name || ""),
       category =
         k === "fixedIncome" ? fixedIncomeCategoryLabel(d.category) : d.category,
-      holdingName = k === "bullion" ? bullionDisplayName(d) : d.security_name,
-      propertyIdentity =
-        k === "property"
-          ? [
-              key(d.security_name || category || "property"),
-              key(d.location || ""),
-              key(d.broker || d.community || d.project || d.society || ""),
-            ].join("|")
-          : "";
+      holdingName = k === "bullion" ? bullionDisplayName(d) : d.security_name;
+    // Units in one community share a row; a property with no community is never merged with another.
+    if (k === "property") {
+      const community = key(d.broker || d.community || "");
+      return community ? [acct, key(d.location || ""), community].join("|") : r.id;
+    }
     return [
       acct,
-      propertyIdentity ||
-        key(
+      key(
           d.ticker_symbol ||
             d.scheme_code ||
             holdingName ||
@@ -13242,6 +13970,8 @@ export default function AssetManagerApp() {
         ? computeLiveRecord(k, data)
         : computeRecord(k, data);
     if (showsDailyChange(k)) computed.today_gain = todayGain;
+    if (k === "property")
+      Object.assign(computed, propertyGroupTotals(items.map((item) => computeLiveRecord(k, item.data))));
     if (k === "fixedIncome")
       Object.assign(computed, {
         current_value_today: data.current_value_today,
@@ -13577,6 +14307,18 @@ export default function AssetManagerApp() {
       if (!(applicable[col] || []).includes(type))
         return <span className="text-gray-400">—</span>;
     }
+    if (!isFieldVisible(moduleKey, col, c))
+      return <span className="text-gray-400">—</span>;
+    if (moduleKey === "property" && col === "security_name") {
+      const community = String(c.broker || c.location || c.security_name || "Property"),
+        details = [c.security_name, c.location].filter((part) => part && part !== community).join(" · ");
+      return (
+        <div className="leading-tight" title={[community, details].filter(Boolean).join(" · ")}>
+          <div className="font-semibold text-[#17382b]">{community}</div>
+          {details && <div className="text-[10px] font-medium text-gray-500">{details}</div>}
+        </div>
+      );
+    }
     if (col === "security_name") {
       const fullName = String(c[col] || ""),
         shortName = compactName(fullName);
@@ -13601,7 +14343,7 @@ export default function AssetManagerApp() {
               ...records.filter((r) => r.module_key === k),
               ...propertyLoanLiabilityRecords(),
             ]
-          : records.filter((r) => r.module_key === k),
+          : records.filter((r) => r.module_key === k && !r.data?.sold_out),
       stockWatchlistCount =
         k === "stocks"
           ? records.filter((r) => r.module_key === "watchlist").length
@@ -13735,6 +14477,8 @@ export default function AssetManagerApp() {
           ? stockHoldingColumns
           : k === "bullion"
             ? bullionHoldingColumns
+            : k === "property"
+              ? detailCols.filter((column) => !["location", "broker"].includes(column))
             : k === "fixedIncome"
               ? detailCols.filter(
                   (column) =>
@@ -13874,6 +14618,7 @@ export default function AssetManagerApp() {
             <p className="text-sm text-gray-600">{def.desc}</p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
+            {plannerShortcut(k)}
             {(k === "stocks" || k === "bullion") && (
               <span className="inline-flex items-center rounded-full border border-[#e1d8c8] bg-[#FFFFFF] px-3 py-1.5 text-xs font-medium text-[#37534a]">
                 Live{lastSynced ? ` · updated ${lastSynced}` : ""}
@@ -14283,6 +15028,8 @@ export default function AssetManagerApp() {
                               />
                             )}
                           </button>
+                        ) : k === "property" && c === "security_name" ? (
+                          "Community"
                         ) : (
                           fieldLabel(k, c)
                         )}
@@ -14296,12 +15043,31 @@ export default function AssetManagerApp() {
               </thead>
               <tbody>
                 {rows.flatMap(({ r, c, records: lots, key }) => {
-                  const open = lots.length > 1 && !!expandedLots[key];
+                  const open = lots.length > 1 && !!expandedLots[key],
+                    lotToggle = (
+                      <button
+                        className="pill"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setExpandedLots((prev) => ({
+                            ...prev,
+                            [key]: !prev[key],
+                          }));
+                        }}
+                      >
+                        {open ? "Hide" : "Show"} {lots.length} lots
+                      </button>
+                    );
                   return [
                     <tr
                       onClick={() => {
                         if (k === "bullion") {
                           openMcxCommodity();
+                          return;
+                        }
+                        // A community row is a total, so it opens its units rather than one unit's record.
+                        if (k === "property" && lots.length > 1) {
+                          setExpandedLots((prev) => ({ ...prev, [key]: !prev[key] }));
                           return;
                         }
                         setDetail({
@@ -14322,6 +15088,9 @@ export default function AssetManagerApp() {
                             : k === "bullion"
                             ? bullionHoldingCell(col, c, r)
                             : formatModuleCell(k, col, c, r)}
+                          {k === "property" && col === "security_name" && lots.length > 1 && (
+                            <div className="mt-1">{lotToggle}</div>
+                          )}
                         </td>
                       ))}
                       <td className="space-x-2 p-3 text-right">
@@ -14343,20 +15112,7 @@ export default function AssetManagerApp() {
                             Manage
                           </button>
                         )}
-                        {lots.length > 1 && (
-                          <button
-                            className="pill"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setExpandedLots((prev) => ({
-                                ...prev,
-                                [key]: !prev[key],
-                              }));
-                            }}
-                          >
-                            {open ? "Hide" : "Show"} {lots.length} lots
-                          </button>
-                        )}
+                        {lots.length > 1 && k !== "property" && lotToggle}
                       </td>
                     </tr>,
                     ...(open ? lotRows(lots, key) : []),
@@ -14838,6 +15594,7 @@ export default function AssetManagerApp() {
             <p>Live market movement for your saved stock and ETF ideas.</p>
           </div>
           <div className="utility-watchlist-actions">
+            {plannerShortcut("watchlist")}
             <button className="btn" onClick={() => refreshWatchlist()}>
               <RefreshCw size={15} /> Refresh
             </button>
@@ -15125,9 +15882,11 @@ export default function AssetManagerApp() {
           (d.moduleKey !== "insurance" ||
             showInsuranceDetailField(f, computed as Record<string, any>)) &&
           (d.moduleKey !== "fixedIncome" ||
-            showFixedIncomeField(f, key((computed as Record<string, any>).category))),
+            showFixedIncomeField(f, key((computed as Record<string, any>).category))) &&
+          isFieldVisible(d.moduleKey, f, computed),
       ),
-      linkedDocs = docs.filter((x) => x.record_id === d.record.id);
+      linkedDocs = docs.filter((x) => x.record_id === d.record.id),
+      salaryDetail = d.moduleKey === "fixedIncome" && key(d.computed.category) === "salary";
     return (
       <Modal title={`${def.title}: ${title}`} onClose={() => setDetail(null)}>
         <div className="grid grid-cols-2 gap-3 max-md:grid-cols-1">
@@ -15136,9 +15895,19 @@ export default function AssetManagerApp() {
               key={f}
               className={f === "notes" ? "col-span-2 max-md:col-span-1" : ""}
             >
-              <div className="field-label">{fieldLabel(d.moduleKey, f)}</div>
+              <div className="field-label">
+                {salaryDetail && f === "employee_contribution"
+                  ? "Salary Credited per Month"
+                  : salaryDetail && f === "broker"
+                    ? "Credited to Bank Account"
+                    : salaryDetail && f === "purchase_date"
+                      ? "Start Month"
+                      : fieldLabel(d.moduleKey, f)}
+              </div>
               <div className="rounded-2xl border border-[#e3dccc] bg-white px-3 py-2 text-sm font-semibold text-[#17382b]">
-                {formatCell(f, computed[f])}
+                {salaryDetail && f === "purchase_date"
+                  ? String(computed[f]).slice(0, 7)
+                  : formatCell(f, computed[f])}
               </div>
             </div>
           ))}
@@ -15148,6 +15917,21 @@ export default function AssetManagerApp() {
             </div>
             {docRows(linkedDocs)}
           </div>
+          {["stocks", "watchlist"].includes(d.moduleKey) && (
+            <div className="col-span-2 max-md:col-span-1">
+              <div className="field-label">Research this security</div>
+              <div className="flex flex-wrap gap-2">
+                {researchLinks(computed).map((link) => (
+                  <a key={link.href} className="btn" href={link.href} target="_blank" rel="noopener noreferrer">
+                    {link.name}
+                  </a>
+                ))}
+              </div>
+              {!d.computed.isin && (
+                <p className="mt-2 text-xs text-gray-500">Add an ISIN to this holding to unlock the ISIN-based sites.</p>
+              )}
+            </div>
+          )}
           <div className="col-span-2 mt-2 flex justify-end gap-2 pb-16 max-md:col-span-1">
             {["stocks", "watchlist"].includes(d.moduleKey) && (
               <a
@@ -15158,6 +15942,11 @@ export default function AssetManagerApp() {
               >
                 Open Moneycontrol
               </a>
+            )}
+            {["stocks", "mutualFunds"].includes(d.moduleKey) && !d.record.data?.sold_out && canEditModule(d.moduleKey) && (
+              <button type="button" className="btn" onClick={() => openSale(d.moduleKey, d.record)}>
+                Record Sale
+              </button>
             )}
             <button className="btn" onClick={() => setDetail(null)}>
               Close
@@ -15290,11 +16079,41 @@ export default function AssetManagerApp() {
       </Modal>
     );
   }
+  function loanSummary(moduleKey: string) {
+    const loan = loanPosition(formControls, moduleKey === "property" ? PROPERTY_LOAN_FIELDS : LOAN_FIELDS);
+    if (!loan.amount && !loan.balance) return null;
+    return (
+      <div className="loan-summary col-span-2 max-md:col-span-1" aria-live="polite">
+        <h4>Loan calculation</h4>
+        <div>
+          {[
+            ["Monthly EMI", fmt(loan.emi)],
+            ["Balance", fmt(loan.balance)],
+            ["Months left", loan.monthsLeft ?? "Never clears"],
+            ["Clears on", loan.clearsOn || "—"],
+            ["Next EMI: interest", fmt(loan.nextInterest)],
+            ["Next EMI: principal", fmt(loan.nextPrincipal)],
+            ["Interest remaining", fmt(loan.futureInterest)],
+            ["Principal repaid", fmt(loan.principalPaid)],
+          ].map(([label, value]) => (
+            <span key={String(label)}>
+              <small>{label}</small>
+              <strong>{value}</strong>
+            </span>
+          ))}
+        </div>
+        {loan.warnings.map((warning) => (
+          <p key={warning}>{warning}</p>
+        ))}
+      </div>
+    );
+  }
   function recordModal() {
     const simpleStockFields = new Set([
       "account_name",
       "asset_type",
       "security_name",
+      "isin",
       "quantity",
       "inv_price",
       "purchase_date",
@@ -15309,6 +16128,8 @@ export default function AssetManagerApp() {
           ? computeRecord("fixedIncome", raw)
           : editing!.moduleKey === "insurance"
             ? computeRecord("insurance", raw)
+          : editing!.moduleKey === "property"
+            ? { ...raw, occupancy: occupancyOf(raw) }
           : raw,
       matches = stockOpen
         ? stockResults.length
@@ -15318,24 +16139,37 @@ export default function AssetManagerApp() {
       fields =
         editing!.moduleKey === "fixedIncome"
           ? def.fields
-              .filter((f) => showFixedIncomeField(f.name))
+              .filter((f) => showFixedIncomeField(f.name) && isFieldVisible("fixedIncome", f.name, formControls))
               .map((f) =>
-                f.name === "employee_contribution" &&
-                ["salary", "rentalincome"].includes(key(fixedIncomeType))
+                f.name === "current_value_today" && ["savingsinbank", "cashathome"].includes(key(fixedIncomeType))
+                  ? { ...f, label: key(fixedIncomeType) === "cashathome" ? "Cash Amount" : "Current Balance" }
+                  : f.name === "employee_contribution" &&
+                ["salary", "rentalincome", "dividendincome"].includes(key(fixedIncomeType))
                   ? {
                       ...f,
                       label:
                         key(fixedIncomeType) === "salary"
-                          ? "Monthly Salary"
+                          ? "Salary Credited per Month"
+                          : key(fixedIncomeType) === "dividendincome"
+                            ? "Average Dividends Received per Month"
                           : "Monthly Rent Received",
                     }
                   : f,
               )
+              .map((f) => {
+                const type = key(fixedIncomeType);
+                if (f.name === "purchase_date" && ["salary", "dividendincome"].includes(type))
+                  return { ...f, type: "month" as const, label: "Start Month" };
+                if (f.name === "broker" && ["salary", "rentalincome", "dividendincome"].includes(type))
+                  return { ...f, label: "Credited to Bank Account" };
+                if (f.name === "broker" && type === "savingsinbank") return { ...f, label: "Bank" };
+                return f;
+              })
           : editing!.moduleKey === "insurance"
             ? def.fields.filter((f) => showInsuranceField(f.name))
           : editing!.moduleKey === "stocks"
             ? def.fields.filter((f) => simpleStockFields.has(f.name))
-          : def.fields;
+          : def.fields.filter((f) => isFieldVisible(editing!.moduleKey, f.name, formControls));
     return (
       <Modal
         title={`${editing!.record ? "Edit" : "Add"} ${def.title}`}
@@ -15389,6 +16223,8 @@ export default function AssetManagerApp() {
               )
                 updateGratuityPreview(e.currentTarget);
             }
+            if (controlsOtherFields(editing!.moduleKey, t.name) || ["property", "loans"].includes(editing!.moduleKey))
+              setFormControls((prev) => ({ ...prev, [t.name]: t.value }));
             if (editing!.moduleKey === "insurance") {
               if (t.name === "category") setInsuranceType(t.value);
               if (t.name === "return_of_premium")
@@ -15408,10 +16244,16 @@ export default function AssetManagerApp() {
           onSubmit={(e) => {
             e.preventDefault();
             const fd = new FormData(e.currentTarget),
+              submitted = Object.fromEntries(fd),
               data: any = ["stocks", "insurance"].includes(editing!.moduleKey)
                 ? { ...raw }
                 : {};
             def.fields.forEach((f) => {
+              // Keep values hidden by a dependent-field rule so switching back restores them.
+              if (!fd.has(f.name) && !isFieldVisible(editing!.moduleKey, f.name, submitted)) {
+                if (raw[f.name] !== undefined) data[f.name] = raw[f.name];
+                return;
+              }
               if (
                 ["stocks", "insurance"].includes(editing!.moduleKey) &&
                 !fd.has(f.name)
@@ -15420,8 +16262,16 @@ export default function AssetManagerApp() {
               const v = fd.get(f.name) || "";
               data[f.name] = numericFieldNames.has(f.name) ? num(v) : v;
             });
+            if (editing!.moduleKey === "property") {
+              if (data.vacant_from && data.vacant_to && data.vacant_to < data.vacant_from)
+                return setToast("Vacant To cannot be before Vacant From");
+              data.occupancy = occupancyOf(data.occupancy ? data : raw);
+              data.is_rented = data.occupancy === "Rented" ? "Yes" : "No";
+            }
             if (editing!.moduleKey === "fixedIncome") {
               data.category = fixedIncomeCategoryLabel(data.category);
+              // A month picker gives YYYY-MM; dates are stored in full everywhere else.
+              if (/^\d{4}-\d{2}$/.test(String(data.purchase_date))) data.purchase_date = `${data.purchase_date}-01`;
               if (key(data.category) === "gratuity") {
                 try {
                   const result = gratuityFromForm(e.currentTarget);
@@ -15675,6 +16525,8 @@ export default function AssetManagerApp() {
                           ? ""
                           : Number(cur[f.name]).toFixed(6)
                         : fmtInr(cur[f.name])
+                      : f.type === "month"
+                        ? String(cur[f.name] || "").slice(0, 7)
                       : cur[f.name] || ""
                   }
                   readOnly={
@@ -15685,6 +16537,7 @@ export default function AssetManagerApp() {
               )}
             </div>
           ))}
+          {["property", "loans"].includes(editing!.moduleKey) && loanSummary(editing!.moduleKey)}
           {editing!.moduleKey === "fixedIncome" &&
             key(fixedIncomeType) === "gratuity" && (
               <div className="col-span-2 max-md:col-span-1">

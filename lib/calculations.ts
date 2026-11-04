@@ -180,7 +180,18 @@ export function fixedIncomeWorthTillDate(r:any){return isPf(r)?pfMonthlyFyProjec
 export function fixedIncomeYearEndValue(r:any){if(isPf(r))return pfYearEndValue(r);const current=fixedIncomeWorthTillDate(r),rate=num(r.interest_rate)/100;return current*Math.pow(1+rate,yearEndFraction())}
 export function fixedIncomeMaturityValue(r:any){if(isCompanyPf(r))return 0;const current=fixedIncomeWorthTillDate(r),rate=num(r.interest_rate)/100,maturity=fixedIncomeMaturityDate(r),period=maturity?yearsUntil(maturity):(num(r.lock_in_years)||years(fiBaseDate(r)));return current*Math.pow(1+rate,period)||num(r.maturity_value)}
 
+export const isDividendIncome=(r:any)=>/^dividend/.test(typeKey(r));
+export const isSavingsAccount=(r:any)=>/^savings/.test(typeKey(r));
+export const isCashAtHome=(r:any)=>/^cash\s*at\s*home/.test(typeKey(r));
+
+/** Salary, rent and dividends are money received each month, not holdings. */
+export const isIncomeRecord=(r:any)=>isDividendIncome(r)||/^salary$|^rental\s*income$/.test(typeKey(r));
+
 function fixedIncomeRecord(r:any){
+  // Income is cash flow only: past salary or rent never builds up into an asset or net worth.
+  if(isIncomeRecord(r)){Object.assign(r,{invested:0,latest:0,worth_till_date:0,interest_incurred_fy:0,year_end_maturity_value:0,maturity_value:'',maturity_date:'',locked_until:'',yearly_total_value:/^salary$/.test(typeKey(r))?'':num(r.employee_contribution)*12});return r}
+  // Bank savings and cash at home are plain cash: the balance is its own cost, so it shows no gain.
+  if(isSavingsAccount(r)||isCashAtHome(r)){const balance=num(r.current_value_today);Object.assign(r,{invested:balance,latest:balance,worth_till_date:balance,interest_incurred_fy:0,year_end_maturity_value:balance,maturity_value:'',maturity_date:'',locked_until:''});return r}
   if(isGratuity(r)&&r.purchase_date&&num(r.monthly_basic_salary)>0){
     const result=calculateIndianGratuity({dateOfJoining:r.purchase_date,calculationDate:r.last_working_date||undefined,monthlyBasicSalary:r.monthly_basic_salary,monthlyDA:r.monthly_da,coveredUnderAct:r.covered_under_gratuity_act});
     Object.assign(r,{calculation_date:result.calculationDate,total_service:`${result.serviceYears} years, ${result.serviceMonths} months, ${result.serviceDays} days`,service_years:result.serviceYears,service_months:result.serviceMonths,service_days:result.serviceDays,eligible_years:result.eligibleYears,salary_basis:result.salaryBasis,gratuity_per_year:result.gratuityPerYear,gratuity_value:result.totalGratuity,tax_exempt_gratuity:result.taxExemptGratuity,taxable_gratuity:result.taxableGratuity,monthly_ctc_gratuity:result.monthlyCtcAccrual,annual_ctc_gratuity:result.annualCtcAccrual,gratuity_eligible:result.eligible,eligibility_message:result.eligibilityMessage,invested:0,interest_incurred_fy:0,current_value_today:result.totalGratuity,worth_till_date:result.totalGratuity,latest:result.totalGratuity,year_end_maturity_value:result.totalGratuity,maturity_value:result.totalGratuity,maturity_date:'',locked_until:''});
@@ -191,11 +202,100 @@ function fixedIncomeRecord(r:any){
   return r
 }
 
-function projectLoanFuture(r:any){
-  const balance=num(r.loan_balance),rate=num(r.loan_interest_rate)/100/12,tenure=num(r.loan_tenure_months)||num(r.emis_left)||0;
-  if(!balance||!tenure||!rate)return{remaining:balance,totalInterest:0,emiFuture:0,monthlyEmi:0,monthsLeft:tenure};
-  const emi=tenure>0?(balance*rate*(Math.pow(1+rate,tenure)))/((Math.pow(1+rate,tenure))-1):0,totalInterest=Math.max(0,emi*tenure-balance);
-  return{remaining:balance,emiFuture:emi*tenure,totalInterest,monthlyEmi:emi,monthsLeft:tenure};
+export const isUnderConstruction=(r:any)=>[r?.construction_status,r?.category].some(v=>/under\s*construction/i.test(String(v||'')));
+/** Reads Residing or Rented, falling back to the older Yes/No "is rented" answer on records saved before it existed. */
+export const occupancyOf=(r:any)=>{
+  const value=String(r?.occupancy||'').trim().toLowerCase();
+  if(/rented/.test(value))return 'Rented';
+  if(/resid/.test(value))return 'Residing';
+  return String(r?.is_rented||'').trim().toLowerCase()==='yes'?'Rented':'Residing';
+};
+/** A property is let only once it is built and marked Rented. */
+export const isRentedProperty=(r:any)=>occupancyOf(r)==='Rented'&&!isUnderConstruction(r);
+const dayOf=(v:any)=>String(v||'').slice(0,10);
+/** An open-ended vacancy (no end date) lasts until an end date is entered. */
+export const isVacantOn=(r:any,date:string)=>{
+  const from=dayOf(r?.vacant_from),to=dayOf(r?.vacant_to);
+  return Boolean(from)&&from<=date&&(!to||date<=to);
+};
+export const isEarningRent=(r:any,date:string)=>isRentedProperty(r)&&!isVacantOn(r,date);
+/** Share of a calendar month (YYYY-MM) the property was let, so a part-month vacancy reduces rent pro rata. */
+export function occupiedShareOfMonth(r:any,month:string){
+  const [year,monthNumber]=month.split('-').map(Number),days=new Date(Date.UTC(year,monthNumber,0)).getUTCDate();
+  let vacant=0;
+  for(let day=1;day<=days;day++)if(isVacantOn(r,`${month}-${String(day).padStart(2,'0')}`))vacant++;
+  return (days-vacant)/days;
+}
+export const isOverdraftLoan=(r:any)=>/overdraft|^od$/i.test(String(r?.loan_structure||'').trim());
+/** Savings parked in the linked OD account; only the amount covering the outstanding balance offsets it. */
+export const parkedAgainstLoan=(r:any,balance:number)=>isOverdraftLoan(r)?Math.min(Math.max(0,num(r.od_parked_balance)),Math.max(0,balance)):0;
+
+const emiFor=(principal:number,monthlyRate:number,months:number)=>{
+  if(principal<=0||months<=0)return 0;
+  return monthlyRate?principal*monthlyRate/(1-Math.pow(1+monthlyRate,-months)):principal/months;
+};
+
+function repayFrom(balance:number,parked:number,monthlyRate:number,emi:number){
+  let outstanding=balance,paid=0;
+  if(balance<=0)return{paid:0,months:0 as number|null};
+  if(emi<=0||emi<=Math.max(0,balance-parked)*monthlyRate)return{paid:0,months:null as number|null};
+  for(let month=1;month<=1200;month++){
+    const owed=outstanding+Math.max(0,outstanding-parked)*monthlyRate,payment=Math.min(owed,emi);
+    paid+=payment;outstanding=owed-payment;
+    if(outstanding<0.01)return{paid,months:month};
+  }
+  return{paid:0,months:null as number|null};
+}
+
+function emisDueSince(start:any,asOf:Date){
+  const first=localDate(start);
+  if(!first||first>asOf)return 0;
+  return (asOf.getFullYear()-first.getFullYear())*12+asOf.getMonth()-first.getMonth()+(asOf.getDate()>=first.getDate()?1:0);
+}
+
+export type LoanFieldNames={rate:string;tenure:string;start:string};
+export const PROPERTY_LOAN_FIELDS:LoanFieldNames={rate:'loan_interest_rate',tenure:'loan_tenure_months',start:'loan_start_date'};
+export const LOAN_FIELDS:LoanFieldNames={rate:'interest_rate',tenure:'tenure_months',start:'purchase_date'};
+
+/**
+ * Works out a loan from whichever figures are known.
+ * An entered EMI, balance or paid amount is the user's figure and always wins; anything left blank is derived.
+ */
+export function loanPosition(r:any,names:LoanFieldNames,asOf=new Date()){
+  const amount=num(r.loan_amount),annualRate=num(r[names.rate]),rate=annualRate/1200,tenure=num(r[names.tenure]),enteredMonths=num(r.emis_left),enteredEmi=num(r.emi_amount)||num(r.od_monthly_emi)||num(r.monthly_emi),
+    enteredBalance=num(r.loan_balance),enteredPrincipal=num(r.principal_paid),elapsed=emisDueSince(r[names.start],asOf),originalEmi=emiFor(amount,rate,tenure);
+  const isOd=isOverdraftLoan(r);
+  let scheduled=amount;
+  const scheduleEmi=enteredEmi||originalEmi;
+  // An OD balance moves with deposits and withdrawals, so it cannot be inferred from an EMI schedule.
+  if(!isOd&&!enteredBalance&&!enteredPrincipal&&amount&&scheduleEmi&&elapsed)for(let i=0;i<elapsed&&scheduled>0;i++)scheduled=Math.max(0,scheduled*(1+rate)-scheduleEmi);
+  const balance=Math.max(0,enteredBalance||(enteredPrincipal?amount-enteredPrincipal:scheduled)),
+    parked=parkedAgainstLoan(r,balance),netBalance=Math.max(0,balance-parked),
+    monthsBasis=enteredMonths||(amount?0:tenure),
+    remainingTerm=enteredMonths||(tenure?Math.max(1,tenure-elapsed):0),
+    // Savings parked in an OD account negate the loan, so only the uncovered balance needs repaying.
+    emi=enteredEmi||(isOd?emiFor(netBalance,rate,remainingTerm):emiFor(balance,rate,monthsBasis)||(balance?originalEmi:0)),
+    future=repayFrom(netBalance,0,rate,emi),
+    principalPaid=enteredPrincipal||(amount?Math.max(0,amount-balance):0),
+    interestPaid=num(r.interest_paid)||(!isOd&&elapsed&&emi?Math.max(0,emi*elapsed-principalPaid):0),
+    nextInterest=netBalance*rate,monthsLeft=future.months??(emi?null:monthsBasis||null);
+  const clearsOn=future.months?new Date(asOf.getFullYear(),asOf.getMonth()+future.months,1).toISOString().slice(0,7):isOd&&balance&&!netBalance?'Covered by OD savings':'';
+  const warnings:string[]=[];
+  if(netBalance&&emi&&future.months===null)warnings.push(`EMI of ${fmt(emi)} does not cover the monthly interest of ${fmt(nextInterest)}, so this loan would never clear.`);
+  if(netBalance&&!emi)warnings.push('Enter the monthly EMI, or the loan amount and tenure, to calculate the repayment.');
+  if(netBalance&&!annualRate)warnings.push('Interest rate is missing, so no interest is being calculated.');
+  if(amount&&balance>amount)warnings.push(`Balance ${fmt(balance)} is higher than the loan amount ${fmt(amount)}.`);
+  if(enteredEmi&&enteredMonths&&future.months&&Math.abs(enteredMonths-future.months)>2&&!parked)warnings.push(`EMIs left says ${enteredMonths}, but this EMI clears the balance in ${future.months} months.`);
+  if(!enteredEmi&&netBalance&&enteredMonths&&tenure&&enteredMonths===tenure&&amount&&balance<amount)warnings.push(`EMIs left equals the full ${tenure}-month tenure although ${fmt(amount-balance)} is already repaid. Enter the EMIs actually left, or your EMI.`);
+  if(!enteredEmi&&originalEmi&&emi>originalEmi*1.25)warnings.push(`Balance and EMIs left imply an EMI of ${fmt(emi)}, well above ${fmt(originalEmi)} from the original loan terms. Check EMIs left, or enter your EMI.`);
+  if(tenure&&future.months&&!parked&&future.months>tenure)warnings.push(`At this EMI the loan runs ${future.months} months, longer than its ${tenure}-month tenure.`);
+  return{amount,annualRate,tenure,balance,netBalance,parked,emi,monthsLeft,clearsOn,totalPayable:future.paid,futureInterest:Math.max(0,future.paid-netBalance),principalPaid,interestPaid,nextInterest,nextPrincipal:Math.max(0,Math.min(emi,netBalance+nextInterest)-nextInterest),warnings};
+}
+
+function applyLoanPosition(r:any,names:LoanFieldNames){
+  const loan=loanPosition(r,names);
+  Object.assign(r,{loan_balance:loan.balance,monthly_emi:loan.emi,emiFuture:loan.totalPayable,emis_left:loan.monthsLeft??'',interest_rate:loan.annualRate,principal_paid:loan.principalPaid,interest_paid:loan.interestPaid,loan_clears_on:loan.clearsOn,future_interest:loan.futureInterest,next_emi_interest:loan.nextInterest,next_emi_principal:loan.nextPrincipal,net_loan_balance:loan.netBalance,balance:loan.netBalance});
+  if(isOverdraftLoan(r))Object.assign(r,{od_months_to_clear:loan.monthsLeft??'',od_monthly_interest:loan.nextInterest,od_interest_saved_monthly:loan.parked*loan.annualRate/1200});
 }
 
 function insuranceRecord(r:any){
@@ -282,6 +382,18 @@ function stockRecord(r:any){
   r.latest=latest;
 }
 
-export function computeRecord(k:string,r0:any){const r={...r0};if(k==='stocks'){stockRecord(r)}else if(k==='mutualFunds'){r.invested=num(r.investment_amount)||num(r.quantity)*num(r.nav);r.latest=num(r.latest_value)||num(r.quantity)*num(r.live_nav)}else if(k==='bullion'){const tracked=num(r.metal_cost)+num(r.making_charges)+num(r.gst_paid)+num(r.other_costs);r.invested=num(r.purchase_price)||tracked;r.purchase_price=r.invested;r.latest=num(r.latest_value)||r.invested}else if(['nsel','otherAssets'].includes(k)){r.invested=num(r.purchase_price);r.latest=num(r.latest_value)||r.invested}else if(k==='property'){r.invested=num(r.purchase_price);r.latest=num(r.latest_value)||r.invested;r.balance=num(r.loan_balance)||(num(r.loan_amount)-num(r.principal_paid));r.loan_balance=r.balance;const lf=projectLoanFuture(r);r.emiFuture=lf.emiFuture;r.monthly_emi=lf.monthlyEmi;r.interest_rate=num(r.loan_interest_rate);r.emis_left=lf.monthsLeft}else if(k==='fixedIncome'){fixedIncomeRecord(r)}else if(k==='ulips'){r.invested=num(r.investment_amount)||num(r.premium_amount);r.latest=num(r.latest_value)||r.invested}else if(k==='insurance'){insuranceRecord(r)}else if(['loans','borrowings'].includes(k)){r.balance=num(r.loan_balance)||(num(r.loan_amount)-num(r.principal_paid));r.loan_balance=r.balance;r.latest=r.balance}else if(k==='goals'){r.gap=Math.max(0,num(r.target_amount)-num(r.current_value));r.monthly_required=r.gap/months(new Date(),new Date(r.target_date||new Date()))}r.gain=k==='insurance'?0:num(r.latest)-num(r.invested);r.gain_pct=k==='insurance'?0:num(r.invested)?r.gain/num(r.invested)*100:0;return r}
+/** Combines units in one community: money adds up, while EMIs left and the rate describe the whole group sensibly. */
+export function propertyGroupTotals(rows:any[]){
+  if(rows.length===1)return rows[0];
+  const sum=(field:string)=>rows.reduce((total,row)=>total+num(row[field]),0),distinct=(field:string)=>[...new Set(rows.map(row=>String(row[field]||'').trim()).filter(Boolean))],
+    rented=rows.filter(isRentedProperty),balance=sum('loan_balance'),rate=balance?rows.reduce((total,row)=>total+num(row.loan_balance)*num(row.loan_interest_rate),0)/balance:0,structures=distinct('loan_structure'),statuses=distinct('construction_status'),
+    money=Object.fromEntries(['invested','latest','gain','loan_amount','loan_balance','od_parked_balance','net_loan_balance','balance','od_monthly_interest','monthly_emi','emiFuture','principal_paid','interest_paid','future_interest'].map(field=>[field,sum(field)])),
+    paying=rows.filter(row=>num(row.emis_left)>0);
+  return{...money,gain_pct:num(money.invested)?num(money.gain)/num(money.invested)*100:0,security_name:distinct('security_name').join(' · '),loan_interest_rate:rate,interest_rate:rate,emis_left:paying.length?Math.max(...paying.map(row=>num(row.emis_left))):'',loan_clears_on:distinct('loan_clears_on').filter(value=>/^\d/.test(value)).sort().at(-1)||distinct('loan_clears_on')[0]||'',
+    loan_structure:structures.length>1?(structures.some(s=>isOverdraftLoan({loan_structure:s}))?'Overdraft (OD) + Standard':'Mixed'):structures[0]||'',construction_status:statuses.length>1?'Mixed':statuses[0]||'',
+    is_rented:rented.length?'Yes':'No',occupancy:!rented.length?'Residing':rented.length===rows.length?'Rented':`${rented.length} of ${rows.length} Rented`,vacant_from:'',vacant_to:'',monthly_rent:rented.reduce((total,row)=>total+num(row.monthly_rent),0),rentee_name:[...new Set(rented.map(row=>String(row.rentee_name||'').trim()).filter(Boolean))].join(', '),rentee_phone:[...new Set(rented.map(row=>String(row.rentee_phone||'').trim()).filter(Boolean))].join(', '),rent_agreement_start_date:rented.length===1?rented[0].rent_agreement_start_date:'',rent_agreement_end_date:rented.length===1?rented[0].rent_agreement_end_date:''};
+}
+
+export function computeRecord(k:string,r0:any){const r={...r0};if(k==='stocks'){stockRecord(r)}else if(k==='mutualFunds'){r.invested=num(r.investment_amount)||num(r.quantity)*num(r.nav);r.latest=num(r.latest_value)||num(r.quantity)*num(r.live_nav)}else if(k==='bullion'){const tracked=num(r.metal_cost)+num(r.making_charges)+num(r.gst_paid)+num(r.other_costs);r.invested=num(r.purchase_price)||tracked;r.purchase_price=r.invested;r.latest=num(r.latest_value)||r.invested}else if(['nsel','otherAssets'].includes(k)){r.invested=num(r.purchase_price);r.latest=num(r.latest_value)||r.invested}else if(k==='property'){r.invested=num(r.purchase_price);r.latest=num(r.latest_value)||r.invested;applyLoanPosition(r,PROPERTY_LOAN_FIELDS);r.occupancy=occupancyOf(r)}else if(k==='fixedIncome'){fixedIncomeRecord(r)}else if(k==='ulips'){r.invested=num(r.investment_amount)||num(r.premium_amount);r.latest=num(r.latest_value)||r.invested}else if(k==='insurance'){insuranceRecord(r)}else if(k==='loans'){applyLoanPosition(r,LOAN_FIELDS);r.latest=r.balance}else if(k==='borrowings'){r.balance=num(r.loan_balance)||(num(r.loan_amount)-num(r.principal_paid));r.loan_balance=r.balance;r.net_loan_balance=r.balance;r.latest=r.balance}else if(k==='goals'){r.gap=Math.max(0,num(r.target_amount)-num(r.current_value));r.monthly_required=r.gap/months(new Date(),new Date(r.target_date||new Date()))}r.gain=k==='insurance'?0:num(r.latest)-num(r.invested);r.gain_pct=k==='insurance'?0:num(r.invested)?r.gain/num(r.invested)*100:0;return r}
 export function computeTotals(records:any[]){let assets=0,liabilities=0,invested=0,gain=0;records.forEach(rec=>{const k=rec.module_key,c=computeRecord(k,rec.data); if(['stocks','mutualFunds','ulips','bullion','nsel','fixedIncome','property','otherAssets'].includes(k)){assets+=num(c.latest);invested+=num(c.invested);gain+=num(c.gain)} if(k==='insurance')assets+=num(c.latest);if(['loans','borrowings'].includes(k))liabilities+=num(c.balance);if(k==='property')liabilities+=num(c.balance)});return{assets,liabilities,net:assets-liabilities,invested,gain}}
 import { calculateInsurance, normalizeInsurancePolicy } from './insurance';

@@ -141,7 +141,7 @@ function quoteResult(
   };
 }
 
-function providerOrder(preferredProvider = "") {
+function providerOrder(preferredProvider = "", exchange = "") {
   const preferred = preferredProvider.trim().toLowerCase();
   const preferredList = DEFAULT_PROVIDER_ORDER.includes(preferred as Provider)
     ? [preferred as Provider]
@@ -158,7 +158,9 @@ function providerOrder(preferredProvider = "") {
     : configured.length
       ? configured
       : DEFAULT_PROVIDER_ORDER;
-  return [...new Set([...selected, "yahoo" as Provider])];
+  // Kotak is the live NSE/BSE feed. It falls through to the others when no token is saved.
+  const liveFirst: Provider[] = !preferredList.length && (isIndianExchange(exchange) || isIndexExchange(exchange)) ? ["kotak"] : [];
+  return [...new Set([...liveFirst, ...selected, "yahoo" as Provider])];
 }
 
 function yahooSymbol(symbol: string, exchange = "NSE") {
@@ -517,7 +519,7 @@ export async function GET(request: Request) {
   }
 
   const attempted: string[] = [];
-  for (const provider of providerOrder(preferredProvider)) {
+  for (const provider of providerOrder(preferredProvider, exchange)) {
     try {
       const quote = await fetchProvider(provider, symbol, exchange, auth?.user.id);
       cacheQuote(cacheKey, { quote, attempted: [...attempted], savedAt: Date.now() });
