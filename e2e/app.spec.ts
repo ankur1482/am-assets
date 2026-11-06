@@ -33,15 +33,15 @@ test.describe('logged-in app', () => {
   });
 
   test('dashboard tabs show payments and dividends', async ({ page }) => {
-    test.skip(isPhone(page), 'Phone reaches these through banners');
     const app = await signedIn(page);
     await page.getByRole('button', { name: /Payments This Month/ }).click();
     await expect(page.getByRole('region', { name: 'Payments due' }).getByText('Example Maintenance')).toBeVisible();
     await expect(page.getByRole('columnheader', { name: 'Paid from' })).toBeVisible();
-    await expect(page.getByText('Automatic, no action needed')).toBeVisible();
-    await expect(page.getByText('Included in the card bill')).toBeVisible();
+    // The phone layout keeps a hidden copy of the desktop panels in the page, so look only at what is on show.
+    await expect(page.getByText('Automatic, no action needed').locator('visible=true')).toBeVisible();
+    await expect(page.getByText('Included in the card bill').locator('visible=true')).toBeVisible();
     await page.getByRole('button', { name: /Dividends to Confirm/ }).click();
-    await expect(page.getByText(/Example Paints/).first()).toBeVisible();
+    await expect(page.getByText(/Example Paints/).locator('visible=true').first()).toBeVisible();
     await expectHealthy(page, app, 'dashboard tabs');
   });
 
@@ -137,7 +137,7 @@ test.describe('logged-in app', () => {
     const saved = app.writes.find(write => write.table === 'records' && write.body?.module_key === 'expense');
     expect(saved?.body?.data).toMatchObject({ amount: 450, label: 'Groceries', tag_id: 'google-pay', tag_label: 'Google Pay' });
     await page.locator('nav').getByRole('button', { name: 'Summary' }).locator('visible=true').first().click();
-    await page.getByRole('button', { name: /This month's expenses/ }).click();
+    await page.getByRole('button', { name: 'Expenses', exact: true }).click();
     await expect(page.getByRole('region', { name: 'Expenses this month' }).getByText('Groceries')).toBeVisible();
     await expectHealthy(page, app, 'quick expense');
   });
@@ -161,6 +161,20 @@ test.describe('logged-in app', () => {
     await page.getByRole('button', { name: /^Dividends Earned \(/ }).click();
     await expect(page.getByRole('region', { name: 'Dividends earned table' }).getByText('Sold Example')).toBeVisible();
     await expectHealthy(page, app, 'phone dividends earned');
+  });
+
+  test('the phone dashboard has the same tabs as desktop, all in view', async ({ page }) => {
+    test.skip(!isPhone(page), 'Phone layout only');
+    const app = await signedIn(page);
+    for (const name of [/^Overall Dashboard$/, /^Payments This Month/, /^Dividends to Confirm/, /^Expenses$/]) {
+      const tab = page.getByRole('button', { name });
+      await expect(tab).toBeInViewport({ ratio: 1 });
+      await tab.click();
+      await expect(tab).toHaveAttribute('aria-pressed', 'true');
+      await expect(tab).toBeInViewport({ ratio: 1 });
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    }
+    await expectHealthy(page, app, 'phone dashboard tabs');
   });
 
   test('stocks shows its dividend tabs on a phone, however the screen was reached', async ({ page }) => {

@@ -5417,9 +5417,14 @@ export default function AssetManagerApp() {
     if (view === MONTHLY_VALUATION_MODULE) return <div className="phone-screen p-3">{monthlyValuationPanel()}</div>;
     if (view === TRANSACTION_MODULE) return <div className="phone-screen p-3">{transactionLedgerPanel()}</div>;
     if (view === "backups") return <div className="phone-screen p-3">{backupCenterPanel()}</div>;
-    if (view === "payments") return <div className="phone-screen p-3">{monthlyPaymentsPanel()}</div>;
-    if (view === "dividends") return <div className="phone-screen p-3">{dividendsPanel()}</div>;
-    if (view === "expenses") return <div className="phone-screen p-3">{expensesPanel()}</div>;
+    // phoneView also renders, hidden, on desktop, where the desktop dashboard already shows these panels.
+    if (phoneMode && view === "dashboard" && ["payments", "dividends", "expenses"].includes(detailTabs.dashboard))
+      return (
+        <div className="phone-screen space-y-3 p-3">
+          {dashboardTabs()}
+          {detailTabs.dashboard === "payments" ? monthlyPaymentsPanel() : detailTabs.dashboard === "expenses" ? expensesPanel() : dividendsPanel()}
+        </div>
+      );
     if (view === "earnings") return <div className="phone-screen p-3">{earningsPanel()}</div>;
     if (view === "settings")
       return <div className="phone-screen">{settings()}</div>;
@@ -5748,6 +5753,7 @@ export default function AssetManagerApp() {
       );
     return (
       <div className="phone-screen">
+        {dashboardTabs()}
         {strip}
         <section className="phone-hero">
           <div className="phone-eyebrow">Portfolio</div>
@@ -8002,27 +8008,6 @@ export default function AssetManagerApp() {
             <strong>Upload now</strong>
           </button>
         )}
-        {phoneMode && view === "dashboard" && (
-          <button type="button" className="monthly-banner" onClick={() => setView("expenses")}>
-            <Paperclip size={15} />
-            <span>This month's expenses: {fmt(expensesByTag(records, istCalendar().iso.slice(0, 7)).reduce((sum, row) => sum + row.total, 0))}</span>
-            <strong>View</strong>
-          </button>
-        )}
-        {phoneMode && view === "dashboard" && dividendsPending().some((item) => item.state !== "awaiting") && (
-          <button type="button" className="monthly-banner" onClick={() => setView("dividends")}>
-            <Paperclip size={15} />
-            <span>{dividendsPending().filter((item) => item.state !== "awaiting").length} dividends to confirm</span>
-            <strong>View</strong>
-          </button>
-        )}
-        {phoneMode && view === "dashboard" && currentPayments().unpaidCount > 0 && (
-          <button type="button" className="monthly-banner" onClick={() => setView("payments")}>
-            <Paperclip size={15} />
-            <span>{fmt(currentPayments().remaining)} of payments still to make this month</span>
-            <strong>View</strong>
-          </button>
-        )}
         {(backupFolderNeedsPermission || driveBackup.error || folderBackup.error) && view !== "backups" && (
           <button type="button" className="monthly-banner" onClick={() => setView("backups")}>
             <HardDrive size={15} />
@@ -8053,9 +8038,6 @@ export default function AssetManagerApp() {
           {view === MONTHLY_VALUATION_MODULE && monthlyValuationPanel()}
           {view === TRANSACTION_MODULE && transactionLedgerPanel()}
           {view === "backups" && backupCenterPanel()}
-          {view === "payments" && monthlyPaymentsPanel()}
-          {view === "dividends" && dividendsPanel()}
-          {view === "expenses" && expensesPanel()}
           {view === "earnings" && earningsPanel()}
           {view === "purchaseCalculator" && !phoneMode && bullionCalculatorPanel()}
           {view === "watchlist" && utilityWatchlistView()}
@@ -9624,7 +9606,7 @@ export default function AssetManagerApp() {
       tabClass = (active: boolean) =>
         `shrink-0 rounded-xl px-3 py-2 text-sm font-semibold ${active ? "bg-sage text-white" : "text-[#17382b]"}`;
     return (
-      <div className="flex gap-2 overflow-auto rounded-2xl border border-[#e3dccc] bg-white p-1">
+      <div className="flex flex-wrap gap-2 rounded-2xl border border-[#e3dccc] bg-white p-1">
         <button
           onClick={() => setDetailTabs((p) => ({ ...p, dashboard: "summary" }))}
           aria-pressed={!onPayments && !onDividends && !onExpenses}
