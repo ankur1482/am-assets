@@ -177,6 +177,39 @@ test.describe('logged-in app', () => {
     await expectHealthy(page, app, 'phone dashboard tabs');
   });
 
+  test('the phone overall dashboard has the desktop sections, none cut off', async ({ page }) => {
+    test.skip(!isPhone(page), 'Phone layout only');
+    const app = await signedIn(page);
+    for (const text of ['Month Start Value', 'Yearly Gain', 'Monthly Portfolio Analysis']) {
+      const section = page.getByText(text, { exact: true }).locator('visible=true');
+      await section.scrollIntoViewIfNeeded();
+      await expect(section).toBeInViewport();
+    }
+    // .phone-content clips sideways, so anything wider must scroll inside its own box.
+    const cutOff = await page.evaluate(() => [...document.querySelectorAll('.phone-content *')].filter((el) => {
+      const box = el.getBoundingClientRect();
+      if (!box.width || box.right <= innerWidth + 1) return false;
+      for (let p = el.parentElement; p && !p.classList.contains('phone-content'); p = p.parentElement)
+        if (['auto', 'scroll'].includes(getComputedStyle(p).overflowX)) return false;
+      return true;
+    }).map((el) => `${el.tagName}.${String(el.className).slice(0, 60)}`));
+    expect(cutOff).toEqual([]);
+    const problems = await page.evaluate(() => {
+      const all = [...document.querySelectorAll('.phone-overall-sections *')];
+      const named = (el: Element) => (el.textContent || '').trim().slice(0, 30);
+      return {
+        // Near-white text left over from the dark card styling, unreadable on these white panels.
+        faint: all.filter((el) => el.children.length === 0 && el.textContent?.trim() && getComputedStyle(el).color === 'rgb(244, 247, 242)').map(named),
+        // A money figure cut short by an ellipsis.
+        clipped: all.filter((el) => getComputedStyle(el).textOverflow === 'ellipsis' && el.scrollWidth > el.clientWidth + 1).map(named),
+        // Amounts must keep their column headings.
+        headless: [...document.querySelectorAll('.phone-overall-sections table')].filter((t) => { const head = t.querySelector('thead'); return head && !head.getBoundingClientRect().height; }).map(named),
+      };
+    });
+    expect(problems).toEqual({ faint: [], clipped: [], headless: [] });
+    await expectHealthy(page, app, 'phone overall sections');
+  });
+
   test('stocks shows its dividend tabs on a phone, however the screen was reached', async ({ page }) => {
     test.skip(!isPhone(page), 'Phone layout only');
     const app = await signedIn(page);

@@ -5830,6 +5830,7 @@ export default function AssetManagerApp() {
             </div>
           </>
         )}
+        {phoneMode && view === "dashboard" && <div className="phone-overall-sections mt-5 min-w-0">{dashboardModern(true)}</div>}
       </div>
     );
   }
@@ -6563,6 +6564,17 @@ export default function AssetManagerApp() {
           overflow-y: visible !important;
           touch-action: pan-y !important;
         }
+        /* The desktop dashboard panels on a phone. .phone-screen's text colour is for dark cards and
+           the shared phone rules turn tables into cards without headings, leaving amounts unlabelled. */
+        .phone-overall-sections { color: var(--am-ink); }
+        .phone-overall-sections .grid.phone-stack { grid-template-columns: minmax(0, 1fr) !important; }
+        .phone-overall-sections .overflow-auto { overflow-x: auto !important; }
+        .phone-overall-sections .overflow-auto table { display: table; width: 100% !important; min-width: max-content !important; }
+        .phone-overall-sections .overflow-auto thead { display: table-header-group; }
+        .phone-overall-sections .overflow-auto tbody { display: table-row-group; }
+        .phone-overall-sections .overflow-auto tr { display: table-row; border: 0 !important; padding: 0; background: transparent; box-shadow: none; }
+        .phone-overall-sections .overflow-auto th,
+        .phone-overall-sections .overflow-auto td { display: table-cell; padding: 8px 10px !important; border-bottom: 1px solid #e7ebdf !important; white-space: nowrap !important; }
 
         .phone-market-strip {
           display: flex !important;
@@ -8031,7 +8043,7 @@ export default function AssetManagerApp() {
               </div>
             </header>
           )}
-          {view === "dashboard" && dashboardModern()}
+          {view === "dashboard" && !phoneMode && dashboardModern()}
           {view === "allInvestments" && allInvestmentsView()}
           {view === "futureWealth" && !phoneMode && canViewModule("futureWealth") && predictivePlannerView()}
           {view === MONTHLY_UPLOAD_MODULE && monthlyUploadsPanel()}
@@ -10563,7 +10575,7 @@ export default function AssetManagerApp() {
   }
   function dashboardFeaturePanels() {
     return (
-      <div className="grid grid-cols-2 gap-5 max-xl:grid-cols-1">
+      <div className="phone-stack grid grid-cols-2 gap-5 max-xl:grid-cols-1">
         {dataFreshnessPanel()}
         {assetAllocationPanel()}
       </div>
@@ -11212,7 +11224,7 @@ export default function AssetManagerApp() {
               <span>{points[points.length - 1]?.date || today}</span>
             </div>
         </div>
-        <div className="mt-4 grid grid-cols-5 gap-3 max-xl:grid-cols-3 max-md:grid-cols-1">
+        <div className="phone-stack mt-4 grid grid-cols-5 gap-3 max-xl:grid-cols-3 max-md:grid-cols-1">
           {kpi(
             "Total Cost",
             fmt(currentPoint.invested),
@@ -11414,7 +11426,7 @@ export default function AssetManagerApp() {
                 >
                   <div className="flex items-center gap-2">
                     <span
-                      className="h-3 w-3 rounded-full"
+                      className="h-3 w-3 rounded-[50%]"
                       style={{ backgroundColor: colors[i % colors.length] }}
                     />
                     <span className="font-semibold">{x.title}</span>
@@ -11498,7 +11510,7 @@ export default function AssetManagerApp() {
             </div>
           ))}
         </div>
-        <div className="mt-4 grid grid-cols-2 gap-3 max-md:grid-cols-1">
+        <div className="phone-stack mt-4 grid grid-cols-2 gap-3 max-md:grid-cols-1">
           <div>
             {simpleTable(
               ["Best", "Gain"],
@@ -12740,7 +12752,7 @@ export default function AssetManagerApp() {
       </div>
     );
   }
-  function dashboardModern() {
+  function dashboardModern(onPhone = false) {
     const assetRows = Object.entries(MODULES)
         .filter(([k, d]) => d.kind === "asset" || k === "insurance")
         .map(([k, d]) => {
@@ -12782,7 +12794,7 @@ export default function AssetManagerApp() {
       monthMove = totals.net - monthStartNet,
       monthMovePct = monthStartNet ? (monthMove / monthStartNet) * 100 : 0,
       yearlyGain = totals.gain;
-    if (["payments", "dividends", "expenses"].includes(detailTabs.dashboard))
+    if (!onPhone && ["payments", "dividends", "expenses"].includes(detailTabs.dashboard))
       return (
         <div className="space-y-5">
           {dashboardTabs()}
@@ -12791,7 +12803,7 @@ export default function AssetManagerApp() {
       );
     return (
       <div className="space-y-5">
-        {dashboardTabs()}
+        {!onPhone && dashboardTabs()}
         <section className="overflow-hidden rounded-2xl border border-[#ded6c4] bg-white/90 shadow-[0_8px_22px_rgba(15,23,42,0.04)]">
           <div className="grid grid-cols-5 divide-x divide-[#e7ebdf] max-lg:grid-cols-2 max-lg:divide-x-0 max-md:grid-cols-1">
             {[
@@ -12816,7 +12828,8 @@ export default function AssetManagerApp() {
                 totals.net,
                 totals.net >= 0 ? "text-emerald-700" : "text-red-700",
               ],
-            ].map(([label, value, color]) => (
+            // The phone's summary above this already shows the other three.
+            ].filter(([label]) => !onPhone || ["Month Start Value", "Yearly Gain"].includes(String(label))).map(([label, value, color]) => (
               <div
                 key={String(label)}
                 className="min-w-0 px-4 py-3 max-lg:border-b max-lg:border-[#e7ebdf]"
@@ -12864,7 +12877,7 @@ export default function AssetManagerApp() {
           </div>
         </section>
         {executiveAnalyticsPanel()}
-        <section
+        {!onPhone && <section
           className="flex cursor-pointer flex-wrap items-center justify-between gap-3 overflow-hidden rounded-[26px] border border-[#cddfd4] bg-[linear-gradient(135deg,#f4fbf7_0%,#ffffff_50%,#f7f2ff_100%)] p-5 shadow-[0_18px_46px_rgba(23,56,43,0.09)] transition hover:shadow-[0_22px_54px_rgba(23,56,43,0.14)]"
           onClick={() => openPredictivePlanner("wealth")}
         >
@@ -12876,7 +12889,7 @@ export default function AssetManagerApp() {
           <button type="button" className="btn-primary shrink-0" disabled={!canViewModule("futureWealth")} onClick={() => openPredictivePlanner("wealth")}>
             Open Predictive Planner →
           </button>
-        </section>
+        </section>}
         {portfolioPerformancePanel()}
         {portfolioSummaryTable()}
         {dashboardFeaturePanels()}
@@ -15912,7 +15925,7 @@ export default function AssetManagerApp() {
             valuationCoverage >= 90 ? "text-emerald-700" : "text-amber-700",
           )}
         </div>
-        <div className="mt-4 grid grid-cols-[1.2fr_.8fr] gap-4 max-lg:grid-cols-1">
+        <div className="phone-stack mt-4 grid grid-cols-[1.2fr_.8fr] gap-4 max-lg:grid-cols-1">
           <div className="rounded-2xl border border-[#e3dccc] bg-white p-4">
             <h4 className="font-semibold text-[#17382b]">Priority actions</h4>
             <div className="mt-3 space-y-2">
@@ -15923,7 +15936,7 @@ export default function AssetManagerApp() {
                   onClick={() => action.moduleKey && openModuleAll(action.moduleKey)}
                   className={`flex w-full items-start gap-3 rounded-xl border px-3 py-3 text-left transition ${action.tone === "red" ? "border-red-200 bg-red-50 hover:border-red-300" : action.tone === "amber" ? "border-amber-200 bg-amber-50 hover:border-amber-300" : "border-emerald-200 bg-emerald-50 hover:border-emerald-300"}`}
                 >
-                  <span className={`mt-1 h-2.5 w-2.5 shrink-0 rounded-full ${action.tone === "red" ? "bg-red-500" : action.tone === "amber" ? "bg-amber-500" : "bg-emerald-500"}`} />
+                  <span className={`mt-1 h-2.5 w-2.5 shrink-0 rounded-[50%] ${action.tone === "red" ? "bg-red-500" : action.tone === "amber" ? "bg-amber-500" : "bg-emerald-500"}`} />
                   <span>
                     <span className="block text-sm font-semibold">{action.title}</span>
                     <span className="mt-0.5 block text-xs text-gray-600">{action.detail}</span>
