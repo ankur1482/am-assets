@@ -50,6 +50,7 @@ import { dividendSymbols, DIVIDEND_MODULE, pendingDividends, receivedDividends, 
 import ExpensesPanel, { QuickExpenseButton } from "@/components/Expenses";
 import { CARD_PREFIX, cardSpendIn, EXPENSE_MODULE, expensesByTag, expensesIn, expenseTags, paymentCards, type ExpenseTag } from "@/lib/expenses";
 import MonthlyPayments from "@/components/MonthlyPayments";
+import OneRowTabs from "@/components/OneRowTabs";
 import { addToAccount, DIVIDEND_BANK, drawFromAccount, payAccountLabel, MONTHLY_PAYMENT_MODULE, payAccounts, paymentsDue, paymentTotals, recurringData, recurringPayments, recurringRecord, yearlyCommitments, type PaymentItem, type PaymentMonth, type RecurringPayment } from "@/lib/monthlyPayments";
 import MonthlyValuation from "@/components/MonthlyValuation";
 import TransactionLedger, { RecordSaleForm, type BuyRow } from "@/components/TransactionLedger";
@@ -4813,6 +4814,9 @@ export default function AssetManagerApp() {
           Number(b.hasEntries) - Number(a.hasEntries) ||
           a.preferredOrder - b.preferredOrder,
       )
+      // The phone row skips types with nothing in them. They stay in the menu and on desktop, and a
+      // new account with no holdings sees them all so it has somewhere to start.
+      .filter((x, _index, all) => x.hasEntries || x.tab[0] === view || !all.some((y) => y.hasEntries))
       .map((x) => x.tab),
     mobileTabAccounts =
       view !== "dashboard" && MODULES[view]
@@ -4925,24 +4929,20 @@ export default function AssetManagerApp() {
   function phoneAccountStrip() {
     if (!mobileTabAccounts.length) return null;
     return (
-      <div className="phone-account-strip">
-        {mobileTabAccounts.map((account) => (
-          <button
-            key={account}
-            type="button"
-            className={phoneAccountTab() === account ? "active" : ""}
-            onClick={() => {
-              setAccountTabs((p) => ({ ...p, __phone: account }));
-            }}
-          >
-            {account === DIVIDENDS_EARNED_TAB
+      <OneRowTabs
+        label="Accounts"
+        tabs={mobileTabAccounts.map((account) => ({
+          id: account,
+          label:
+            account === DIVIDENDS_EARNED_TAB
               ? `${account} (${receivedDividends(records).length})`
               : account === DIVIDEND_RADAR_TAB
                 ? `${account} (${currentBuySignals().length})`
-                : account}
-          </button>
-        ))}
-      </div>
+                : account,
+          active: phoneAccountTab() === account,
+          onSelect: () => setAccountTabs((p) => ({ ...p, __phone: account })),
+        }))}
+      />
     );
   }
   function phoneRow(
@@ -6723,39 +6723,6 @@ export default function AssetManagerApp() {
           display: grid !important;
           gap: 14px !important;
         }
-        .phone-account-strip {
-          display: flex !important;
-          flex-wrap: wrap !important;
-          gap: 7px !important;
-          margin: 9px 0 2px !important;
-          padding: 5px !important;
-          border: 1px solid rgba(83,43,72,.12) !important;
-          border-radius: 18px !important;
-          background: rgba(255,253,248,.78) !important;
-          box-shadow: 0 8px 20px rgba(48,26,50,.07), inset 0 1px 0 rgba(255,255,255,.86) !important;
-          scrollbar-width: none !important;
-          -webkit-overflow-scrolling: touch !important;
-        }
-        .phone-account-strip::-webkit-scrollbar { display: none; }
-        .phone-account-strip button {
-          flex: 0 0 auto !important;
-          min-height: 30px !important;
-          border-radius: 999px !important;
-          padding: 0 13px !important;
-          color: #544653 !important;
-          background: rgba(255,255,255,.70) !important;
-          border: 1px solid rgba(83,43,72,.10) !important;
-          font-size: 11px !important;
-          font-weight: 950 !important;
-          line-height: 1 !important;
-          white-space: nowrap !important;
-        }
-        .phone-account-strip button.active {
-          color: #211521 !important;
-          background: linear-gradient(135deg, #FFF1C9 0%, #e4bd5b 48%, #C89A36 100%) !important;
-          border-color: rgba(200,148,37,.45) !important;
-          box-shadow: 0 5px 12px rgba(200,148,37,.18), inset 0 1px 0 rgba(255,255,255,.72) !important;
-        }
         .phone-group {
           min-width: 0 !important;
           overflow: hidden !important;
@@ -7160,6 +7127,53 @@ export default function AssetManagerApp() {
           padding: 0 3px !important;
           font-size: clamp(10.5px, 3.1vw, 13px) !important;
         }
+        /* The same row, in the flow of a screen rather than stuck under the header. */
+        .mobile-tabbar.mobile-top-nav.mobile-main-nav.one-row-inline {
+          position: relative !important;
+          top: auto !important;
+          z-index: 20 !important;
+          width: 100% !important;
+          max-width: 100% !important;
+          margin: 0 !important;
+        }
+        .one-row-more { position: relative; display: flex; flex: 0 0 auto; }
+        .mobile-tabbar.mobile-top-nav.mobile-main-nav .one-row-more > button { flex: 0 0 auto !important; }
+        .one-row-more-menu {
+          position: absolute;
+          top: calc(100% + 6px);
+          right: 0;
+          z-index: 60;
+          display: grid;
+          gap: 2px;
+          min-width: 175px;
+          max-width: calc(100vw - 32px);
+          padding: 6px;
+          border: 1px solid rgba(83,43,72,.13);
+          border-radius: 16px;
+          background: #fff;
+          box-shadow: 0 14px 34px rgba(48,26,50,.18);
+        }
+        .mobile-tabbar.mobile-top-nav.mobile-main-nav .one-row-more-menu button {
+          flex: none !important;
+          width: 100%;
+          min-height: 40px !important;
+          padding: 0 12px !important;
+          justify-content: flex-start;
+          text-align: left;
+        }
+        /* Off-screen copy, used only to measure how many tabs fit. */
+        .one-row-measure {
+          position: absolute;
+          top: 0;
+          left: 0;
+          display: flex;
+          width: max-content;
+          height: 0;
+          overflow: hidden;
+          visibility: hidden;
+          pointer-events: none;
+        }
+        .mobile-tabbar.mobile-top-nav.mobile-main-nav .one-row-measure button { flex: 0 0 auto !important; }
         .mobile-tabbar.mobile-top-nav .mobile-nav-back {
           border: 1px solid rgba(83,43,72,.12) !important;
           background: rgba(255,255,255,.64) !important;
@@ -8001,30 +8015,24 @@ export default function AssetManagerApp() {
             </div>
           </div>
         )}
-        <nav className={`mobile-tabbar mobile-top-nav ${mobileNavMode === "investments" ? "" : "mobile-main-nav"}`} aria-label="Mobile section navigation">
-          {mobileNavMode === "investments" && (
-            <button
-              type="button"
-              onClick={() => selectMobileTab("__back")}
-              className="mobile-nav-back"
-              aria-label="Back to summary navigation"
-            >
-              <ArrowLeft size={18} />
-              <span>Back</span>
-            </button>
-          )}
-          {(mobileNavMode === "investments" ? mobileInvestmentTabsByValue : mobileMainTabs).filter(([id]) => id !== "futureWealth" || canViewModule("futureWealth")).map(([id, label, Icon]) => (
-            <button
-              key={id}
-              type="button"
-              onClick={() => selectMobileTab(id)}
-              className={(id === "investments" ? mobileNavMode === "investments" : view === id) ? "active" : ""}
-            >
-              <Icon size={18} />
-              <span>{label}</span>
-            </button>
-          ))}
-        </nav>
+        <OneRowTabs
+          navigation
+          sticky
+          label="Mobile section navigation"
+          tabs={[
+            ...(mobileNavMode === "investments"
+              ? [{ id: "__back", label: "← Back", fullName: "Back to summary navigation", pinned: true, onSelect: () => selectMobileTab("__back") }]
+              : []),
+            ...(mobileNavMode === "investments" ? mobileInvestmentTabsByValue : mobileMainTabs)
+              .filter(([id]) => id !== "futureWealth" || canViewModule("futureWealth"))
+              .map(([id, label]) => ({
+                id,
+                label,
+                active: id === "investments" ? mobileNavMode === "investments" : view === id,
+                onSelect: () => selectMobileTab(id),
+              })),
+          ]}
+        />
         {canSubmitUploads && uploadStatus.missing.length > 0 && view !== MONTHLY_UPLOAD_MODULE && (
           <button type="button" className="monthly-banner" onClick={() => setView(MONTHLY_UPLOAD_MODULE)}>
             <Paperclip size={15} />
@@ -9629,36 +9637,23 @@ export default function AssetManagerApp() {
       unconfirmed = dividendsPending().filter((item) => item.state !== "awaiting").length,
       tabClass = (active: boolean) =>
         `shrink-0 rounded-xl px-3 py-2 text-sm font-semibold ${active ? "bg-sage text-white" : "text-[#17382b]"}`;
+    const count = (n: number) => (n ? ` (${n})` : ""),
+      tabs = [
+        { id: "summary", name: "Overall Dashboard", short: "Overall", active: !onPayments && !onDividends && !onExpenses },
+        { id: "payments", name: `Payments This Month${count(unpaid)}`, short: `Payments${count(unpaid)}`, active: onPayments },
+        { id: "dividends", name: `Dividends to Confirm${count(unconfirmed)}`, short: `Dividends${count(unconfirmed)}`, active: onDividends },
+        { id: "expenses", name: "Expenses", short: "Expenses", active: onExpenses },
+      ],
+      choose = (id: string) => setDetailTabs((p) => ({ ...p, dashboard: id }));
+    if (phoneMode)
+      return <OneRowTabs label="Dashboard sections" tabs={tabs.map((tab) => ({ id: tab.id, label: tab.short, fullName: tab.name, active: tab.active, onSelect: () => choose(tab.id) }))} />;
     return (
       <div className="flex flex-wrap gap-2 rounded-2xl border border-[#e3dccc] bg-white p-1">
-        <button
-          onClick={() => setDetailTabs((p) => ({ ...p, dashboard: "summary" }))}
-          aria-pressed={!onPayments && !onDividends && !onExpenses}
-          className={tabClass(!onPayments && !onDividends && !onExpenses)}
-        >
-          Overall Dashboard
-        </button>
-        <button
-          onClick={() => setDetailTabs((p) => ({ ...p, dashboard: "payments" }))}
-          aria-pressed={onPayments}
-          className={tabClass(onPayments)}
-        >
-          Payments This Month{unpaid ? ` (${unpaid})` : ""}
-        </button>
-        <button
-          onClick={() => setDetailTabs((p) => ({ ...p, dashboard: "dividends" }))}
-          aria-pressed={onDividends}
-          className={tabClass(onDividends)}
-        >
-          Dividends to Confirm{unconfirmed ? ` (${unconfirmed})` : ""}
-        </button>
-        <button
-          onClick={() => setDetailTabs((p) => ({ ...p, dashboard: "expenses" }))}
-          aria-pressed={onExpenses}
-          className={tabClass(onExpenses)}
-        >
-          Expenses
-        </button>
+        {tabs.map((tab) => (
+          <button key={tab.id} onClick={() => choose(tab.id)} aria-pressed={tab.active} className={tabClass(tab.active)}>
+            {tab.name}
+          </button>
+        ))}
       </div>
     );
   }
