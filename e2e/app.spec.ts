@@ -61,7 +61,7 @@ test.describe('logged-in app', () => {
   });
 
   test('stocks has dividend tabs next to watchlist, with earned dividends in a table after a sale', async ({ page }) => {
-    test.skip(isPhone(page), 'Phone reaches these through banners');
+    test.skip(isPhone(page), 'Phone has its own tab row, tested below');
     const app = await signedIn(page);
     await open(page, app, /^Stocks/);
     const tabs = page.getByRole('button', { name: /^(Watchlist|Dividends Earned|Dividend Buy Radar) \(/ });
@@ -158,9 +158,31 @@ test.describe('logged-in app', () => {
       await tap(name);
       await expectHealthy(page, app, `phone ${name}`);
     }
-    await page.getByRole('button', { name: /Dividends earned/ }).click();
+    await page.getByRole('button', { name: /^Dividends Earned \(/ }).click();
     await expect(page.getByRole('region', { name: 'Dividends earned table' }).getByText('Sold Example')).toBeVisible();
     await expectHealthy(page, app, 'phone dividends earned');
+  });
+
+  test('stocks shows its dividend tabs on a phone, however the screen was reached', async ({ page }) => {
+    test.skip(!isPhone(page), 'Phone layout only');
+    const app = await signedIn(page);
+    await page.getByRole('button', { name: 'Open menu' }).click();
+    await page.locator('.mobile-menu-panel').getByRole('button', { name: 'Stocks' }).click();
+    const earned = page.getByRole('button', { name: /^Dividends Earned \(/ }), radar = page.getByRole('button', { name: /^Dividend Buy Radar \(/ });
+    await earned.scrollIntoViewIfNeeded();
+    await expect(earned).toBeInViewport({ ratio: 1 });
+    await expect(radar).toBeInViewport({ ratio: 1 });
+    await radar.click();
+    await expect(page.getByText('This shows a date, not a recommendation.')).toBeVisible();
+    await earned.click();
+    await expect(page.getByRole('region', { name: 'Dividends earned table' }).getByText('Sold Example')).toBeVisible();
+
+    // A dividend tab belongs to Stocks, so it must not empty another screen.
+    await page.getByRole('button', { name: 'Open menu' }).click();
+    await page.locator('.mobile-menu-panel').getByRole('button', { name: 'Property' }).click();
+    await expect(page.getByText('Consolidated Holdings')).toBeVisible();
+    await expect(page.getByRole('button', { name: 'All', exact: true })).toHaveClass(/active/);
+    await expectHealthy(page, app, 'phone dividend tabs');
   });
 
   test('every phone menu option can be seen without sideways scrolling', async ({ page }) => {

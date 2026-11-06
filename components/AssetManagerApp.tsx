@@ -955,7 +955,6 @@ export default function AssetManagerApp() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false),
     [globalRefreshing, setGlobalRefreshing] = useState(false),
     [phoneMode, setPhoneMode] = useState(false),
-    [mobileAccountMenu, setMobileAccountMenu] = useState(""),
     [mobileNavMode, setMobileNavMode] = useState<"main" | "investments">("main");
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
       if (typeof window === "undefined") return false;
@@ -4816,20 +4815,22 @@ export default function AssetManagerApp() {
       )
       .map((x) => x.tab),
     mobileTabAccounts =
-      mobileAccountMenu && MODULES[mobileAccountMenu]
+      view !== "dashboard" && MODULES[view]
         ? [
             "All",
             ...Array.from(
               new Set(
                 records
-                  .filter((r) => r.module_key === mobileAccountMenu)
+                  .filter((r) => r.module_key === view)
                   .map((r) => String(r.data?.account_name || "Unassigned"))
                   .filter(Boolean),
               ),
             ),
-            ...(mobileAccountMenu === "stocks" ? ["Watchlist", "ETFs"] : []),
+            ...(view === "stocks" ? ["Watchlist", "ETFs", DIVIDENDS_EARNED_TAB, DIVIDEND_RADAR_TAB] : []),
           ]
-        : [];
+        : [],
+    // A tab chosen on another screen may not exist on this one, such as Watchlist on Property.
+    phoneAccountTab = () => (mobileTabAccounts.includes(accountTab("__phone")) ? accountTab("__phone") : "All");
   function selectMobileTab(id: string) {
     if (id === "futureWealth") {
       openPredictivePlanner("wealth");
@@ -4837,27 +4838,19 @@ export default function AssetManagerApp() {
     }
     if (id === "investments") {
       setMobileNavMode("investments");
-      setMobileAccountMenu(view !== "dashboard" && MODULES[view] ? view : "");
       return;
     }
     if (id === "__back") {
       setMobileNavMode("main");
-      setMobileAccountMenu("");
       return;
     }
     setView(id);
     if (id === "dashboard") {
       setMobileNavMode("main");
-      setMobileAccountMenu("");
       setAccountTabs((p) => ({ ...p, __phone: "All" }));
       return;
     }
-    if (MODULES[id]) {
-      setMobileNavMode("investments");
-      setMobileAccountMenu(id);
-    } else {
-      setMobileAccountMenu("");
-    }
+    if (MODULES[id]) setMobileNavMode("investments");
   }
   async function adminFetch(body?: any) {
     if (!session?.access_token) throw new Error("Missing session");
@@ -4937,12 +4930,16 @@ export default function AssetManagerApp() {
           <button
             key={account}
             type="button"
-            className={accountTab("__phone") === account ? "active" : ""}
+            className={phoneAccountTab() === account ? "active" : ""}
             onClick={() => {
               setAccountTabs((p) => ({ ...p, __phone: account }));
             }}
           >
-            {account === "All" ? "All" : account}
+            {account === DIVIDENDS_EARNED_TAB
+              ? `${account} (${receivedDividends(records).length})`
+              : account === DIVIDEND_RADAR_TAB
+                ? `${account} (${currentBuySignals().length})`
+                : account}
           </button>
         ))}
       </div>
@@ -5424,15 +5421,15 @@ export default function AssetManagerApp() {
     if (view === "dividends") return <div className="phone-screen p-3">{dividendsPanel()}</div>;
     if (view === "expenses") return <div className="phone-screen p-3">{expensesPanel()}</div>;
     if (view === "earnings") return <div className="phone-screen p-3">{earningsPanel()}</div>;
-    if (view === "dividendRadar") return <div className="phone-screen p-3">{dividendRadarPanel()}</div>;
-    if (view === "dividendsEarned") return <div className="phone-screen p-3"><DividendHistory history={dividendHistory(records)} /></div>;
     if (view === "settings")
       return <div className="phone-screen">{settings()}</div>;
     if (view === "purchaseCalculator")
       return phoneMode ? <div className="phone-screen">{bullionCalculatorPanel()}</div> : null;
 
-    const selectedAccount = accountTab("__phone"),
-      isPhoneEtfWatchlist = view === "stocks" && selectedAccount === "ETFs",
+    const selectedAccount = phoneAccountTab();
+    if (selectedAccount === DIVIDENDS_EARNED_TAB) return <div className="phone-screen p-3">{phoneAccountStrip()}<DividendHistory history={dividendHistory(records)} /></div>;
+    if (selectedAccount === DIVIDEND_RADAR_TAB) return <div className="phone-screen p-3">{phoneAccountStrip()}{dividendRadarPanel()}</div>;
+    const isPhoneEtfWatchlist = view === "stocks" && selectedAccount === "ETFs",
       isPhoneStockWatchlist =
         view === "stocks" &&
         (selectedAccount === "Watchlist" || isPhoneEtfWatchlist),
@@ -6710,10 +6707,10 @@ export default function AssetManagerApp() {
         }
         .phone-account-strip {
           display: flex !important;
+          flex-wrap: wrap !important;
           gap: 7px !important;
           margin: 9px 0 2px !important;
           padding: 5px !important;
-          overflow-x: auto !important;
           border: 1px solid rgba(83,43,72,.12) !important;
           border-radius: 18px !important;
           background: rgba(255,253,248,.78) !important;
@@ -8003,20 +8000,6 @@ export default function AssetManagerApp() {
             <Paperclip size={15} />
             <span>{uploadStatus.missing.length} monthly document{uploadStatus.missing.length === 1 ? "" : "s"} outstanding, due by {formatDate(uploadStatus.missing[0].dueBy)}</span>
             <strong>Upload now</strong>
-          </button>
-        )}
-        {phoneMode && view === "stocks" && (
-          <button type="button" className="monthly-banner" onClick={() => setView("dividendsEarned")}>
-            <Sparkles size={15} />
-            <span>Dividends earned: {receivedDividends(records).length}</span>
-            <strong>View</strong>
-          </button>
-        )}
-        {phoneMode && view === "stocks" && (
-          <button type="button" className="monthly-banner" onClick={() => setView("dividendRadar")}>
-            <Sparkles size={15} />
-            <span>Dividend Buy Radar{currentBuySignals().length ? `: ${currentBuySignals().length} to look at` : ""}</span>
-            <strong>View</strong>
           </button>
         )}
         {phoneMode && view === "dashboard" && (
@@ -10245,7 +10228,6 @@ export default function AssetManagerApp() {
     }
     setPlannerTab(tab);
     setMobileNavMode("main");
-    setMobileAccountMenu("");
     setView("futureWealth");
   }
   function plannerShortcut(moduleKey: string) {
