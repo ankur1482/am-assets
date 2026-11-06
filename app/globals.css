@@ -3096,6 +3096,12 @@ body {
     -webkit-overflow-scrolling: touch;
   }
 
+  /* A scrolling body would never move, and would hold the sticky header and menu in place with it. */
+  body {
+    overflow-x: clip;
+    overflow-y: visible;
+  }
+
   .app-shell,
   main,
   .phone-content,

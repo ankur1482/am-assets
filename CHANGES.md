@@ -13,7 +13,24 @@ These backups cover the app itself, not your financial data. Your data is covere
 
 ---
 
-## 6 Nov 2026, 13:50: The same tab row on three more phone screens
+## 6 Nov 2026, 19:26: Matching figures, and a steadier phone screen
+
+Backup taken before this release: `backup-2026-11-06-1926-IST`
+
+**Your numbers**
+
+- **Largest asset class now shows one figure.** Three panels gave three different percentages for the same thing, because each worked it out differently. All of them now use its share of your total assets. So you may see different percentages from before in Asset Allocation and Risk & Performers. Your actual values haven't changed.
+- **"Yearly Gain" is now called "Overall Gain".** It was always your gain since purchase, not this year's gain, so only the name changed.
+
+**On the phone**
+
+- **The header and main menu stay on screen as you scroll,** so you don't have to go back to the top of a long page.
+- **Account tabs moved to the top** of each investment screen, because they decide what the whole screen shows.
+- **Text no longer touches the card edge** on Forecast, Month on Month and the Dividend and Payment panels.
+- **The + Add button stays on one line** on small phones.
+- **Payments, Dividends and Expenses tabs** checked and tidied so labels and table headings show properly.
+
+## 6 Nov 2026, 19:20: The same tab row on three more phone screens
 
 Backup taken before this release: `backup-2026-11-06-1916-IST`
 

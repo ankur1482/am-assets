@@ -5422,7 +5422,9 @@ export default function AssetManagerApp() {
       return (
         <div className="phone-screen space-y-3 p-3">
           {dashboardTabs()}
-          {detailTabs.dashboard === "payments" ? monthlyPaymentsPanel() : detailTabs.dashboard === "expenses" ? expensesPanel() : dividendsPanel()}
+          <div className="phone-overall-sections min-w-0">
+            {detailTabs.dashboard === "payments" ? monthlyPaymentsPanel() : detailTabs.dashboard === "expenses" ? expensesPanel() : dividendsPanel()}
+          </div>
         </div>
       );
     if (view === "earnings") return <div className="phone-screen p-3">{earningsPanel()}</div>;
@@ -5628,6 +5630,7 @@ export default function AssetManagerApp() {
     if (moduleDef && view !== "dashboard")
       return (
         <div className="phone-screen">
+          {phoneAccountStrip()}
           {strip}
           {plannerShortcut(view)}
           <section
@@ -5681,7 +5684,6 @@ export default function AssetManagerApp() {
                   : "phone-red",
               )}
           </section>
-          {phoneAccountStrip()}
           <h3 className="phone-section-title">Consolidated Holdings</h3>
           <div className={`phone-list ${view === "property" ? "phone-property-list" : ""}`}>
             {moduleRows.length ? (
@@ -6567,6 +6569,13 @@ export default function AssetManagerApp() {
         /* The desktop dashboard panels on a phone. .phone-screen's text colour is for dark cards and
            the shared phone rules turn tables into cards without headings, leaving amounts unlabelled. */
         .phone-overall-sections { color: var(--am-ink); }
+        /* These panels sit on a white card on the phone, so keep their text off its edge. */
+        .phone-content section.mom,
+        .phone-content .forecast-planner {
+          padding: 14px !important;
+          border-radius: 22px !important;
+        }
+        .mobile-appbar button { flex-shrink: 0; white-space: nowrap !important; }
         .phone-overall-sections .grid.phone-stack { grid-template-columns: minmax(0, 1fr) !important; }
         .phone-overall-sections .overflow-auto { overflow-x: auto !important; }
         .phone-overall-sections .overflow-auto table { display: table; width: 100% !important; min-width: max-content !important; }
@@ -11348,7 +11357,7 @@ export default function AssetManagerApp() {
         <div className="mb-4">
           <h3 className="text-xl font-semibold tracking-tight">Asset Allocation</h3>
           <p className="mt-1 text-sm text-gray-600">
-            Assets and liabilities by current value.
+            Current value of each, as a share of your total assets.
           </p>
         </div>
         {rows.length ? (
@@ -11450,7 +11459,7 @@ export default function AssetManagerApp() {
                       {fmt(x.liability ? -x.value : x.value)}
                     </div>
                     <div className="text-xs font-semibold text-gray-500">
-                      {pct((Math.abs(x.value) / total) * 100)}
+                      {pct((Math.abs(x.value) / (totals.assets || total)) * 100)}
                     </div>
                   </div>
                 </button>
@@ -11475,7 +11484,7 @@ export default function AssetManagerApp() {
             gain: num(c.gain),
           };
         }),
-      top = [...assetRows].sort((a, b) => b.weight - a.weight)[0],
+      top = assetClassShares()[0],
       debtPct = totals.assets ? (totals.liabilities / totals.assets) * 100 : 0,
       missing = records
         .filter(
@@ -11490,7 +11499,7 @@ export default function AssetManagerApp() {
         .sort((a, b) => b.gain - a.gain),
       alerts = [
         top && top.weight > 50
-          ? `${MODULES[top.r.module_key]?.title} concentration is high at ${pct(top.weight)}.`
+          ? `${top.title} concentration is high at ${pct(top.weight)}.`
           : "Largest asset class concentration is manageable.",
         debtPct > 35
           ? `Debt-to-asset ratio is elevated at ${pct(debtPct)}.`
@@ -12800,7 +12809,7 @@ export default function AssetManagerApp() {
         : totals.net,
       monthMove = totals.net - monthStartNet,
       monthMovePct = monthStartNet ? (monthMove / monthStartNet) * 100 : 0,
-      yearlyGain = totals.gain;
+      overallGain = totals.gain;
     if (!onPhone && ["payments", "dividends", "expenses"].includes(detailTabs.dashboard))
       return (
         <div className="space-y-5">
@@ -12826,17 +12835,17 @@ export default function AssetManagerApp() {
                 "text-[#17382b]",
               ],
               [
-                "Yearly Gain",
-                yearlyGain,
-                yearlyGain >= 0 ? "text-emerald-700" : "text-red-700",
+                "Overall Gain",
+                overallGain,
+                overallGain >= 0 ? "text-emerald-700" : "text-red-700",
               ],
               [
                 "Current Net Worth",
                 totals.net,
                 totals.net >= 0 ? "text-emerald-700" : "text-red-700",
               ],
-            // The phone's summary above this already shows the other three.
-            ].filter(([label]) => !onPhone || ["Month Start Value", "Yearly Gain"].includes(String(label))).map(([label, value, color]) => (
+            // The phone's summary above this already shows the others.
+            ].filter(([label]) => !onPhone || label === "Month Start Value").map(([label, value, color]) => (
               <div
                 key={String(label)}
                 className="min-w-0 px-4 py-3 max-lg:border-b max-lg:border-[#e7ebdf]"
@@ -15778,8 +15787,9 @@ export default function AssetManagerApp() {
     if (col === "emis_left") return "90px";
     return "110px";
   }
-  function executiveAnalyticsPanel() {
-    const moduleRows = Object.entries(MODULES)
+  // Each asset class as a share of total assets. Every panel quoting a concentration uses this.
+  function assetClassShares() {
+    return Object.entries(MODULES)
         .filter(
           ([moduleKey, module]) =>
             (module.kind === "asset" && moduleKey !== "watchlist") ||
@@ -15805,7 +15815,10 @@ export default function AssetManagerApp() {
           };
         })
         .filter((row) => row.current || row.invested)
-        .sort((a, b) => b.current - a.current),
+        .sort((a, b) => b.current - a.current);
+  }
+  function executiveAnalyticsPanel() {
+    const moduleRows = assetClassShares(),
       largest = moduleRows[0],
       best = [...moduleRows].filter((row) => row.invested).sort((a, b) => b.gain - a.gain)[0],
       worst = [...moduleRows].filter((row) => row.invested).sort((a, b) => a.gain - b.gain)[0],
