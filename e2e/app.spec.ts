@@ -162,4 +162,22 @@ test.describe('logged-in app', () => {
     await expect(page.getByRole('region', { name: 'Dividends earned table' }).getByText('Sold Example')).toBeVisible();
     await expectHealthy(page, app, 'phone dividends earned');
   });
+
+  test('every phone menu option can be seen without sideways scrolling', async ({ page }) => {
+    test.skip(!isPhone(page), 'Phone layout only');
+    const app = await signedIn(page);
+    const strip = page.getByRole('navigation', { name: 'Mobile section navigation' });
+    for (const name of ['Summary', 'Investments', 'Goals', 'Forecast', 'Settings']) await expect(strip.getByRole('button', { name })).toBeInViewport({ ratio: 1 });
+    await strip.getByRole('button', { name: 'Investments' }).click();
+    for (const name of ['Stocks', 'Property', 'Gold/Silver', 'Fixed', 'Insurance', 'MF', 'ULIP', 'Other', 'NSEL']) await expect(strip.getByRole('button', { name })).toBeInViewport({ ratio: 1 });
+
+    // The menu sits clear of the header, and its last option can be scrolled to.
+    await page.getByRole('button', { name: 'Open menu' }).click();
+    const panel = page.locator('.mobile-menu-panel'), header = await page.locator('.mobile-appbar').boundingBox();
+    expect((await panel.boundingBox())!.y).toBeGreaterThanOrEqual(header!.y + header!.height);
+    const signOut = panel.getByRole('button', { name: 'Sign out' });
+    await signOut.scrollIntoViewIfNeeded();
+    await expect(signOut).toBeInViewport({ ratio: 1 });
+    await expectHealthy(page, app, 'phone menu options');
+  });
 });

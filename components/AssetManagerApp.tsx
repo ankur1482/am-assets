@@ -7116,8 +7116,10 @@ export default function AssetManagerApp() {
           max-width: calc(100vw - 18px) !important;
           margin: -4px auto 12px !important;
           justify-content: flex-start !important;
-          gap: 7px !important;
-          overflow-x: auto !important;
+          flex-wrap: wrap !important;
+          gap: 4px !important;
+          overflow: visible !important;
+          touch-action: auto !important;
           border-radius: 22px !important;
           padding: 7px !important;
           white-space: nowrap !important;
@@ -7127,7 +7129,7 @@ export default function AssetManagerApp() {
           min-width: max-content !important;
           min-height: 38px !important;
           gap: 6px !important;
-          padding: 0 13px !important;
+          padding: 0 10px !important;
           font-size: 12px !important;
           letter-spacing: -.03em !important;
         }
@@ -7145,6 +7147,8 @@ export default function AssetManagerApp() {
         }
 
         .mobile-menu-panel {
+          top: calc(env(safe-area-inset-top, 0px) + 80px) !important;
+          max-height: calc(100dvh - env(safe-area-inset-top, 0px) - 88px) !important;
           border-color: rgba(83,43,72,.13) !important;
           background: rgba(255,253,248,.98) !important;
           box-shadow: 0 22px 55px rgba(48,26,50,.16), inset 0 1px 0 rgba(255,255,255,.88) !important;
