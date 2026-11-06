@@ -11,7 +11,8 @@ export default defineConfig({
   timeout: 120_000,
   expect: { timeout: 20_000 },
   retries: process.env.CI ? 1 : 0,
-  reporter: [['list']],
+  // On CI, also report failures as annotations, which can be read without signing in to GitHub.
+  reporter: process.env.CI ? [['list'], ['github']] : [['list']],
   use: { baseURL: `http://localhost:${PORT}`, trace: 'retain-on-failure', screenshot: 'only-on-failure' },
   projects: [
     { name: 'desktop', use: { ...devices['Desktop Chrome'], viewport: { width: 1440, height: 900 } } },
