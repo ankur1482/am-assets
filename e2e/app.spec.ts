@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type CDPSession, type Page } from '@playwright/test';
 import { expectHealthy, openApp, type MockedApp } from './helpers';
 
 const isPhone = (page: Page) => (page.viewportSize()?.width ?? 1440) <= 1024;
@@ -182,8 +182,11 @@ test.describe('logged-in app', () => {
     const app = await signedIn(page);
     for (const text of ['Month Start Value', 'Yearly Gain', 'Monthly Portfolio Analysis']) {
       const section = page.getByText(text, { exact: true }).locator('visible=true');
-      await section.scrollIntoViewIfNeeded();
-      await expect(section).toBeInViewport();
+      // The screen is rebuilt once as the app starts, so retry until it has settled.
+      await expect(async () => {
+        await section.scrollIntoViewIfNeeded({ timeout: 3000 });
+        await expect(section).toBeInViewport({ timeout: 2000 });
+      }).toPass({ timeout: 20000 });
     }
     // .phone-content clips sideways, so anything wider must scroll inside its own box.
     const cutOff = await page.evaluate(() => [...document.querySelectorAll('.phone-content *')].filter((el) => {
@@ -230,6 +233,122 @@ test.describe('logged-in app', () => {
     await expect(page.getByText('Consolidated Holdings')).toBeVisible();
     await expect(page.getByRole('button', { name: 'All', exact: true })).toHaveClass(/active/);
     await expectHealthy(page, app, 'phone dividend tabs');
+  });
+
+  // Real touch gestures: a swipe or pinch has to work wherever the finger happens to land.
+  const touchTargets = ['.phone-hero', '.phone-market-strip', '.phone-row-main', '.mobile-top-nav', '.phone-overall-sections table'];
+  async function touchPoint(page: Page, selector: string) {
+    // The screen is rebuilt once as the app starts, so keep looking until the target is there.
+    const find = () => page.evaluate((css) => {
+      const el = [...document.querySelectorAll(css)].find((x) => x.getBoundingClientRect().height > 0);
+      if (!el) return null;
+      el.scrollIntoView({ block: 'center', behavior: 'instant' });
+      const box = el.getBoundingClientRect();
+      return { x: Math.round(box.x + Math.min(box.width / 2, 150)), y: Math.round(box.y + box.height / 2) };
+    }, selector);
+    await expect.poll(find, { message: `${selector} is on screen` }).not.toBeNull();
+    // The screen is rebuilt as the app starts, so wait for a second without anything being replaced.
+    await page.evaluate(() => new Promise<void>((resolve) => {
+      let timer = setTimeout(resolve, 1000);
+      new MutationObserver((records) => {
+        if (records.some((r) => [...r.removedNodes].some((n) => n.nodeType === 1))) { clearTimeout(timer); timer = setTimeout(resolve, 1000); }
+      }).observe(document.body, { childList: true, subtree: true });
+    }));
+    await expect.poll(find).not.toBeNull();
+    return (await find())!;
+  }
+
+  // Raw touch events, because Chromium's synthesized scroll and pinch commands do nothing here, even on a blank page.
+  async function swipeUp(cdp: CDPSession, page: Page, { x, y }: { x: number; y: number }) {
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y }] });
+    for (let i = 1; i <= 12; i++) {
+      await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x, y: y - i * 20 }] });
+      await page.waitForTimeout(16);
+    }
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    await page.waitForTimeout(300);
+  }
+  async function pinch(cdp: CDPSession, page: Page, { x, y }: { x: number; y: number }, from: number, to: number) {
+    const fingers = (gap: number) => [{ x: x - gap, y, id: 0 }, { x: x + gap, y, id: 1 }];
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: fingers(from) });
+    for (let i = 1; i <= 12; i++) {
+      await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: fingers(from + ((to - from) * i) / 12) });
+      await page.waitForTimeout(16);
+    }
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    await page.waitForTimeout(300);
+  }
+
+  test('a phone swipe scrolls the page wherever the finger lands', async ({ page }) => {
+    test.skip(!isPhone(page), 'Phone layout only');
+    const app = await signedIn(page), cdp = await page.context().newCDPSession(page), stuck: string[] = [];
+    for (const selector of touchTargets) {
+      const point = await touchPoint(page, selector), before = await page.evaluate(() => scrollY);
+      await swipeUp(cdp, page, point);
+      if ((await page.evaluate(() => scrollY)) <= before + 50) stuck.push(selector);
+    }
+    expect(stuck).toEqual([]);
+    await expectHealthy(page, app, 'phone swipe');
+  });
+
+  test('market prices and wide tables still swipe sideways on a phone', async ({ page }) => {
+    test.skip(!isPhone(page), 'Phone layout only');
+    const app = await signedIn(page), cdp = await page.context().newCDPSession(page), stuck: string[] = [];
+    for (const selector of ['.phone-market-strip', '.phone-overall-sections .overflow-auto:has(table)']) {
+      const { y } = await touchPoint(page, selector);
+      const scrolled = () => page.evaluate((css) => Math.max(...[...document.querySelectorAll(css)].map((el) => el.scrollLeft)), selector);
+      const before = await scrolled();
+      await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: 350, y }] });
+      for (let i = 1; i <= 12; i++) {
+        await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: 350 - i * 22, y }] });
+        await page.waitForTimeout(16);
+      }
+      await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+      await page.waitForTimeout(300);
+      if ((await scrolled()) < before + 50) stuck.push(selector);
+    }
+    expect(stuck).toEqual([]);
+    await expectHealthy(page, app, 'phone sideways swipe');
+  });
+
+  test('the phone screen can be pinched to zoom in and back out', async ({ page }) => {
+    test.skip(!isPhone(page), 'Phone layout only');
+    const app = await signedIn(page), cdp = await page.context().newCDPSession(page), stuck: string[] = [];
+    const scale = () => page.evaluate(() => visualViewport!.scale);
+    for (const selector of touchTargets) {
+      const point = await touchPoint(page, selector);
+      await pinch(cdp, page, point, 30, 120);
+      if ((await scale()) < 1.5) stuck.push(selector + ' in');
+      await pinch(cdp, page, { x: 180, y: 400 }, 150, 20);
+      await pinch(cdp, page, { x: 180, y: 400 }, 150, 20);
+      if ((await scale()) > 1.05) stuck.push(selector + ' out');
+    }
+    expect(stuck).toEqual([]);
+    await expectHealthy(page, app, 'phone pinch');
+  });
+
+  test('the phone main menu sits on one line, even on a small phone', async ({ page }) => {
+    test.skip(!isPhone(page), 'Phone layout only');
+    const app = await signedIn(page), strip = page.getByRole('navigation', { name: 'Mobile section navigation' });
+    for (const width of [320, 360, 412, 480]) {
+      await page.setViewportSize({ width, height: 800 });
+      const tops = new Set<number>();
+      for (const name of ['Summary', 'Investments', 'Goals', 'Forecast', 'Settings']) {
+        const button = strip.getByRole('button', { name });
+        await expect(button).toBeInViewport({ ratio: 1 });
+        tops.add(Math.round((await button.boundingBox())!.y));
+        expect(await button.evaluate((el) => el.scrollWidth <= el.clientWidth), `${name} fits at ${width}px`).toBe(true);
+      }
+      expect(tops.size, `one line at ${width}px`).toBe(1);
+    }
+    await expectHealthy(page, app, 'phone menu line');
+  });
+
+  test('the phone add button sits on the left', async ({ page }) => {
+    test.skip(!isPhone(page), 'Phone layout only');
+    await signedIn(page);
+    const right = () => page.getByRole('button', { name: 'Add an expense' }).evaluate((el) => el.getBoundingClientRect().right);
+    await expect.poll(right).toBeLessThan(page.viewportSize()!.width / 2);
   });
 
   test('every phone menu option can be seen without sideways scrolling', async ({ page }) => {

@@ -68,7 +68,7 @@
 }
 
 /* Quick expense capture. */
-.expense-fab { position: fixed; right: 16px; bottom: 84px; z-index: 40; display: grid; place-items: center; width: 56px; height: 56px; border-radius: 50%; background: #0071e3; color: #fff; box-shadow: 0 8px 22px rgba(15, 23, 42, .28); }
+.expense-fab { position: fixed; left: 16px; bottom: 84px; z-index: 40; display: grid; place-items: center; width: 56px; height: 56px; border-radius: 50%; background: #0071e3; color: #fff; box-shadow: 0 8px 22px rgba(15, 23, 42, .28); }
 .expense-sheet { position: fixed; inset: 0; z-index: 46; display: flex; align-items: flex-end; background: rgba(15, 23, 42, .5); }
 .expense-sheet > div { display: grid; gap: 12px; width: 100%; max-height: 90vh; overflow: auto; padding: 16px; border-radius: 18px 18px 0 0; background: #fff; color: #0f172a; }
 .expense-sheet header { display: flex; align-items: center; justify-content: space-between; }
@@ -1596,7 +1596,7 @@ form,
 .overflow-auto {
   -webkit-overflow-scrolling: touch;
   scrollbar-width: none;
-  touch-action: pan-x pan-y;
+  touch-action: manipulation;
 }
 
 .overflow-auto::-webkit-scrollbar,
@@ -1615,7 +1615,7 @@ form,
 .mobile-tabbar {
   -webkit-overflow-scrolling: touch;
   scrollbar-width: none;
-  touch-action: pan-x;
+  touch-action: manipulation;
 }
 
 .mobile-appbar,
@@ -1718,7 +1718,7 @@ form,
     padding: 0.5rem;
     -webkit-overflow-scrolling: touch;
     scrollbar-width: none;
-    touch-action: pan-x;
+    touch-action: manipulation;
   }
 
   .phone-module-strip::-webkit-scrollbar {
@@ -3102,7 +3102,7 @@ body {
   .phone-screen {
     height: auto;
     overflow-y: visible !important;
-    touch-action: pan-y;
+    touch-action: manipulation;
   }
 
   main,
@@ -3227,7 +3227,7 @@ body {
   padding-bottom: 4px;
   scrollbar-width: thin;
   scrollbar-color: #b8892b #f6ead7;
-  touch-action: pan-x pan-y;
+  touch-action: manipulation;
 }
 
 .property-holdings-table::-webkit-scrollbar {

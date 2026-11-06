@@ -6550,7 +6550,7 @@ export default function AssetManagerApp() {
           min-height: calc(100vh - 72px);
           overflow-x: hidden !important;
           overflow-y: visible !important;
-          touch-action: pan-y !important;
+          touch-action: manipulation !important;
           background:
             radial-gradient(circle at -8% 0%, rgba(255,226,148,.45), transparent 17rem),
             radial-gradient(circle at 108% 4%, rgba(154,31,94,.11), transparent 18rem),
@@ -6562,7 +6562,7 @@ export default function AssetManagerApp() {
           max-width: 100vw !important;
           overflow-x: hidden !important;
           overflow-y: visible !important;
-          touch-action: pan-y !important;
+          touch-action: manipulation !important;
         }
         /* The desktop dashboard panels on a phone. .phone-screen's text colour is for dark cards and
            the shared phone rules turn tables into cards without headings, leaving amounts unlabelled. */
@@ -7147,6 +7147,18 @@ export default function AssetManagerApp() {
           padding: 0 10px !important;
           font-size: 12px !important;
           letter-spacing: -.03em !important;
+        }
+        /* The five main options share one line at any phone width. The longer Investments list still wraps. */
+        .mobile-tabbar.mobile-top-nav.mobile-main-nav {
+          flex-wrap: nowrap !important;
+          gap: 2px !important;
+          padding: 5px !important;
+        }
+        .mobile-tabbar.mobile-top-nav.mobile-main-nav button {
+          flex: 1 1 auto !important;
+          min-width: 0 !important;
+          padding: 0 3px !important;
+          font-size: clamp(10.5px, 3.1vw, 13px) !important;
         }
         .mobile-tabbar.mobile-top-nav .mobile-nav-back {
           border: 1px solid rgba(83,43,72,.12) !important;
@@ -7989,7 +8001,7 @@ export default function AssetManagerApp() {
             </div>
           </div>
         )}
-        <nav className="mobile-tabbar mobile-top-nav" aria-label="Mobile section navigation">
+        <nav className={`mobile-tabbar mobile-top-nav ${mobileNavMode === "investments" ? "" : "mobile-main-nav"}`} aria-label="Mobile section navigation">
           {mobileNavMode === "investments" && (
             <button
               type="button"
