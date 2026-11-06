@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { fmt, formatDate } from '@/lib/calculations';
 import { HIGHER_YIELD_PERCENT, type BuySignal, type dividendHistory } from '@/lib/dividendCalendar';
+import OneRowTabs, { usePhoneTabs } from '@/components/OneRowTabs';
 
 const yieldText = (signal: BuySignal) => (signal.yieldPct === null ? '' : ` · ${signal.yieldPct.toFixed(2)}%`);
 
@@ -17,10 +18,13 @@ type Props = { signals: BuySignal[]; loading: boolean; exploring: boolean; explo
 
 export default function DividendRadar({ signals, loading, exploring, explored, checked, missing, onExplore }: Props) {
   const [source, setSource] = useState('All');
+  const phone = usePhoneTabs();
   const sources = ['All', 'Holding', 'Watchlist', 'Large company'], rows = source === 'All' ? signals : signals.filter(signal => signal.source === source);
   return <section className="mom" aria-label="Dividend buy radar">
     <div className="mom-toolbar">
-      <div className="mom-measures" role="group" aria-label="Which stocks">{sources.map(option => <button key={option} type="button" aria-pressed={source === option} onClick={() => setSource(option)}>{option}</button>)}</div>
+      {phone
+        ? <OneRowTabs label="Which stocks" tabs={sources.map(option => ({ id: option, label: option, active: source === option, onSelect: () => setSource(option) }))} />
+        : <div className="mom-measures" role="group" aria-label="Which stocks">{sources.map(option => <button key={option} type="button" aria-pressed={source === option} onClick={() => setSource(option)}>{option}</button>)}</div>}
       <button type="button" className="btn-primary" disabled={exploring || explored} onClick={onExplore}>{exploring ? 'Checking large companies…' : explored ? 'Large companies checked' : 'Explore large companies'}</button>
     </div>
     <p className="mom-note">Stocks with an announced dividend you can still qualify for. To qualify, buy by the date shown and hold through the ex-date. {checked} stocks checked.</p>

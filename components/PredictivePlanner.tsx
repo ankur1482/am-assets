@@ -1,13 +1,14 @@
 "use client";
 
 import { useEffect, useId, useRef, useState } from 'react';
+import OneRowTabs, { usePhoneTabs } from '@/components/OneRowTabs';
 import { Activity, Download, Flag, TrendingUp, Wallet } from 'lucide-react';
 import { fmt, formatDate, formatMonth, num } from '@/lib/calculations';
 import { amortizeDebt, goalForecast, indiaDate, marketProjection, planningSnapshot, projectCashFlow, projectWealth, type DebtInput, type HistoryPoint, type PlanningRecord } from '@/lib/predictions';
 
 export type ForecastTab = 'wealth' | 'goals' | 'cash' | 'market';
 type Props = { records: PlanningRecord[]; netWorth: number; accessToken: string; initialTab?: ForecastTab };
-const tabs = [{ id: 'wealth', title: 'Wealth & retirement', icon: TrendingUp }, { id: 'goals', title: 'Goal readiness', icon: Flag }, { id: 'cash', title: 'Cash flow & loans', icon: Wallet }, { id: 'market', title: 'Market trends', icon: Activity }] as const;
+const tabs = [{ id: 'wealth', title: 'Wealth & retirement', short: 'Wealth', icon: TrendingUp }, { id: 'goals', title: 'Goal readiness', short: 'Goals', icon: Flag }, { id: 'cash', title: 'Cash flow & loans', short: 'Cash & loans', icon: Wallet }, { id: 'market', title: 'Market trends', short: 'Market', icon: Activity }] as const;
 
 function NumberField({ label, value, onChange, min = 0, max = 1e15, step = 'any', hint }: { label: string; value: string; onChange: (v: string) => void; min?: number; max?: number; step?: string; hint?: string }) {
   const id = useId();
@@ -118,14 +119,15 @@ export default function PredictivePlanner({ records, netWorth, accessToken, init
   }
 
   const sectionId = useId();
+  const phone = usePhoneTabs();
   return <section className="forecast-planner" aria-label="Predictive planner">
     <header className="forecast-heading"><div><span className="forecast-eyebrow">Plan ahead</span><h3>Predictive Planner</h3><p>Explore your next move with your household’s saved records and editable assumptions.</p></div><button type="button" className="btn" onClick={exportForecast}><Download size={16} /> Export plan</button></header>
-    <div className="forecast-tabs" role="tablist" aria-label="Forecast type" onKeyDown={event => {
+    {phone ? <OneRowTabs label="Forecast type" tabs={tabs.map(t => ({ id: t.id, label: t.short, fullName: t.title, active: tab === t.id, onSelect: () => setTab(t.id) }))} /> : <div className="forecast-tabs" role="tablist" aria-label="Forecast type" onKeyDown={event => {
       const index = tabs.findIndex(t => t.id === tab);
       const next = event.key === 'ArrowRight' ? (index + 1) % tabs.length : event.key === 'ArrowLeft' ? (index + tabs.length - 1) % tabs.length : event.key === 'Home' ? 0 : event.key === 'End' ? tabs.length - 1 : -1;
       if (next >= 0) { event.preventDefault(); setTab(tabs[next].id); event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="tab"]')[next]?.focus(); }
-    }}>{tabs.map(t => <button type="button" key={t.id} id={`${sectionId}-${t.id}`} role="tab" tabIndex={tab === t.id ? 0 : -1} aria-selected={tab === t.id} aria-controls={`${sectionId}-panel`} onClick={() => setTab(t.id)}><t.icon size={16} />{t.title}</button>)}</div>
-    <div role="tabpanel" id={`${sectionId}-panel`} aria-labelledby={`${sectionId}-${tab}`}>
+    }}>{tabs.map(t => <button type="button" key={t.id} id={`${sectionId}-${t.id}`} role="tab" tabIndex={tab === t.id ? 0 : -1} aria-selected={tab === t.id} aria-controls={`${sectionId}-panel`} onClick={() => setTab(t.id)}><t.icon size={16} />{t.title}</button>)}</div>}
+    <div role="tabpanel" id={`${sectionId}-panel`} {...(phone ? { 'aria-label': tabs.find(t => t.id === tab)?.title } : { 'aria-labelledby': `${sectionId}-${tab}` })}>
       {(tab === 'wealth' || tab === 'goals') && <div className="forecast-assumptions"><NumberField label="Base annual return (%)" value={annualReturn} onChange={setAnnualReturn} min={-50} max={40} /><NumberField label="Inflation (%)" value={inflation} onChange={setInflation} max={20} hint="Used to show wealth in today’s rupees." /><p>Example assumptions are editable. Returns are effective annual rates; contributions arrive at month end. Goal targets use the amounts already saved.</p></div>}
       {tab === 'wealth' && <div className="forecast-stack">
         <div className="forecast-stats"><Stat label="Current net worth" value={fmt(netWorth)} /><Stat label={`Base in ${horizon} years`} value={fmt(real ? base.final.real : base.final.nominal)} note={real ? 'Today’s purchasing power' : 'Future rupees'} /><Stat label="New contributions" value={fmt(base.final.contributed)} note="Over the selected horizon" /><Stat label="Retirement withdrawals" value={fmt(base.final.withdrawn)} /></div>

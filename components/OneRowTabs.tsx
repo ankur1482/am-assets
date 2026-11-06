@@ -3,6 +3,22 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { fitTabs } from "@/lib/oneRowTabs";
 
+/**
+ * True on a phone inside the app. Screens shared with desktop use this to swap in the phone row, and
+ * keep their own tabs elsewhere, including standalone pages that lack the app's styles.
+ */
+export function usePhoneTabs() {
+  const [phone, setPhone] = useState(false);
+  useLayoutEffect(() => {
+    const query = window.matchMedia("(max-width: 1024px)"),
+      sync = () => setPhone(query.matches && !!document.querySelector(".app-shell"));
+    sync();
+    query.addEventListener("change", sync);
+    return () => query.removeEventListener("change", sync);
+  }, []);
+  return phone;
+}
+
 export type OneRowTab = {
   id: string;
   label: string;

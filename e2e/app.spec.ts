@@ -375,6 +375,44 @@ test.describe('logged-in app', () => {
     await expectHealthy(page, app, 'phone single rows');
   });
 
+  test('forecast, month on month and dividend radar use the same single row', async ({ page }) => {
+    test.skip(!isPhone(page), 'Phone layout only');
+    const app = await signedIn(page), strip = page.getByRole('navigation', { name: 'Mobile section navigation' });
+    const check = async (name: string, width: number) => {
+      const row = page.getByRole('group', { name });
+      await expect(row, `${name} uses the shared row`).toHaveClass(/mobile-main-nav/);
+      const tops = await row.evaluate((el) => [...el.querySelectorAll(':scope > button, :scope > .one-row-more > button')].map((b) => Math.round(b.getBoundingClientRect().top)));
+      expect(Math.max(...tops) - Math.min(...tops), `${name} on one line at ${width}: ${tops}`).toBeLessThanOrEqual(2);
+      const box = (await row.boundingBox())!;
+      expect(box.x + box.width, `${name} fits at ${width}`).toBeLessThanOrEqual(width + 1);
+    };
+    for (const width of [320, 412]) {
+      await page.setViewportSize({ width, height: 800 });
+      await strip.getByRole('button', { name: 'Forecast' }).click();
+      await check('Forecast type', width);
+      const goals = page.getByRole('group', { name: 'Forecast type' }).getByRole('button', { name: 'Goal readiness' });
+      await tapTab(page.getByRole('group', { name: 'Forecast type' }), 'Goal readiness');
+      await expect(goals).toHaveAttribute('aria-pressed', 'true');
+      await page.getByRole('button', { name: 'Month on Month' }).click();
+      await check('Monthly or yearly items', width);
+      await check('What to show', width);
+      await strip.getByRole('button', { name: 'Investments' }).click().catch(() => undefined);
+      await tapTab(strip, 'Stocks');
+      await tapTab(page.getByRole('group', { name: 'Accounts' }), /^Dividend Buy Radar \(/);
+      await check('Which stocks', width);
+      await strip.getByRole('button', { name: 'Back to summary navigation' }).click();
+    }
+    await expectHealthy(page, app, 'phone screen rows');
+  });
+
+  test('desktop keeps its own forecast tabs', async ({ page }) => {
+    test.skip(isPhone(page), 'Desktop layout only');
+    const app = await signedIn(page);
+    await open(page, app, /^Predictive Planner/);
+    await expect(page.getByRole('tablist', { name: 'Forecast type' })).toBeVisible();
+    await expect(page.getByRole('tab', { name: 'Wealth & retirement' })).toBeVisible();
+  });
+
   test('the More list closes when you tap away', async ({ page }) => {
     test.skip(!isPhone(page), 'Phone layout only');
     await signedIn(page);

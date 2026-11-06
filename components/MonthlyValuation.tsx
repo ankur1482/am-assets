@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from 'react';
+import OneRowTabs, { usePhoneTabs } from '@/components/OneRowTabs';
 import { fmt, formatMonth, num } from '@/lib/calculations';
 import { financialYearMonths, financialYearOf, financialYearTotal, isFlow, isYearlyRow, ledgerTable, netCashFlow, netWorthOn, sumCells, yearlyLedgerTable, yearlyPeriodFor, type LedgerField, type LedgerRow, type MonthData } from '@/lib/monthlyValuation';
 
@@ -18,7 +19,8 @@ export default function MonthlyValuation({ months, currentMonth, canEdit, onSave
   const [cadence, setCadence] = useState<Cadence>('monthly'), [year, setYear] = useState(thisYear), [measure, setMeasure] = useState<Measure>('both'), [account, setAccount] = useState('All');
   const [editing, setEditing] = useState<{ rowId: string; column: string; field: LedgerField; text: string } | null>(null), [saving, setSaving] = useState(false);
   const yearly = cadence === 'yearly';
-  const measures: { id: Measure; title: string }[] = [{ id: 'both', title: 'Start & End' }, { id: 'start', title: yearly ? 'Start of year' : 'Start of month' }, { id: 'end', title: yearly ? 'End of year' : 'End of month' }, { id: 'change', title: yearly ? 'Change in year' : 'Change in month' }, { id: 'gain', title: 'Gain vs purchase' }];
+  const phone = usePhoneTabs();
+  const measures: { id: Measure; title: string; short: string }[] = [{ id: 'both', title: 'Start & End', short: 'Start & End' }, { id: 'start', title: yearly ? 'Start of year' : 'Start of month', short: 'Start' }, { id: 'end', title: yearly ? 'End of year' : 'End of month', short: 'End' }, { id: 'change', title: yearly ? 'Change in year' : 'Change in month', short: 'Change' }, { id: 'gain', title: 'Gain vs purchase', short: 'Gain' }];
   const columns = useMemo(() => yearly
     ? [...years].sort((a, b) => a - b).map(value => ({ key: String(value), title: yearLabel(value), current: value === thisYear }))
     : financialYearMonths(year, currentMonth).map(period => ({ key: period, title: monthLabel(period), current: period === currentMonth })), [yearly, years, thisYear, year, currentMonth]);
@@ -72,10 +74,14 @@ export default function MonthlyValuation({ months, currentMonth, canEdit, onSave
 
   return <section className="mom" aria-label="Month on month valuation">
     <div className="mom-toolbar">
-      <div className="mom-measures" role="group" aria-label="Monthly or yearly items">{(['monthly', 'yearly'] as const).map(option => <button key={option} type="button" aria-pressed={cadence === option} onClick={() => { setCadence(option); setEditing(null); }}>{option === 'monthly' ? 'Monthly items' : 'Yearly items'}</button>)}</div>
+      {phone
+        ? <OneRowTabs label="Monthly or yearly items" tabs={(['monthly', 'yearly'] as const).map(option => ({ id: option, label: option === 'monthly' ? 'Monthly' : 'Yearly', fullName: option === 'monthly' ? 'Monthly items' : 'Yearly items', active: cadence === option, onSelect: () => { setCadence(option); setEditing(null); } }))} />
+        : <div className="mom-measures" role="group" aria-label="Monthly or yearly items">{(['monthly', 'yearly'] as const).map(option => <button key={option} type="button" aria-pressed={cadence === option} onClick={() => { setCadence(option); setEditing(null); }}>{option === 'monthly' ? 'Monthly items' : 'Yearly items'}</button>)}</div>}
       {!yearly && <label>Financial year<select value={year} onChange={event => { setYear(Number(event.target.value)); setEditing(null); }}>{years.map(value => <option key={value} value={value}>{yearLabel(value)}</option>)}</select></label>}
       <label>Account<select value={account} onChange={event => setAccount(event.target.value)}>{accounts.map(value => <option key={value}>{value}</option>)}</select></label>
-      <div className="mom-measures" role="group" aria-label="What to show">{measures.map(option => <button key={option.id} type="button" aria-pressed={measure === option.id} onClick={() => setMeasure(option.id)}>{option.title}</button>)}</div>
+      {phone
+        ? <OneRowTabs label="What to show" tabs={measures.map(option => ({ id: option.id, label: option.short, fullName: option.title, active: measure === option.id, onSelect: () => setMeasure(option.id) }))} />
+        : <div className="mom-measures" role="group" aria-label="What to show">{measures.map(option => <button key={option.id} type="button" aria-pressed={measure === option.id} onClick={() => setMeasure(option.id)}>{option.title}</button>)}</div>}
     </div>
     <p className="mom-note">{yearly ? 'Property, loan balances, insurance, PPF, Sukanya, FDs and other long-term deposits, by financial year (April to March). Each year opens at the previous year\'s close.' : 'Stocks, funds, gold, savings, salary, rent, dividends and loan EMIs. Each month opens at the previous month\'s close. The current month updates when the app is open and is fixed when the month ends.'}{canEdit ? ' Click any figure to edit it, including past periods; clear it to undo. An orange dot marks an edited figure.' : ''}</p>
     {!rows.length && <p className="mom-note">Nothing recorded yet. Values are saved automatically from this month onward.</p>}
