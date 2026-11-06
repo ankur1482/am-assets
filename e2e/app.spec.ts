@@ -457,8 +457,8 @@ test.describe('logged-in app', () => {
     test.skip(!isPhone(page), 'Phone layout only');
     const app = await signedIn(page), strip = page.getByRole('navigation', { name: 'Mobile section navigation' });
     await expect(page.getByRole('group', { name: 'Dashboard sections' })).toBeVisible();
-    await page.evaluate(() => scrollTo({ top: 2500, behavior: 'instant' }));
-    await expect.poll(() => page.evaluate(() => scrollY)).toBeGreaterThan(2000);
+    // The page grows as the app finishes loading, so keep trying until there is room to scroll.
+    await expect.poll(() => page.evaluate(() => { scrollTo({ top: 2500, behavior: 'instant' }); return scrollY; })).toBeGreaterThan(2000);
     await expect(page.locator('.mobile-appbar')).toBeInViewport({ ratio: 1 });
     await expect(strip).toBeInViewport({ ratio: 1 });
     await strip.getByRole('button', { name: 'Goals' }).click();
@@ -484,6 +484,17 @@ test.describe('logged-in app', () => {
     const lines = await add.evaluate((el) => el.getBoundingClientRect().height);
     expect(lines).toBeLessThan(50);
     expect(await add.evaluate((el) => el.getBoundingClientRect().right)).toBeLessThanOrEqual(320);
+  });
+
+  test('the performance chart is readable on a phone', async ({ page }) => {
+    test.skip(!isPhone(page), 'Phone layout only');
+    await signedIn(page);
+    const chart = page.getByRole('img', { name: /performance graph/ }).locator('visible=true');
+    await expect(chart).toBeVisible();
+    const scale = () => chart.evaluate((el) => (el as unknown as SVGSVGElement).getBoundingClientRect().width / (el as unknown as SVGSVGElement).viewBox.baseVal.width);
+    // Its 11-unit labels should show at no less than about 9 pixels.
+    await expect.poll(scale).toBeGreaterThan(0.8);
+    await expect(page.getByText(/^\d{2}-[A-Z][a-z]{2}-\d{4}$/).locator('visible=true').first()).toBeVisible();
   });
 
   test('the More list closes when you tap away', async ({ page }) => {

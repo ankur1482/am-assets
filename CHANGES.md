@@ -13,6 +13,14 @@ These backups cover the app itself, not your financial data. Your data is covere
 
 ---
 
+## 6 Nov 2026, 19:36: Easier-to-read chart on the phone
+
+Backup taken before this release: `backup-2026-11-06-1936-IST`
+
+- **All Investments Performance chart:** its labels were far too small to read on a phone. The chart is now drawn at phone size, with fewer labels so they don't overlap.
+- **Chart dates** now look like the rest of the app, such as 06-Nov-2026.
+- **Monthly Portfolio Analysis:** its figure now lines up with the text on the phone.
+
 ## 6 Nov 2026, 19:26: Matching figures, and a steadier phone screen
 
 Backup taken before this release: `backup-2026-11-06-1926-IST`

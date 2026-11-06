@@ -10887,9 +10887,10 @@ export default function AssetManagerApp() {
       chartMin = Math.max(0, minValue - padding),
       chartMax = maxValue + padding,
       chartSpan = Math.max(1, chartMax - chartMin),
-      width = 900,
-      height = 280,
-      plotLeft = 82,
+      // Drawn at about its real size on a phone, or its labels shrink with it.
+      width = phoneMode ? 340 : 900,
+      height = phoneMode ? 256 : 280,
+      plotLeft = phoneMode ? 56 : 82,
       plotRight = 18,
       plotTop = 24,
       plotBottom = 24,
@@ -11173,9 +11174,9 @@ export default function AssetManagerApp() {
                 const pointX = x(index),
                   currentY = y(point.current),
                   investedY = y(point.invested),
-                  labelEvery = Math.max(1, Math.ceil(points.length / 6)),
+                  labelEvery = Math.max(1, Math.ceil(points.length / (phoneMode ? 3 : 6))),
                   showPointLabel =
-                    points.length <= 8 ||
+                    points.length <= (phoneMode ? 3 : 8) ||
                     index === 0 ||
                     index === points.length - 1 ||
                     index % labelEvery === 0,
@@ -11236,8 +11237,8 @@ export default function AssetManagerApp() {
               })}
             </svg>
             <div className="mt-1 flex justify-between text-xs font-semibold text-gray-500">
-              <span>{points[0]?.date || today}</span>
-              <span>{points[points.length - 1]?.date || today}</span>
+              <span>{formatDate(points[0]?.date || today)}</span>
+              <span>{formatDate(points[points.length - 1]?.date || today)}</span>
             </div>
         </div>
         <div className="phone-stack mt-4 grid grid-cols-5 gap-3 max-xl:grid-cols-3 max-md:grid-cols-1">
@@ -12879,7 +12880,7 @@ export default function AssetManagerApp() {
               </p>
             </div>
             <div
-              className={`text-right ${monthMove >= 0 ? "text-emerald-700" : "text-red-700"}`}
+              className={`text-right max-md:text-left ${monthMove >= 0 ? "text-emerald-700" : "text-red-700"}`}
             >
               <div className="text-xl font-semibold tabular-nums">
                 {monthMove >= 0 ? "+" : ""}
