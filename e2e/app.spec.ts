@@ -217,10 +217,16 @@ test.describe('logged-in app', () => {
         // A money figure cut short by an ellipsis.
         clipped: all.filter((el) => getComputedStyle(el).textOverflow === 'ellipsis' && el.scrollWidth > el.clientWidth + 1).map(named),
         // Amounts must keep their column headings.
-        headless: [...document.querySelectorAll('.phone-overall-sections table')].filter((t) => { const head = t.querySelector('thead'); return head && !head.getBoundingClientRect().height; }).map(named),
+        headless: [...document.querySelectorAll('.phone-overall-sections table')].filter((t) => { const head = t.querySelector('thead'); return head && !head.getBoundingClientRect().height && [...t.querySelectorAll('td:not(:first-child)')].some((td) => !td.hasAttribute('data-label') && getComputedStyle(td).display !== 'none'); }).map(named),
       };
     });
     expect(problems).toEqual({ faint: [], clipped: [], headless: [] });
+    // Tables fit the phone as cards, rather than scrolling sideways, and every figure keeps a label.
+    const sideways = await page.evaluate(() => [...document.querySelectorAll('.phone-overall-sections table.phone-cards')]
+      .filter((t) => t.getBoundingClientRect().height && t.scrollWidth > t.parentElement!.clientWidth + 1)
+      .map((t) => t.querySelector('th')?.textContent));
+    expect(sideways).toEqual([]);
+    expect(await page.locator('.phone-overall-sections table.phone-cards').count()).toBeGreaterThanOrEqual(2);
     await expectHealthy(page, app, 'phone overall sections');
   });
 
@@ -309,10 +315,11 @@ test.describe('logged-in app', () => {
     await expectHealthy(page, app, 'phone swipe');
   });
 
-  test('market prices and wide tables still swipe sideways on a phone', async ({ page }) => {
+  // Wide tables became cards that fit the screen, so the market price strip is what still scrolls sideways.
+  test('market prices still swipe sideways on a phone', async ({ page }) => {
     test.skip(!isPhone(page), 'Phone layout only');
     const app = await signedIn(page), cdp = await page.context().newCDPSession(page), stuck: string[] = [];
-    for (const selector of ['.phone-market-strip', '.phone-overall-sections .overflow-auto:has(table)']) {
+    for (const selector of ['.phone-market-strip']) {
       const { y } = await touchPoint(page, selector);
       const scrolled = () => page.evaluate((css) => Math.max(...[...document.querySelectorAll(css)].map((el) => el.scrollLeft)), selector);
       const before = await scrolled();
@@ -450,7 +457,7 @@ test.describe('logged-in app', () => {
         const named = (el: Element) => (el.textContent || '').trim().slice(0, 30);
         return {
           faint: all.filter((el) => el.children.length === 0 && el.textContent?.trim() && getComputedStyle(el).color === 'rgb(244, 247, 242)').map(named),
-          headless: [...document.querySelectorAll('.phone-overall-sections table')].filter((t) => { const head = t.querySelector('thead'); return head && !head.getBoundingClientRect().height; }).map(named),
+          headless: [...document.querySelectorAll('.phone-overall-sections table')].filter((t) => { const head = t.querySelector('thead'); return head && !head.getBoundingClientRect().height && [...t.querySelectorAll('td:not(:first-child)')].some((td) => !td.hasAttribute('data-label') && getComputedStyle(td).display !== 'none'); }).map(named),
           cutOff: all.filter((el) => {
             const box = el.getBoundingClientRect();
             if (!box.width || box.right <= innerWidth + 1) return false;

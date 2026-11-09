@@ -13,6 +13,14 @@ These backups cover the app itself, not your financial data. Your data is covere
 
 ---
 
+## 9 Nov 2026, 21:50: Dashboard tables fit the phone
+
+Backup taken before this release: `backup-2026-11-09-2150-IST`
+
+- **Overall Dashboard table (phone):** it was about three screens wide, so you had to swipe sideways and the figures were cut off at the edge. Each line (Stocks, Mutual Funds, Property and so on) is now a small card: the name and its All / Add / Edit links on top, then Invested, Today's gain, Overall gain and Current value underneath, each with its label. The My Networth line works the same way.
+- **All Investments Performance table (phone):** the same treatment, one card per person with Cost basis, Current value and Performance.
+- **The computer view is unchanged.** Your figures are the same; only the phone layout changed.
+
 ## 9 Nov 2026, 21:35: Tappable More lists, and a solid phone header
 
 Backup taken before this release: `backup-2026-11-09-2135-IST`

@@ -6584,6 +6584,28 @@ export default function AssetManagerApp() {
         .phone-overall-sections .overflow-auto tr { display: table-row; border: 0 !important; padding: 0; background: transparent; box-shadow: none; }
         .phone-overall-sections .overflow-auto th,
         .phone-overall-sections .overflow-auto td { display: table-cell; padding: 8px 10px !important; border-bottom: 1px solid #e7ebdf !important; white-space: nowrap !important; }
+        /* Wide tables become one card per row on the phone: the name across the top, then each figure
+           under its own label, so nothing needs sideways scrolling or gets cut off. */
+        .phone-overall-sections .overflow-auto:has(> table.phone-cards) { overflow-x: visible !important; }
+        .phone-overall-sections .overflow-auto table.phone-cards { display: block; width: 100% !important; min-width: 0 !important; }
+        .phone-overall-sections .overflow-auto table.phone-cards thead {
+          position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap;
+        }
+        .phone-overall-sections .overflow-auto table.phone-cards tbody { display: block; }
+        .phone-overall-sections .overflow-auto table.phone-cards tr {
+          display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 14px;
+          padding: 12px 14px; border-bottom: 1px solid #e7ebdf !important;
+        }
+        .phone-overall-sections .overflow-auto table.phone-cards td {
+          display: block; min-width: 0; padding: 0 !important; border: 0 !important;
+          white-space: normal !important; text-align: left !important; overflow-wrap: anywhere;
+        }
+        .phone-overall-sections .overflow-auto table.phone-cards td:first-child { grid-column: 1 / -1; }
+        .phone-overall-sections .overflow-auto table.phone-cards td[data-label]::before {
+          content: attr(data-label); display: block; margin-bottom: 2px;
+          font-size: 10px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: #6b7280;
+        }
+        .phone-overall-sections .overflow-auto table.phone-cards td.phone-card-empty { display: none; }
 
         .phone-market-strip {
           display: flex !important;
@@ -10024,7 +10046,7 @@ export default function AssetManagerApp() {
           </div>
         </div>
         <div className="overflow-auto bg-white">
-          <table className="w-full min-w-[920px] border-collapse text-sm">
+          <table className="phone-cards w-full min-w-[920px] border-collapse text-sm">
             <thead className="bg-[#efe9e1] text-left">
               <tr>
                 <th className="px-4 py-3 text-xs font-semibold uppercase tracking-widest text-[#40584c]">
@@ -10116,7 +10138,7 @@ export default function AssetManagerApp() {
                         )}
                       </div>
                     </td>
-                    <td className="px-4 py-4 text-right font-bold tabular-nums">
+                    <td data-label="Invested" className="px-4 py-4 text-right font-bold tabular-nums">
                       {row.protection ? (
                         <>
                           {fmt(row.invested)}
@@ -10130,13 +10152,14 @@ export default function AssetManagerApp() {
                     </td>
                     {row.protection ? (
                       <>
-                        <td className="px-4 py-4 text-right text-gray-400">-</td>
-                        <td className="px-4 py-4 text-right text-gray-400">-</td>
+                        <td className="phone-card-empty px-4 py-4 text-right text-gray-400">-</td>
+                        <td className="phone-card-empty px-4 py-4 text-right text-gray-400">-</td>
                       </>
                     ) : (
                       <>
                         {hasToday ? (
                           <td
+                            data-label="Today's gain"
                             className={`px-4 py-4 text-right tabular-nums ${row.today >= 0 ? "text-green-700" : "text-red-700"}`}
                           >
                             <span className="font-bold">{fmt(row.today)}</span>{" "}
@@ -10145,11 +10168,12 @@ export default function AssetManagerApp() {
                             </span>
                           </td>
                         ) : (
-                          <td className="px-4 py-4 text-right text-gray-400">
+                          <td className="phone-card-empty px-4 py-4 text-right text-gray-400">
                             -
                           </td>
                         )}
                         <td
+                          data-label="Overall gain"
                           className={`px-4 py-4 text-right tabular-nums ${row.gain >= 0 ? "text-green-700" : "text-red-700"}`}
                         >
                           <span className="font-bold">
@@ -10164,6 +10188,7 @@ export default function AssetManagerApp() {
                       </>
                     )}
                     <td
+                      data-label="Current value"
                       className={`px-4 py-4 text-right font-bold tabular-nums ${row.latest < 0 ? "text-red-700" : "text-[#17382b]"}`}
                     >
                       {fmt(row.latest)}
@@ -10195,15 +10220,17 @@ export default function AssetManagerApp() {
               })}
               <tr className="border-t border-[#78b495] bg-[#f7fbf5] font-semibold">
                 <td className="px-4 py-3 text-[#004080]">My Networth</td>
-                <td className="px-4 py-3 text-right tabular-nums">
+                <td data-label="Invested" className="px-4 py-3 text-right tabular-nums">
                   {fmt(totals.invested)}
                 </td>
                 <td
+                  data-label="Today's gain"
                   className={`px-4 py-3 text-right tabular-nums ${todayTotal >= 0 ? "text-green-700" : "text-red-700"}`}
                 >
                   {fmt(todayTotal)}
                 </td>
                 <td
+                  data-label="Overall gain"
                   className={`px-4 py-3 text-right tabular-nums ${totals.gain >= 0 ? "text-green-700" : "text-red-700"}`}
                 >
                   {fmt(totals.gain)}{" "}
@@ -10217,7 +10244,7 @@ export default function AssetManagerApp() {
                     )
                   </span>
                 </td>
-                <td className="px-4 py-3 text-right tabular-nums">
+                <td data-label="Net worth" className="px-4 py-3 text-right tabular-nums">
                   {fmt(totals.net)}
                 </td>
               </tr>
@@ -11277,7 +11304,7 @@ export default function AssetManagerApp() {
           )}
         </div>
         <div className="mt-4 overflow-auto rounded-2xl border border-[#e3dccc] bg-white">
-          <table className="w-full min-w-[650px] border-collapse text-sm">
+          <table className="phone-cards w-full min-w-[650px] border-collapse text-sm">
             <thead className="bg-[#f5efe3] text-left text-xs uppercase tracking-widest">
               <tr>
                 <th className="p-3">Account</th>
@@ -11292,11 +11319,12 @@ export default function AssetManagerApp() {
                 return (
                   <tr key={row.account} className="border-t border-[#eee6d9]">
                     <td className="p-3 font-semibold">{row.account}</td>
-                    <td className="p-3 text-right">{fmt(row.invested)}</td>
-                    <td className="p-3 text-right font-semibold">
+                    <td data-label="Cost basis" className="p-3 text-right">{fmt(row.invested)}</td>
+                    <td data-label="Current value" className="p-3 text-right font-semibold">
                       {fmt(row.current)}
                     </td>
                     <td
+                      data-label="Performance"
                       className={`p-3 text-right font-semibold ${gain >= 0 ? "text-emerald-700" : "text-red-700"}`}
                     >
                       {fmt(gain)}
