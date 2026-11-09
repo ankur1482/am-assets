@@ -3748,3 +3748,21 @@ main .border-sage,
 main .border-leaf {
   border-color: var(--ft-accent) !important;
 }
+
+/* Buttons inside tables, such as Manage and Show 3 lots, keep their words whole on one line. Cells
+   may break long words, and that used to split "Manage" into "Mana / ge" when the table got tight. */
+td button.btn,
+td button.btn-primary,
+td button.btn-danger,
+td button.pill {
+  white-space: nowrap !important;
+  word-break: keep-all !important;
+  overflow-wrap: normal !important;
+  flex-shrink: 0;
+}
+
+/* Column headings wrap between words, never inside one ("TRANSACTI / ON"). */
+thead th {
+  word-break: normal !important;
+  overflow-wrap: normal !important;
+}

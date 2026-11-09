@@ -13,6 +13,14 @@ These backups cover the app itself, not your financial data. Your data is covere
 
 ---
 
+## 10 Nov 2026, 00:09: Buttons and headings no longer split words
+
+Backup taken before this release: `backup-2026-11-10-0009-IST`
+
+- **"Mana / ge" fixed.** When a table got tight, such as Stocks with several lots open, the **Manage** button broke its word in half, and **Show 3 lots** wrapped onto two lines. Buttons inside tables now always keep their text on one line, and the column keeps room for them.
+- **Column headings** wrap between words only, so "TRANSACTION" no longer splits into "TRANSACTI / ON".
+- This applies to every table in the app, not only Stocks.
+
 ## 9 Nov 2026, 21:50: Dashboard tables fit the phone
 
 Backup taken before this release: `backup-2026-11-09-2150-IST`

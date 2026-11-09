@@ -1,5 +1,5 @@
 import { expect, test, type CDPSession, type Locator, type Page } from '@playwright/test';
-import { expectHealthy, openApp, type MockedApp } from './helpers';
+import { expectHealthy, fixtureRecords, openApp, type MockedApp } from './helpers';
 
 const isPhone = (page: Page) => (page.viewportSize()?.width ?? 1440) <= 1024;
 
@@ -34,6 +34,28 @@ test.describe('logged-in app', () => {
   test('never contacts real services', async ({ page }) => {
     const app = await signedIn(page);
     expect(app.unexpected.filter(url => url.includes('zkjjdvkykhwkrpkyxkfj'))).toEqual([]);
+  });
+
+  test('table buttons and headings never split a word, even when the table is tight', async ({ page }) => {
+    test.skip(isPhone(page), 'The phone shows cards instead');
+    // A stock bought in several lots, as real holdings often are, gives the table its widest layout.
+    const records = fixtureRecords(), stock = records.find((r) => r.data.ticker_symbol === 'EXPAINT')!;
+    for (let i = 0; i < 3; i++) records.push({ ...stock, id: `55555555-5555-4555-8555-00000000000${i}`, data: { ...stock.data, purchase_date: `2024-0${i + 3}-10`, quantity: 5 + i } });
+    const app = await openApp(page, records);
+    await expect(page.getByText(/Overall Dashboard/).locator('visible=true').first()).toBeVisible();
+    await page.setViewportSize({ width: 1040, height: 900 });
+    await open(page, app, /^Stocks/);
+    await page.getByRole('button', { name: /^Show \d+ lots$/ }).locator('visible=true').first().click();
+    await expect(page.getByRole('button', { name: 'Manage' }).locator('visible=true').first()).toBeVisible();
+    const split = await page.evaluate(() => [...document.querySelectorAll('td button, thead th')].filter((el) => {
+      const style = getComputedStyle(el);
+      if (!el.getBoundingClientRect().height || !el.textContent?.trim()) return false;
+      // Breaking inside a word is what turned "Manage" into "Mana / ge".
+      const breaksWords = style.wordBreak === 'break-all' || style.wordBreak === 'break-word' || style.overflowWrap === 'anywhere' || style.overflowWrap === 'break-word';
+      return el.matches('td button') ? style.whiteSpace !== 'nowrap' || breaksWords : breaksWords;
+    }).map((el) => el.textContent?.trim()));
+    expect(split).toEqual([]);
+    await expectHealthy(page, app, 'tight table');
   });
 
   test('every sidebar screen opens', async ({ page }) => {
