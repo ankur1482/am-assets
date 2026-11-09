@@ -9,10 +9,15 @@ async function signedIn(page: Page) {
   return app;
 }
 // Taps a tab in a phone row, opening that row's More list if the tab is in there.
+// The row can re-sort while a screen is still loading, as tab counts fill in, so a tab may move into
+// More between looking and tapping. Keep trying until the tap lands.
 async function tapTab(scope: Page | Locator, name: string | RegExp) {
-  const tab = scope.getByRole('button', { name, exact: typeof name === 'string' });
-  if (!(await tab.first().isVisible())) await scope.getByRole('button', { name: 'More ▾' }).first().click();
-  await tab.first().click();
+  const tab = scope.getByRole('button', { name, exact: typeof name === 'string' }).first();
+  const more = scope.getByRole('button', { name: 'More ▾' }).first();
+  await expect(async () => {
+    if (!(await tab.isVisible()) && (await more.getAttribute('aria-expanded', { timeout: 1000 })) !== 'true') await more.click({ timeout: 2000 });
+    await tab.click({ timeout: 2000 });
+  }).toPass({ timeout: 30_000 });
 }
 const nav = (page: Page, name: string | RegExp) => page.locator('.desktop-sidebar, aside, nav').getByRole('button', { name }).first();
 async function open(page: Page, app: MockedApp, name: string | RegExp) {

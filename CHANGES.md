@@ -13,6 +13,14 @@ These backups cover the app itself, not your financial data. Your data is covere
 
 ---
 
+## 9 Nov 2026: Automatic checks fixed (the app itself didn't change)
+
+No backup was needed, because only the automatic tests changed.
+
+- **Checks that broke with the calendar:** from the 8th of each month, the made-up test household had overdue monthly documents, so the app locked and nearly every phone test failed. The tests now always run as if it were 5 Nov 2026, so the date no longer changes their results.
+- **Indian time:** GitHub's machines run on UTC. The tests now use India time, as you do.
+- **The red mark from 6 Nov:** one phone test sometimes tapped a tab just as the row was rearranging itself while loading. It now retries until the tap lands. The app behaved correctly; the test was too impatient.
+
 ## 6 Nov 2026, 19:36: Easier-to-read chart on the phone
 
 Backup taken before this release: `backup-2026-11-06-1936-IST`

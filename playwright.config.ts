@@ -13,7 +13,8 @@ export default defineConfig({
   retries: process.env.CI ? 1 : 0,
   // On CI, also report failures as annotations, which can be read without signing in to GitHub.
   reporter: process.env.CI ? [['list'], ['github']] : [['list']],
-  use: { baseURL: `http://localhost:${PORT}`, trace: 'retain-on-failure', screenshot: 'only-on-failure' },
+  // Indian time, as the household uses it, so GitHub's UTC machines see the same dates. E2E_TZ overrides it.
+  use: { timezoneId: process.env.E2E_TZ || 'Asia/Kolkata', baseURL: `http://localhost:${PORT}`, trace: 'retain-on-failure', screenshot: 'only-on-failure' },
   projects: [
     { name: 'desktop', use: { ...devices['Desktop Chrome'], viewport: { width: 1440, height: 900 } } },
     { name: 'phone', use: { ...devices['Pixel 7'] } },

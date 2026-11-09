@@ -4,6 +4,8 @@ export const WORKSPACE_ID = '11111111-1111-4111-8111-111111111111';
 const USER_ID = '22222222-2222-4222-8222-222222222222';
 const SUPABASE = 'https://e2e-test.supabase.co';
 
+// The day the tests run as. Every date in the data below is set relative to this day.
+export const TODAY = new Date('2026-11-05T12:00:00+05:30');
 const user = { id: USER_ID, aud: 'authenticated', role: 'authenticated', email: 'test.user@example.com', app_metadata: {}, user_metadata: {}, created_at: '2026-01-01T00:00:00Z' };
 const access = { member_role: 'owner', status: 'active', all_modules: true, modules: [], can_edit: true, can_delete: true, can_manage_members: true, can_view_documents: true, can_upload_documents: true };
 const row = (id: string, module_key: string, data: Record<string, any>) => ({ id, module_key, data, user_id: USER_ID, workspace_id: WORKSPACE_ID, created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z' });
@@ -36,6 +38,11 @@ export type MockedApp = { errors: string[]; writes: { method: string; table: str
 export async function openApp(page: Page, records = fixtureRecords()): Promise<MockedApp> {
   const app: MockedApp = { errors: [], writes: [], unexpected: [] };
   const rows = [...records];
+  // A fixed day keeps date rules, such as monthly documents falling overdue after the 7th, from
+  // changing what the tests see as the calendar moves on. Timers still run normally.
+  await page.clock.setFixedTime(TODAY);
+  // Set E2E_FONT=Verdana to approximate the wider font Linux CI falls back to.
+  if (process.env.E2E_FONT) await page.addInitScript((font) => document.addEventListener('DOMContentLoaded', () => { const s = document.createElement('style'); s.textContent = `*{font-family:${font} !important}`; document.head.append(s); }), process.env.E2E_FONT);
   page.on('pageerror', error => app.errors.push(error.message));
   page.on('console', message => { if (message.type() === 'error' && /ReferenceError|TypeError|before initialization|is not a function|Minified React error/.test(message.text())) app.errors.push(message.text()); });
   // Anything reaching beyond this machine is refused and recorded, which keeps the tests self-contained.
