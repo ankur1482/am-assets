@@ -235,6 +235,13 @@ test.describe('logged-in app', () => {
     // The chosen tab moves into the row, so it stays on show.
     await expect(accounts.getByRole('button', { name: /^Dividend Buy Radar \(/ })).toHaveClass(/active/);
     await expect(accounts.getByRole('button', { name: /^Dividend Buy Radar \(/ })).toBeInViewport({ ratio: 1 });
+    // Every option in an open More list must be what a finger lands on, not the row beneath it.
+    await accounts.getByRole('button', { name: 'More ▾' }).click();
+    const covered = await accounts.locator('.one-row-more-menu button').evaluateAll((items) => items.filter((item) => {
+      const box = item.getBoundingClientRect();
+      return !item.contains(document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2));
+    }).map((item) => item.textContent));
+    expect(covered).toEqual([]);
     await tapTab(accounts, /^Dividends Earned \(/);
     await expect(page.getByRole('region', { name: 'Dividends earned table' }).getByText('Sold Example')).toBeVisible();
 
@@ -520,6 +527,24 @@ test.describe('logged-in app', () => {
     await signedIn(page);
     const right = () => page.getByRole('button', { name: 'Add an expense' }).evaluate((el) => el.getBoundingClientRect().right);
     await expect.poll(right).toBeLessThan(page.viewportSize()!.width / 2);
+  });
+
+  test('the phone header is solid, and the last card scrolls clear of the + button', async ({ page }) => {
+    test.skip(!isPhone(page), 'Phone layout only');
+    await signedIn(page);
+    // Figures scrolling under the header or the sticky tab row must not show through them.
+    for (const css of ['.mobile-appbar', '.mobile-tabbar.mobile-top-nav'])
+      // The screen is rebuilt once as the app starts, so wait for the colour to settle.
+      await expect.poll(() => page.evaluate((sel) => { const el = document.querySelector(sel); return el && getComputedStyle(el).backgroundColor; }, css), { message: css }).toBe('rgb(255, 255, 255)');
+    // Scroll to the end on every check, as the page grows while it loads.
+    const overlap = () => page.evaluate(() => {
+      window.scrollTo(0, document.documentElement.scrollHeight);
+      const fab = document.querySelector('.expense-fab')!.getBoundingClientRect();
+      const cards = [...document.querySelectorAll('.phone-content section, .phone-content article')].map((el) => el.getBoundingClientRect()).filter((r) => r.height > 0);
+      const lastBottom = Math.max(...cards.map((r) => r.bottom));
+      return lastBottom > fab.top;
+    });
+    await expect.poll(overlap).toBe(false);
   });
 
   test('every phone menu option can be seen without sideways scrolling', async ({ page }) => {

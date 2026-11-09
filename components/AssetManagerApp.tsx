@@ -7145,6 +7145,9 @@ export default function AssetManagerApp() {
           max-width: 100% !important;
           margin: 0 !important;
         }
+        /* A row with its More list open sits above the rows below it, which would otherwise cover the
+           list and take the tap. It stays under the header and the stuck main menu. */
+        .mobile-tabbar.mobile-top-nav.mobile-main-nav.one-row-inline.one-row-open { z-index: 38 !important; }
         .one-row-more { position: relative; display: flex; flex: 0 0 auto; }
         .mobile-tabbar.mobile-top-nav.mobile-main-nav .one-row-more > button { flex: 0 0 auto !important; }
         .one-row-more-menu {
@@ -7192,8 +7195,9 @@ export default function AssetManagerApp() {
           font-size: 18px !important;
           line-height: 1 !important;
         }
+        /* Room at the end, so the last card can scroll clear of the floating + button. */
         .phone-content {
-          padding-bottom: 18px !important;
+          padding-bottom: calc(96px + env(safe-area-inset-bottom, 0px)) !important;
         }
 
         .mobile-menu-panel {
@@ -7857,6 +7861,13 @@ export default function AssetManagerApp() {
           background: linear-gradient(180deg, rgba(121,15,70,.45), rgba(198,150,50,.55));
           border: 3px solid rgba(255,248,235,.9);
           border-radius: 999px;
+        }
+        /* The header, menu and sticky tab row keep each theme's tint, laid over solid white, so
+           figures scrolling underneath no longer show through. Amazon's navy is already solid. */
+        .app-shell:not(.app-theme-amazon) .mobile-appbar,
+        .app-shell:not(.app-theme-amazon) .mobile-menu-panel,
+        .app-shell:not(.app-theme-amazon) .mobile-tabbar.mobile-top-nav {
+          background-color: #fff !important;
         }
       `}</style>
       {sidebarCollapsed && (

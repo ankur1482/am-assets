@@ -13,6 +13,14 @@ These backups cover the app itself, not your financial data. Your data is covere
 
 ---
 
+## 9 Nov 2026, 21:35: Tappable More lists, and a solid phone header
+
+Backup taken before this release: `backup-2026-11-09-2135-IST`
+
+- **More ▾ lists could not always be tapped (phone).** On Stocks, opening **More ▾** in the account tabs dropped a list over the "Which stocks" row of Dividend Buy Radar. That row sat on top, so tapping Watchlist or ETFs hit the row underneath instead. An open list now sits above everything around it. This was the real cause of the red mark on GitHub from 6 Nov, so the entry below was wrong to call it a test problem.
+- **The header no longer shows what's behind it.** Figures scrolling under the top header, the stuck menu row and the menu used to show faintly through them. They are now solid, in the same colours.
+- **The blue + button sits lower.** It was 84 pixels up from the bottom, covering cards mid-screen. It now sits in the corner, and the end of each page has room to scroll the last card clear of it.
+
 ## 9 Nov 2026: Automatic checks fixed (the app itself didn't change)
 
 No backup was needed, because only the automatic tests changed.

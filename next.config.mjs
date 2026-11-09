@@ -17,6 +17,8 @@ const nextConfig=(phase)=>{
   ].join('; ');
   return {
     reactStrictMode:true,
+    // The development badge sits over the phone's + button. It never appears on the live site.
+    devIndicators:false,
     distDir:isDev?'.next-dev':'.next',
     async headers(){
       return [{source:'/:path*',headers:[

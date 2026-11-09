@@ -120,7 +120,7 @@ export default function OneRowTabs({ tabs, label, navigation = false, sticky = f
         </div>
       </>
     ),
-    className = `mobile-tabbar mobile-top-nav mobile-main-nav ${sticky ? "" : "one-row-inline"}`;
+    className = `mobile-tabbar mobile-top-nav mobile-main-nav ${sticky ? "" : "one-row-inline"} ${open ? "one-row-open" : ""}`;
 
   return navigation ? (
     <nav ref={(el) => { root.current = el; }} className={className} aria-label={label}>
