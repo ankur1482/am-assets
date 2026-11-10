@@ -38,6 +38,7 @@ import {
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { startForegroundRefresh } from "@/lib/foregroundRefresh";
+import { APP_VERSION } from "@/lib/appVersion";
 import MonthlyUploads from "@/components/MonthlyUploads";
 import BackupCenter, { type BackupTarget } from "@/components/BackupCenter";
 import { backupFileName, backupFingerprint } from "@/lib/backups";
@@ -7963,6 +7964,7 @@ export default function AssetManagerApp() {
         >
           <LogOut size={16} className="inline" /> Sign out
         </button>
+        <div className="mt-2 text-center text-[11px] text-gray-500">Version {APP_VERSION}</div>
         <div
           className="sidebar-resizer"
           role="separator"
@@ -8054,6 +8056,7 @@ export default function AssetManagerApp() {
               <button className="btn" onClick={signOutSafely}>
                 <LogOut size={16} /> Sign out
               </button>
+              <div className="mt-2 text-center text-[11px] text-gray-500">Version {APP_VERSION}</div>
             </div>
           </div>
         )}

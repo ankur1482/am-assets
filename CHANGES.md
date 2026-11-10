@@ -2,6 +2,8 @@
 
 Newest first, written in plain English. Times are India time.
 
+**Version numbers:** from 10 Nov 2026 every release gets a version number, starting at 10.11 and going up by one each time (10.12, 10.13 and so on). The number in use is shown under **Sign out**, both in the side panel on a computer and in the phone menu, so you can tell which release you are looking at.
+
 **Going back to an earlier version:** each release lists a backup name. The backup is saved two ways:
 
 - A zip of the code in `D:\asset-manager-backups\`, with the date and time in its name.
@@ -13,13 +15,14 @@ These backups cover the app itself, not your financial data. Your data is covere
 
 ---
 
-## 10 Nov 2026, 11:35: Mutual fund prices refresh again
+## Version 10.11 (10 Nov 2026, 11:35): Mutual fund prices refresh again
 
 Backup taken before this release: `backup-2026-11-10-1132-IST`
 
 - **Mutual fund NAVs were not updating.** AMFI, the official source for fund prices, added two columns ("Plan" and "Option") to its daily price file and moved it to a new web address. The app was reading the wrong column, so every fund said "NAV not available". It now finds the price column by its heading. If AMFI moves columns again, the app keeps working.
 - **Today's change on holidays and weekends.** When the market is closed, for example today's Diwali Balipratipada holiday, stocks showed a change of 0 for the day. They now show the change from the last trading day, as most brokers do.
 - **Stock, gold and silver prices staying the same today is expected.** NSE is closed for the holiday, so the latest price is Monday's close.
+- **Version number shown.** This is the first numbered release. "Version 10.11" now appears under Sign out.
 
 ## 10 Nov 2026, 00:09: Buttons and headings no longer split words
 
