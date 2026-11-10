@@ -59,7 +59,7 @@ function oauthConfig(){
   const clientId=process.env.GOOGLE_OAUTH_CLIENT_ID;
   const clientSecret=process.env.GOOGLE_OAUTH_CLIENT_SECRET;
   if(!clientId||!clientSecret)throw new Error('Missing Google OAuth credentials. Add GOOGLE_OAUTH_CLIENT_ID and GOOGLE_OAUTH_CLIENT_SECRET to .env.local.');
-  const origin=process.env.NEXT_PUBLIC_APP_URL||'https://gupta.vercel.app';
+  const origin=process.env.NEXT_PUBLIC_APP_URL||'https://ankurgupta.vercel.app';
   const redirectUri=process.env.GOOGLE_OAUTH_REDIRECT_URI||`${origin}/api/google-drive/callback`;
   return {clientId,clientSecret,redirectUri};
 }

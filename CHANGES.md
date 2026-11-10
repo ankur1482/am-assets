@@ -15,6 +15,14 @@ These backups cover the app itself, not your financial data. Your data is covere
 
 ---
 
+## Version 10.26 (10 Nov 2026, 16:18): What you still owe builders, insurance as yearly on the dashboard
+
+Backup taken before this release: `backup-2026-11-10-1618-IST`
+
+- **Net worth counts what you still owe builders.** For a home being built, the part of the price not yet paid (**Still to pay**) now counts as owed until the home is ready. It reduces your net worth everywhere: Home, the Overall Dashboard table (a new **Still to pay builders** line), Goals and the Predictive Planner. This only applies to a home with at least one builder payment recorded (or **Paid so far from your own money** entered), so a home with nothing recorded is not shown as owing its whole price. Record its payments under **Homes being built** to include it. Once a home is marked Ready, nothing is counted as owed to the builder.
+- **Insurance is yearly on the dashboard too.** The monthly cash-flow card no longer takes a twelfth of the yearly premiums from every month. **Premiums + Investments** is now **Investments** (monthly), with a separate **Insurance This Year** figure. **Available Cash Flow** now leaves insurance out, matching the Predictive Planner, which takes each premium in the month it falls due.
+- **Web address.** The guide and the app's fallback settings now use the live address, `https://ankurgupta.vercel.app`, instead of the old one that no longer works.
+
 ## Version 10.25 (10 Nov 2026, 15:55): Employment drives salary, Company PF and gratuity
 
 Backup taken before this release: `backup-2026-11-10-1555-IST`

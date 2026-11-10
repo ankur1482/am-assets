@@ -87,7 +87,8 @@ export function planningSnapshot(records: PlanningRecord[], asOf = indiaDate()) 
   const monthlyIncome = monthlySalary + monthlyRent + monthlyDividend;
   const monthlyRegular = monthlyRegularTotal(recurringPayments(records));
   const directExpenses = monthlyDirectExpenses(records, asOf.slice(0, 7));
-  const availableCashFlow = monthlyIncome - monthlyEmi - monthlyPremium - monthlyInvestment - monthlyRegular - directExpenses;
+  // Insurance is paid yearly, in the month each premium falls due, so it is not taken from every month.
+  const availableCashFlow = monthlyIncome - monthlyEmi - monthlyInvestment - monthlyRegular - directExpenses;
   return { monthlyDirectExpenses: directExpenses, monthlyRegular, rentals, monthlySalary, monthlyRent, monthlyDividend, savingsBalance, cashAtHome, odParked, liquidity: savingsBalance + cashAtHome + odParked, monthlyIncome, monthlyEmi, availableCashFlow, monthlyInvestment, monthlyPremium, annualPremium: monthlyPremium * 12, premiumSchedule, salaryEnds, debts, warnings };
 }
 

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { computeRecord, computeTotals } from "./calculations";
 import { cleanPayments, constructionSummary } from "./construction";
 
 describe("property being built", () => {
@@ -27,5 +28,18 @@ describe("property being built", () => {
 
   it("drops payments with no id or amount, and bad dates", () => {
     expect(cleanPayments([{ id: "", amount: 5 }, { id: "y", amount: 0 }, { id: "z", amount: 10, date: "soon" }, "junk"])).toEqual([{ id: "z", date: "", amount: 10, from: "own", note: undefined }]);
+  });
+});
+
+
+describe("still to pay the builder counts as owed", () => {
+  const home = { construction_status: "Under Construction", purchase_price: 10_000_000, latest_value: 10_000_000, construction_payments: [{ id: "a", date: "2026-01-01", amount: 3_000_000, from: "own" }] };
+  it("is owed until possession once a payment is recorded", () => {
+    expect(computeRecord("property", home).construction_owed).toBe(7_000_000);
+    expect(computeTotals([{ module_key: "property", data: home }])).toMatchObject({ assets: 10_000_000, liabilities: 7_000_000, net: 3_000_000 });
+  });
+  it("is not counted when nothing is recorded, or once the home is ready", () => {
+    expect(computeRecord("property", { ...home, construction_payments: [] }).construction_owed).toBe(0);
+    expect(computeRecord("property", { ...home, construction_status: "Ready" }).construction_owed).toBe(0);
   });
 });

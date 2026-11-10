@@ -3289,10 +3289,11 @@ export default function AssetManagerApp() {
           ["Rent In", flow.monthlyRent],
           ["Dividends In", flow.monthlyDividend],
           ["Loan EMIs", -flow.monthlyEmi],
-          ["Premiums + Investments", -(flow.monthlyPremium + flow.monthlyInvestment)],
+          ["Investments", -flow.monthlyInvestment],
+          ["Insurance This Year", -flow.annualPremium, "Paid in the month each premium is due, not every month"],
           ["Regular Payments", -flow.monthlyRegular],
           ["Daily Expenses", -flow.monthlyDirectExpenses, "Google Pay and cash this month"],
-          ["Available Cash Flow", flow.availableCashFlow, "Each month, after the payments you have listed"],
+          ["Available Cash Flow", flow.availableCashFlow, "Each month, after EMIs, investments and payments (insurance is yearly)"],
         ])}
       </div>
     );
@@ -9763,7 +9764,7 @@ export default function AssetManagerApp() {
       }
       if (k === "insurance") assets += num(c.latest);
       if (["loans", "borrowings"].includes(k)) liabilities += num(c.balance);
-      if (k === "property") liabilities += num(c.balance);
+      if (k === "property") liabilities += num(c.balance) + num(c.construction_owed);
     });
     return {
       assets,
@@ -10148,7 +10149,28 @@ export default function AssetManagerApp() {
           synthetic: false,
         };
       });
-    const rows = [...investmentRows, ...insuranceRows, ...liabilityRows].filter(
+    // Homes being built: what is still to pay the builder is owed until possession.
+    const builderOwed = records
+        .filter((r) => r.module_key === "property")
+        .reduce((s, r) => s + num(computeRecord("property", r.data).construction_owed), 0),
+      builderRows = builderOwed > 0
+        ? [{
+            k: "builders",
+            openKey: "property",
+            def: { ...MODULES.property, title: "Still to pay builders" },
+            rs: records.filter((r) => r.module_key === "property" && isUnderConstruction(r.data || {})),
+            invested: builderOwed,
+            latest: -builderOwed,
+            gain: 0,
+            today: 0,
+            interestIncurredFy: 0,
+            deathCover: 0,
+            liability: true,
+            protection: false,
+            synthetic: true,
+          }]
+        : [];
+    const rows = [...investmentRows, ...insuranceRows, ...liabilityRows, ...builderRows].filter(
       (r) => r.rs.length || r.invested || r.latest || r.gain || r.today,
     );
     const todayTotal = rows
@@ -10175,7 +10197,7 @@ export default function AssetManagerApp() {
             <p className="mt-1 text-xs font-semibold text-[#40584c]">
               Net Worth = Stocks + Mutual Funds + ULIPs + Bullion + NSEL
               e-Series + Fixed Income + Insurance + Property + Other Assets -
-              Loans (incl. property-linked loans) - Borrowings ={" "}
+              Loans (incl. property-linked loans) - Borrowings - Still to pay builders ={" "}
               {fmt(assetCurrent - liabilityCurrent)}
             </p>
             {!!fixedIncomeCurrentWorth && (
@@ -15213,6 +15235,7 @@ Salary will stop counting as income, Company PF contributions will stop (interes
       { key: "loans", label: "Loans", value: MODULES.loans ? sumBalance("loans") : 0 },
       { key: "propertyLoans", label: "Property loans", value: propertyLoans },
       { key: "borrowings", label: "Borrowings", value: MODULES.borrowings ? sumBalance("borrowings") : 0 },
+      { key: "builders", label: "Still to pay builders", value: records.filter((r) => r.module_key === "property").reduce((t, r) => t + num(computeRecord("property", r.data).construction_owed), 0) },
     ];
     const goalRecords = records.filter((r) => r.module_key === "goals");
     const goalInputs = goalRecords.map((r) => ({
