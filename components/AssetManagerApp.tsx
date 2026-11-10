@@ -959,7 +959,11 @@ const Modal = memo(function Modal({
 }) {
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+      // Above the sticky phone header (z 60), so nothing covers the window or its Close button.
+      className="app-modal fixed inset-0 z-[90] flex items-center justify-center bg-black/40 p-4"
+      role="dialog"
+      aria-modal="true"
+      aria-label={title}
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
@@ -970,7 +974,7 @@ const Modal = memo(function Modal({
       >
         <div className="flex items-center justify-between border-b border-[#e3dccc] p-5">
           <h3 className="text-2xl font-semibold">{title}</h3>
-          <button className="btn" onClick={onClose}>
+          <button type="button" className="btn modal-close" onClick={onClose}>
             Close
           </button>
         </div>

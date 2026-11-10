@@ -3931,3 +3931,13 @@ thead th {
 
 /* The quick-expense button once it has moved into the phone header. */
 .mobile-appbar .mobile-icon-btn.expense-header-btn, .app-shell .mobile-appbar .mobile-icon-btn.expense-header-btn { background: #0071e3 !important; color: #fff !important; border-color: #0071e3 !important; }
+
+/* Phone pop-up windows: always above the app header, with Close clear of the notch and easy to hit. */
+@media (max-width: 1024px) {
+  .app-modal { z-index: 90 !important; }
+  .app-modal > div > div:first-child { padding-top: calc(env(safe-area-inset-top) + 0.75rem) !important; align-items: center !important; }
+  .app-modal .modal-close {
+    min-height: 44px !important; min-width: 88px; padding: 0 18px !important;
+    background: #17382b !important; color: #fff !important; border-color: #17382b !important; font-weight: 800;
+  }
+}

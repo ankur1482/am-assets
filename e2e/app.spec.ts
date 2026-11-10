@@ -557,6 +557,26 @@ test.describe('logged-in app', () => {
     await expect.poll(right).toBeLessThan(page.viewportSize()!.width / 2);
   });
 
+  test('a record opened on the phone sits above the header, and Close stays on top while scrolling', async ({ page }) => {
+    test.skip(!isPhone(page), 'Phone layout only');
+    await signedIn(page);
+    await pickInvestment(page, /^Insurance/);
+    await page.locator('.phone-content .phone-row-main').first().click();
+    const win = page.locator('.app-modal');
+    await expect(win).toBeVisible();
+    // Scroll the record, as on a long policy.
+    await win.evaluate((el) => { const body = el.querySelector(':scope > div > div:last-child') as HTMLElement; body.scrollTop = body.scrollHeight; });
+    const close = win.locator('.modal-close');
+    await expect(close).toBeInViewport({ ratio: 1 });
+    // Nothing (such as the app header) is drawn over the Close button or the record.
+    const onTop = await close.evaluate((el) => { const b = el.getBoundingClientRect(); return el.contains(document.elementFromPoint(b.x + b.width / 2, b.y + b.height / 2)); });
+    expect(onTop).toBe(true);
+    const headerOver = await page.evaluate(() => { const hit = document.elementFromPoint(innerWidth / 2, 60); return !!hit?.closest('.mobile-appbar'); });
+    expect(headerOver).toBe(false);
+    await close.click();
+    await expect(win).toHaveCount(0);
+  });
+
   test('the phone add-expense button moves to the top right after 15 seconds unused', async ({ page }) => {
     test.skip(!isPhone(page), 'Phone layout only');
     test.setTimeout(60_000);

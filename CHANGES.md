@@ -15,6 +15,13 @@ These backups cover the app itself, not your financial data. Your data is covere
 
 ---
 
+## Version 10.29 (10 Nov 2026, 18:47): Close is always reachable on the phone
+
+Backup taken before this release: `backup-2026-11-10-1847-IST`
+
+- **Opened records are no longer covered by the app header.** On the phone, when you open a record (for example a policy under Insurance), the app's own header could sit over it as you scrolled, hiding part of the details. Open records, forms and other pop-up windows now always sit above it.
+- **A bigger, clearer Close button.** **Close** is now a dark, full-size button at the top right. It stays there while you scroll, below the phone's clock and notch.
+
 ## Version 10.28 (10 Nov 2026, 18:18): Menu arrow on the left edge, accounts row back, expense button moves to the top
 
 Backup taken before this release: `backup-2026-11-10-1818-IST`
