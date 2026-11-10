@@ -15,6 +15,21 @@ These backups cover the app itself, not your financial data. Your data is covere
 
 ---
 
+## Version 10.23 (10 Nov 2026, 15:16): New Home screen and a five-area menu
+
+Backup taken before this release: `backup-2026-11-10-1516-IST`
+
+- **Home.** The first screen is now **Home**: a set of tiles, one for each thing you usually open the app to check. Each tile shows the answer at a glance; click or tap it to open the detail.
+  - **Net worth**: today's figure, today's change, and what you own and owe.
+  - **Goals**: the expected value at the target dates as a share of all targets, and how many goals are on track, close or need work.
+  - **This month's cash**: money ready to use (savings, cash and money parked in OD), monthly income, and what is still to pay this month.
+  - **Loans**: total owed, monthly EMIs and when the next loan clears.
+  - **To do**: documents to upload, payments still to make, dividends to confirm, premiums due in 30 days, fixed income values to review and goals needing work. Each opens the right place, and it says "All clear" when there is nothing.
+  - **Investments** (computer): each type you hold, with its value, share and today's change.
+
+  The earlier dashboard sections are still below the tiles, under **Details**. On the phone the tiles replace the summary block at the top.
+- **Five-area menu.** The side panel and phone menu are now **Home**, **Investments**, **Plan** (Goals, Predictive Planner), **Loans** and **More** (Purchase Calculator, Automatic Backups, Settings, Admin Console). **Investments** lists only the types you hold; **Show all types** reveals the others, and **Show only what I hold** hides them again. The phone's bottom row reads **Home**, **Investments**, **Goals**, **Forecast**, **Settings**.
+
 ## Version 10.22 (10 Nov 2026, 14:59): A simpler dashboard and menu
 
 Backup taken before this release: `backup-2026-11-10-1459-IST`

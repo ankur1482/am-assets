@@ -212,7 +212,7 @@ type WorkspaceMember = {
   profile?: { email?: string; full_name?: string };
 };
 const views = [
-  ["dashboard", "DB", "Dashboard"],
+  ["dashboard", "DB", "Home"],
   ["allInvestments", "AI", "All Investments"],
   [TRANSACTION_MODULE, "TX", "Transactions"],
   ["stocks", "ST", "Stocks"],
@@ -238,8 +238,9 @@ const views = [
   ["household", "HH", "Household Access"],
   ["settings", "SET", "Settings"],
 ];
+// Five areas. Investments lists only the types you hold, with "Show all types" for the rest.
 const groups = [
-  ["Core", ["dashboard"]],
+  ["Home", ["dashboard"]],
   [
     "Investments",
     [
@@ -257,10 +258,9 @@ const groups = [
   // Removed from the menus on 10 Nov 2026 at the user's request (the screens and their data remain):
   // All Investments, Transactions, Borrowings, Month on Month, Earnings by Person, Monthly Uploads,
   // Watchlist (still a tab on Stocks), Alerts and Household Access.
-  ["Liabilities", ["loans"]],
-  ["Planning", ["goals", "futureWealth"]],
-  ["Utility", ["purchaseCalculator", "backups", "settings"]],
-  ["Admin", ["admin"]],
+  ["Plan", ["goals", "futureWealth"]],
+  ["Loans", ["loans"]],
+  ["More", ["purchaseCalculator", "backups", "settings", "admin"]],
 ];
 const allViews = [...views, ["admin", "Admin", "Admin Console"]];
 // Stored with a record but not part of its edit form, so saving the form must carry them over.
@@ -1064,6 +1064,7 @@ export default function AssetManagerApp() {
     [homeListOpen, setHomeListOpen] = useState<boolean | null>(null),
     // Goals table starts with the goals needing the most work first.
     [goalsSort, setGoalsSort] = useState<{ key: string; direction: "asc" | "desc" }>({ key: "projection_status", direction: "asc" }),
+    [showAllInvestmentTypes, setShowAllInvestmentTypes] = useState(false),
     [paymentDraft, setPaymentDraft] = useState<{ propertyId: string; date: string; amount: string; from: "own" | "loan"; note: string } | null>(null),
     [plannedDraft, setPlannedDraft] = useState<{ goalId: string; instrument: string; type: keyof GrowthRates; mode: "monthly" | "once"; amount: string; note: string; rate: string } | null>(null),
     [goalGrowthInput, setGoalGrowthInput] = useState<Partial<Record<keyof GrowthRates, string>>>({}),
@@ -4802,6 +4803,7 @@ export default function AssetManagerApp() {
       setDocUploading(false);
     }
   }
+  const heldTypes = new Set(records.map((r) => r.module_key));
   const visibleGroups = groups
     .map(([g, ids]: any) => [
       g,
@@ -4809,10 +4811,24 @@ export default function AssetManagerApp() {
         (id: string) =>
           (id !== "admin" || isAdmin) &&
           (id === "admin" || canViewModule(id)) &&
-          isTabShown(id),
+          isTabShown(id) &&
+          (g !== "Investments" || showAllInvestmentTypes || heldTypes.has(id) || view === id || !heldTypes.size),
       ),
     ])
     .filter(([, ids]: any) => ids.length);
+  const hiddenInvestmentTypes = (groups.find(([g]) => g === "Investments")?.[1] as string[]).filter(
+    (id) => canViewModule(id) && isTabShown(id) && !heldTypes.has(id),
+  ).length;
+  const investmentTypesToggle = (compact = false) =>
+    hiddenInvestmentTypes > 0 && heldTypes.size > 0 ? (
+      <button
+        type="button"
+        className={compact ? "mobile-nav-item text-xs opacity-80" : "w-full rounded-2xl px-3 py-1.5 text-left text-xs font-semibold text-gray-500 hover:bg-[#eef5ee]"}
+        onClick={() => setShowAllInvestmentTypes((v) => !v)}
+      >
+        {showAllInvestmentTypes ? "Show only what I hold" : `Show all types (+${hiddenInvestmentTypes})`}
+      </button>
+    ) : null;
   const navButton = (id: string, compact = false) => {
     const meta = allViews.find((v) => v[0] === id);
     const NavIcon = ({
@@ -4859,7 +4875,7 @@ export default function AssetManagerApp() {
     );
   };
   const mobileMainTabs = [
-    ["dashboard", "Summary", Home],
+    ["dashboard", "Home", Home],
     ["investments", "Investments", BriefcaseBusiness],
     ["goals", "Goals", CheckCircle2],
     ["futureWealth", "Forecast", Sparkles],
@@ -5652,10 +5668,6 @@ export default function AssetManagerApp() {
           }, new Map<string, any>())
           .values(),
       ).sort((a, b) => b.latest - a.latest),
-      scopedTotals = computeLiveTotals(phoneRecords),
-      todayTotal = assetRows
-        .filter((x) => showsDailyChange(x.k))
-        .reduce((s, x) => s + x.today, 0),
       marketNames = new Set([
         "SENSEX",
         "NIFTY",
@@ -5682,7 +5694,7 @@ export default function AssetManagerApp() {
               className={`phone-tab ${view === id ? "active" : ""}`}
               onClick={() => setView(id)}
             >
-              {id === "dashboard" ? "Summary" : MODULES[id]?.title}
+              {id === "dashboard" ? "Home" : MODULES[id]?.title}
             </button>
           ))}
         </div>
@@ -5844,31 +5856,7 @@ export default function AssetManagerApp() {
       <div className="phone-screen">
         {dashboardTabs()}
         {strip}
-        <section className="phone-hero">
-          <div className="phone-eyebrow">Portfolio</div>
-          <div className="phone-hero-value">{fmt(scopedTotals.net)}</div>
-          <div className="phone-hero-sub flex flex-wrap gap-x-2 gap-y-1">
-            <span>Assets {fmt(scopedTotals.assets)}</span>
-            <span>Liabilities {fmt(scopedTotals.liabilities)}</span>
-          </div>
-        </section>
-        <div className="phone-stats">
-          {phoneStat("Invested", fmt(scopedTotals.invested))}
-          {phoneStat(
-            "Today's Gain",
-            fmt(todayTotal),
-            todayTotal >= 0 ? "phone-green" : "phone-red",
-          )}
-          {phoneStat(
-            "Overall Gain",
-            fmt(scopedTotals.gain),
-            scopedTotals.gain >= 0 ? "phone-green" : "phone-red",
-          )}
-          {phoneStat(
-            "Records",
-            phoneRecords.filter((r) => MODULES[r.module_key]).length,
-          )}
-        </div>
+        {phoneMode && <div className="mt-3">{homeTiles(true)}</div>}
         {phoneAccountStrip()}
         <h3 className="phone-section-title">Assets</h3>
         {plannerShortcut("dashboard")}
@@ -8019,6 +8007,7 @@ export default function AssetManagerApp() {
               </div>
               <div className="space-y-1">
                 {ids.map((id: string) => navButton(id))}
+                {g === "Investments" && investmentTypesToggle()}
               </div>
             </div>
           ))}
@@ -8114,6 +8103,7 @@ export default function AssetManagerApp() {
                 <div className="mobile-menu-title">{g}</div>
                 <div className="mobile-menu-grid">
                   {ids.map((id: string) => navButton(id, true))}
+                  {g === "Investments" && investmentTypesToggle(true)}
                 </div>
               </section>
             ))}
@@ -12875,6 +12865,149 @@ export default function AssetManagerApp() {
       </div>
     );
   }
+  /**
+   * Home: one tile per question people open the app to answer. Each tile shows the answer at a
+   * glance and opens the screen with the detail. The dashboard sections below are the detail view.
+   */
+  function homeTiles(onPhone = false) {
+    const assetRecords = records.filter((r) => MODULES[r.module_key]?.kind === "asset" || r.module_key === "insurance");
+    const todayMove = assetRecords.reduce((s, r) => (showsDailyChange(r.module_key) ? s + todayGainFor(r.module_key, r) : s), 0);
+    const snapshot = planningSnapshot(records);
+    const payments = currentPayments();
+    // Goals
+    const ahead = goalProjectionsById(), goalList = Object.values(ahead);
+    const goalCount = (key: string) => goalList.filter((g) => g.status.key === key).length;
+    const goalTarget = goalList.reduce((s, g) => s + g.target, 0), goalExpected = goalList.reduce((s, g) => s + (g.p?.projected || 0), 0);
+    // Loans
+    const loanRows = [
+      ...records.filter((r) => r.module_key === "loans").map((r) => computeRecord("loans", r.data)),
+      ...records.filter((r) => r.module_key === "property").map((r) => computeRecord("property", r.data)).filter((c) => num(c.loan_balance) > 0),
+    ];
+    const owed = loanRows.reduce((s, c) => s + num(c.net_loan_balance ?? c.balance), 0);
+    const emis = loanRows.reduce((s, c) => s + num(c.monthly_emi), 0);
+    const nextClear = loanRows.map((c) => String(c.loan_clears_on || "")).filter((d) => /^\d{4}-\d{2}/.test(d)).sort()[0];
+    // To do
+    const todayIso = isoDate(), soon = new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10);
+    const premiumsDue = records.filter((r) => {
+      if (r.module_key !== "insurance") return false;
+      const c = computeLiveRecord("insurance", r.data), due = String(c.next_premium_due_date || "");
+      return ["Active", "Paid-up"].includes(String(c.status || "")) && due >= todayIso && due <= soon;
+    }).length;
+    const todos = [
+      { n: uploadStatus.missing.length, text: "monthly document to upload", many: "monthly documents to upload", action: () => setView(MONTHLY_UPLOAD_MODULE) },
+      { n: payments.unpaidCount, text: "payment still to make this month", many: "payments still to make this month", action: () => { setView("dashboard"); setDetailTabs((p) => ({ ...p, dashboard: "payments" })); } },
+      { n: dividendsPending().filter((item) => item.state !== "awaiting").length, text: "dividend to confirm", many: "dividends to confirm", action: () => { setView("dashboard"); setDetailTabs((p) => ({ ...p, dashboard: "dividends" })); } },
+      { n: premiumsDue, text: "insurance premium due in 30 days", many: "insurance premiums due in 30 days", action: () => setView("insurance") },
+      { n: records.filter((r) => r.module_key === "fixedIncome" && fixedIncomeReviewDue(r)).length, text: "fixed income value to review", many: "fixed income values to review", action: () => setView("fixedIncome") },
+      { n: goalCount("off"), text: "goal needing work", many: "goals needing work", action: () => setView("goals") },
+    ].filter((t) => t.n > 0);
+    // Investments by type
+    const byType = GOAL_ASSET_KEYS.filter((k) => MODULES[k])
+      .map((k) => {
+        const rs = records.filter((r) => r.module_key === k && !r.data?.sold_out);
+        return {
+          k,
+          title: k === "bullion" ? "Gold & Silver" : MODULES[k].title,
+          value: rs.reduce((s, r) => s + num(computeLiveRecord(k, r.data).latest), 0),
+          today: showsDailyChange(k) ? rs.reduce((s, r) => s + todayGainFor(k, r), 0) : 0,
+        };
+      })
+      .filter((x) => x.value > 0)
+      .sort((a, b) => b.value - a.value);
+    const totalAssets = byType.reduce((s, x) => s + x.value, 0);
+    const signed = (v: number) => `${v >= 0 ? "+" : "−"}${fmt(Math.abs(v))}`;
+    const tile = (id: string, title: string, onOpen: () => void, body: React.ReactNode, tone = "") => (
+      <button
+        key={id}
+        type="button"
+        onClick={onOpen}
+        className={`home-tile group flex min-h-[150px] max-md:min-h-0 w-full flex-col rounded-2xl border border-[#e3dccc] bg-white p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-md ${tone}`}
+        aria-label={`${title}: open`}
+      >
+        <span className="text-[11px] font-bold uppercase tracking-[.14em] text-gray-500">{title}</span>
+        <span className="mt-1 flex-1">{body}</span>
+        <span className="mt-2 text-xs font-semibold text-[#0071e3] opacity-80 group-hover:opacity-100">Open →</span>
+      </button>
+    );
+    const openDetails = () => {
+      setDetailTabs((p) => ({ ...p, dashboard: "summary" }));
+      document.getElementById("home-details")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    };
+    return (
+      <section className="phone-light-card space-y-3" aria-label="Home">
+        <div className="phone-one-col grid grid-cols-3 gap-3 max-xl:grid-cols-2 max-md:grid-cols-1">
+          {tile("networth", "Net worth", openDetails, (
+            <>
+              <span className="block text-3xl font-semibold tabular-nums text-[#17382b] max-md:text-2xl">{fmt(totals.net)}</span>
+              <span className={`block text-sm font-semibold tabular-nums ${todayMove >= 0 ? "text-emerald-700" : "text-red-700"}`}>{signed(todayMove)} today</span>
+              <span className="mt-1 block text-xs text-gray-600">Own {fmt(totals.assets)} · Owe {fmt(totals.liabilities)}</span>
+            </>
+          ))}
+          {tile("goals", "Goals", () => setView("goals"), goalList.length ? (
+            <>
+              <span className="block text-3xl font-semibold tabular-nums text-[#17382b]">{goalTarget ? Math.round((goalExpected / goalTarget) * 100) : 0}%</span>
+              <span className="block text-xs text-gray-600">of {fmt(goalTarget)} expected by the target dates</span>
+              <span className="mt-2 flex flex-wrap gap-1.5 text-xs font-bold">
+                {goalCount("on") > 0 && <span className="rounded-[999px] bg-emerald-100 px-2 py-0.5 text-emerald-800">{goalCount("on")} on track</span>}
+                {goalCount("close") > 0 && <span className="rounded-[999px] bg-amber-100 px-2 py-0.5 text-amber-900">{goalCount("close")} close</span>}
+                {goalCount("off") > 0 && <span className="rounded-[999px] bg-red-100 px-2 py-0.5 text-red-800">{goalCount("off")} need work</span>}
+              </span>
+            </>
+          ) : <span className="block text-sm text-gray-600">No goals yet. Open to add your first one.</span>)}
+          {tile("cash", "This month's cash", () => { setView("dashboard"); setDetailTabs((p) => ({ ...p, dashboard: "payments" })); }, (
+            <>
+              <span className="block text-3xl font-semibold tabular-nums text-[#17382b]">{fmt(snapshot.liquidity)}</span>
+              <span className="block text-xs text-gray-600">ready to use (savings, cash and money parked in OD)</span>
+              <span className="mt-1 block text-xs text-gray-700">
+                Income {fmt(snapshot.monthlyIncome)}/month · still to pay this month <b className={payments.remaining > 0 ? "text-amber-700" : "text-emerald-700"}>{fmt(payments.remaining)}</b>
+              </span>
+            </>
+          ))}
+          {tile("loans", "Loans", () => setView("loans"), loanRows.length ? (
+            <>
+              <span className="block text-3xl font-semibold tabular-nums text-red-700">{fmt(owed)}</span>
+              <span className="block text-xs text-gray-600">owed across {loanRows.length} loan{loanRows.length === 1 ? "" : "s"}</span>
+              <span className="mt-1 block text-xs text-gray-700">EMIs {fmt(emis)}/month{nextClear ? ` · next clears ${formatMonth(nextClear.slice(0, 7))}` : ""}</span>
+            </>
+          ) : <span className="block text-sm text-emerald-700">No loans.</span>)}
+          <div className={`home-tile flex min-h-[150px] max-md:min-h-0 flex-col rounded-2xl border p-4 shadow-sm ${todos.length ? "border-amber-200 bg-amber-50/60" : "border-emerald-200 bg-emerald-50/60"}`}>
+            <span className="text-[11px] font-bold uppercase tracking-[.14em] text-gray-500">To do</span>
+            {todos.length ? (
+              <ul className="mt-1 space-y-1 text-sm">
+                {todos.map((t) => (
+                  <li key={t.text}>
+                    <button type="button" className="text-left font-semibold text-[#17382b] underline-offset-2 hover:underline" onClick={t.action}>
+                      {t.n} {t.n === 1 ? t.text : t.many} →
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <span className="mt-1 text-sm font-semibold text-emerald-700">All clear. Nothing needs you right now.</span>
+            )}
+          </div>
+          {!onPhone && (
+            <div className="home-tile flex min-h-[150px] max-md:min-h-0 flex-col rounded-2xl border border-[#e3dccc] bg-white p-4 shadow-sm">
+              <span className="text-[11px] font-bold uppercase tracking-[.14em] text-gray-500">Investments</span>
+              <ul className="mt-1 space-y-1 text-sm">
+                {byType.slice(0, 6).map((x) => (
+                  <li key={x.k}>
+                    <button type="button" className="flex w-full items-baseline justify-between gap-2 rounded px-1 text-left hover:bg-[#f7faf6]" onClick={() => openModuleAll(x.k)}>
+                      <span className="font-semibold">{x.title}</span>
+                      <span className="tabular-nums">
+                        {fmt(x.value)} <span className="text-xs text-gray-500">{totalAssets ? Math.round((x.value / totalAssets) * 100) : 0}%</span>
+                        {x.today !== 0 && <span className={`ml-1 text-xs ${x.today > 0 ? "text-emerald-700" : "text-red-700"}`}>{signed(x.today)}</span>}
+                      </span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+      </section>
+    );
+  }
   function dashboardModern(onPhone = false) {
     const assetRows = Object.entries(MODULES)
         .filter(([k, d]) => d.kind === "asset" || k === "insurance")
@@ -12905,6 +13038,8 @@ export default function AssetManagerApp() {
     return (
       <div className="space-y-5">
         {!onPhone && dashboardTabs()}
+        {!onPhone && homeTiles()}
+        <h3 id="home-details" className="scroll-mt-24 pt-2 text-sm font-bold uppercase tracking-[.14em] text-gray-500">Details</h3>
         {/* Removed 10 Nov 2026 at the user's request: the Invested / Today / Month start / Overall gain / Net worth strip. */}
         {monthlyCashFlowPanel()}
         {/* Also removed: Monthly Portfolio Analysis and the Portfolio health panel. */}

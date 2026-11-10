@@ -62,7 +62,9 @@ test.describe('logged-in app', () => {
   test('every sidebar screen opens', async ({ page }) => {
     test.skip(isPhone(page), 'The phone layout has no sidebar');
     const app = await signedIn(page);
-    for (const name of ['Stocks', 'Property', 'Gold/Silver', 'Fixed Income', 'Insurance', 'Mutual Funds', 'ULIPs', 'Other Assets', 'NSEL e-Series', 'Loans', 'Goals', 'Predictive Planner', 'Purchase Calculator', 'Automatic Backups', 'Settings', 'Dashboard'])
+    // Investments lists only the types held; show the rest too.
+    await page.locator('.desktop-sidebar').getByRole('button', { name: /Show all types/ }).click();
+    for (const name of ['Stocks', 'Property', 'Gold/Silver', 'Fixed Income', 'Insurance', 'Mutual Funds', 'ULIPs', 'Other Assets', 'NSEL e-Series', 'Loans', 'Goals', 'Predictive Planner', 'Purchase Calculator', 'Automatic Backups', 'Settings', 'Home'])
       await open(page, app, new RegExp(`^(${name})`));
     // Removed from the menu on 10 Nov 2026.
     for (const name of ['All Investments', 'Transactions', 'Borrowings', 'Month on Month', 'Earnings by Person', 'Monthly Uploads', 'Watchlist', 'Alerts', 'Household Access'])
@@ -165,7 +167,7 @@ test.describe('logged-in app', () => {
     await expect(sheet).toHaveCount(0);
     const saved = app.writes.find(write => write.table === 'records' && write.body?.module_key === 'expense');
     expect(saved?.body?.data).toMatchObject({ amount: 450, label: 'Groceries', tag_id: 'google-pay', tag_label: 'Google Pay' });
-    await page.locator('nav').getByRole('button', { name: 'Summary' }).locator('visible=true').first().click();
+    await page.locator('nav').getByRole('button', { name: 'Home' }).locator('visible=true').first().click();
     await page.getByRole('button', { name: 'Expenses', exact: true }).click();
     await expect(page.getByRole('region', { name: 'Expenses this month' }).getByText('Groceries')).toBeVisible();
     await expectHealthy(page, app, 'quick expense');
@@ -177,7 +179,7 @@ test.describe('logged-in app', () => {
     const tap = (name: string) => tapTab(page.getByRole('navigation', { name: 'Mobile section navigation' }), new RegExp(name));
     // Opening a section swaps the menu for that section's own, with a Back button to the main one.
     const back = page.getByRole('button', { name: 'Back to summary navigation' });
-    for (const name of ['Goals', 'Forecast', 'Settings', 'Summary']) {
+    for (const name of ['Goals', 'Forecast', 'Settings', 'Home']) {
       await tap(name);
       await expectHealthy(page, app, `phone ${name}`);
       if (await back.isVisible()) await back.click();
@@ -278,7 +280,7 @@ test.describe('logged-in app', () => {
   });
 
   // Real touch gestures: a swipe or pinch has to work wherever the finger happens to land.
-  const touchTargets = ['.phone-hero', '.phone-market-strip', '.phone-row-main', '.mobile-top-nav', '.phone-overall-sections table'];
+  const touchTargets = ['.home-tile', '.phone-market-strip', '.phone-row-main', '.mobile-top-nav', '.phone-overall-sections table'];
   async function touchPoint(page: Page, selector: string) {
     // The screen is rebuilt once as the app starts, so keep looking until the target is there.
     const find = () => page.evaluate((css) => {
@@ -376,7 +378,7 @@ test.describe('logged-in app', () => {
     for (const width of [320, 360, 412, 480]) {
       await page.setViewportSize({ width, height: 800 });
       const tops = new Set<number>();
-      for (const name of ['Summary', 'Investments', 'Goals', 'Forecast', 'Settings']) {
+      for (const name of ['Home', 'Investments', 'Goals', 'Forecast', 'Settings']) {
         const button = strip.getByRole('button', { name });
         await expect(button).toBeInViewport({ ratio: 1 });
         tops.add(Math.round((await button.boundingBox())!.y));
@@ -407,7 +409,7 @@ test.describe('logged-in app', () => {
       await tapTab(strip, 'Stocks');
       await onOneLine(page.getByRole('group', { name: 'Accounts' }), `stock accounts at ${width}`);
       await strip.getByRole('button', { name: 'Back to summary navigation' }).click();
-      await strip.getByRole('button', { name: 'Summary' }).click();
+      await strip.getByRole('button', { name: 'Home' }).click();
     }
     await expectHealthy(page, app, 'phone single rows');
   });
@@ -567,13 +569,14 @@ test.describe('logged-in app', () => {
     test.skip(!isPhone(page), 'Phone layout only');
     const app = await signedIn(page);
     const strip = page.getByRole('navigation', { name: 'Mobile section navigation' });
-    for (const name of ['Summary', 'Investments', 'Goals', 'Forecast', 'Settings']) await expect(strip.getByRole('button', { name })).toBeInViewport({ ratio: 1 });
+    for (const name of ['Home', 'Investments', 'Goals', 'Forecast', 'Settings']) await expect(strip.getByRole('button', { name })).toBeInViewport({ ratio: 1 });
     await strip.getByRole('button', { name: 'Investments' }).click();
     // Types with holdings sit in the row. Empty ones leave it, but the menu still reaches them.
     for (const name of ['Stocks', 'Property', 'Fixed', 'Insurance', 'MF']) await expect(strip.getByRole('button', { name })).toBeInViewport({ ratio: 1 });
     for (const name of ['Gold/Silver', 'ULIP', 'NSEL']) await expect(strip.getByRole('button', { name })).toHaveCount(0);
     await expect(strip.getByRole('button', { name: 'More ▾' })).toHaveCount(0);
     await page.getByRole('button', { name: 'Open menu' }).click();
+    await page.locator('.mobile-menu-panel').getByRole('button', { name: /Show all types/ }).click();
     await page.locator('.mobile-menu-panel').getByRole('button', { name: 'Gold/Silver' }).click();
     await expect(strip.getByRole('button', { name: 'Gold/Silver' })).toHaveClass(/active/);
 
@@ -619,14 +622,15 @@ test.describe('logged-in app', () => {
     await expect(page.getByText(/Admin portfolio|Active household/)).toHaveCount(0);
 
     await open(page, app, 'Admin Console');
-    const ulips = page.getByRole('checkbox', { name: 'ULIPs' });
-    await expect(ulips).toBeChecked();
-    await expect(page.getByRole('checkbox', { name: 'Dashboard' })).toHaveCount(0);
-    await ulips.uncheck();
-    await expect(sidebar.getByRole('button', { name: 'ULIPs' })).toHaveCount(0);
+    // Stocks is a type the test household holds, so it shows in the menu until hidden.
+    const stocks = page.getByRole('checkbox', { name: 'Stocks' });
+    await expect(stocks).toBeChecked();
+    await expect(page.getByRole('checkbox', { name: 'Home' })).toHaveCount(0);
+    await stocks.uncheck();
+    await expect(sidebar.getByRole('button', { name: 'Stocks', exact: true })).toHaveCount(0);
     expect(app.unexpected).toEqual([]);
     await page.getByRole('button', { name: 'Show all tabs' }).click();
-    await expect(sidebar.getByRole('button', { name: 'ULIPs' })).toBeVisible();
+    await expect(sidebar.getByRole('button', { name: 'Stocks', exact: true })).toBeVisible();
     await expectHealthy(page, app, 'menu tabs');
   });
 
@@ -789,5 +793,15 @@ test.describe('logged-in app', () => {
     expect(JSON.stringify(last.body)).toContain('construction_payments');
     await expect(page.getByText(/still to pay ₹35,00,000/).first()).toBeVisible();
     await expectHealthy(page, app, 'edit keeps builder payments');
+  });
+
+  test('home tiles answer the main questions and open their screens', async ({ page }) => {
+    const app = await signedIn(page);
+    const home = page.getByRole('region', { name: 'Home' }).locator('visible=true').first();
+    for (const title of ['Net worth', 'Goals', "This month's cash", 'Loans']) await expect(home.getByRole('button', { name: `${title}: open` })).toBeVisible();
+    await expect(home.getByText('To do', { exact: true })).toBeVisible();
+    await home.getByRole('button', { name: 'Goals: open' }).click();
+    await expect(page.getByText('What pays for each goal').locator('visible=true').first()).toBeVisible();
+    await expectHealthy(page, app, 'home tiles');
   });
 });
