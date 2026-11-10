@@ -15,6 +15,15 @@ These backups cover the app itself, not your financial data. Your data is covere
 
 ---
 
+## Version 10.21 (10 Nov 2026, 14:34): Builder payments kept on edit, interest only on what the bank has paid, and scheme rates for planned investments
+
+Backup taken before this release: `backup-2026-11-10-1434-IST`
+
+- **Fixed: editing a property no longer deletes its builder payments.** Saving a property through **Manage → Edit** used to keep only the boxes on the form, so payments recorded under **Homes being built** were lost. The same happened to a goal's chosen holdings and planned investments when the goal was edited. These are now kept. Payments lost to this before today are not brought back automatically. If you need them, they are in your Automatic Backups from before the edit, or record them again.
+- **Interest only on what the bank has paid out.** While a home is being built, the bank pays the builder in stages. For a property under construction, the loan's balance, interest and EMI are now worked out on the payments recorded as **from the home loan**, not the full sanctioned loan. The sanctioned loan amount still shows as entered.
+- **Choice to pay only interest until possession (pre-EMI).** A property under construction with a loan has two new boxes: **Expected Possession Date**, and **Until possession, pay only the interest on the loan (pre-EMI)?** Choose Yes, and until possession the monthly payment is just the interest on what the bank has paid out. The full EMI then starts from the possession date. The **Homes being built** card shows the monthly interest and when the full EMI begins. The loan figures, the dashboard and the Predictive Planner's cash flow all use the interest-only payment.
+- **Planned investments know their scheme.** **+ Plan an investment for this goal…** now lists the actual options, each with its rate: Sukanya Samriddhi (8.2%), PPF (7.1%), NSC (7.7%), Kisan Vikas Patra (7.5%), Post Office time deposit (7.5%), recurring deposit (6.7%), EPF/VPF (8.25%), bank FD, mutual fund SIP or shares, gold, silver, property, money-back insurance and other. Picking one fills in its rate, which you can change. Plans you added before this (such as "sukanya" or "ppf") are recognised from their name and now use 8.2% and 7.1% instead of 7%. A Sukanya or PPF record with no rate saved also uses its scheme's rate.
+
 ## Version 10.20 (10 Nov 2026, 14:17): Today's changes fitted to the phone
 
 Backup taken before this release: `backup-2026-11-10-1417-IST`

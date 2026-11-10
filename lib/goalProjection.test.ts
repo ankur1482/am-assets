@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cleanGrowth, cleanPlanned, DEFAULT_GROWTH, futureValue, holdingGrowth, holdingMonthly, monthlyToClose, plannedItems, projectGoal, yearlyReturns } from "./goalProjection";
+import { cleanGrowth, cleanPlanned, DEFAULT_GROWTH, futureValue, holdingGrowth, holdingMonthly, monthlyToClose, plannedDefaultRate, plannedItems, projectGoal, yearlyReturns } from "./goalProjection";
 
 describe("goal projection", () => {
   it("picks a growth rate by type, using a saved interest rate first", () => {
@@ -75,5 +75,36 @@ describe("growth rates, yearly returns and planned investments", () => {
     const items = plannedItems(planned, { ...DEFAULT_GROWTH, gold: 15 });
     expect(items[0]).toMatchObject({ monthly: 5000, today: 0, rate: 15 });
     expect(items[1]).toMatchObject({ label: "Planned: Plot booking (one-off)", today: 200000, monthly: 0, rate: 4 });
+  });
+});
+
+describe("planned instruments", () => {
+  it("prefills each scheme's notified rate and keeps a rate the user set", () => {
+    expect(plannedDefaultRate("sukanya", DEFAULT_GROWTH)).toBe(8.2);
+    expect(plannedDefaultRate("ppf", DEFAULT_GROWTH)).toBe(7.1);
+    expect(plannedDefaultRate("gold", { ...DEFAULT_GROWTH, gold: 15 })).toBe(15);
+    const items = plannedItems(cleanPlanned([
+      { id: "a", type: "fixedIncome", instrument: "sukanya", mode: "monthly", amount: 12500 },
+      { id: "b", type: "fixedIncome", instrument: "ppf", mode: "monthly", amount: 12500, rate: "7.5" },
+      { id: "c", type: "fixedIncome", mode: "monthly", amount: 100 },
+    ]), DEFAULT_GROWTH);
+    expect(items.map((i) => [i.label, i.rate, i.basis])).toEqual([
+      ["Planned: Sukanya Samriddhi", 8.2, "Notified scheme rate"],
+      ["Planned: PPF", 7.5, "Rate you set"],
+      ["Planned: Fixed income (when no rate is saved)", 7, "Fixed income (when no rate is saved) rate"],
+    ]);
+  });
+
+  it("recognises plans saved before instruments existed from their name", () => {
+    const items = plannedItems(cleanPlanned([
+      { id: "x", type: "fixedIncome", mode: "monthly", amount: 12500, note: "sukanya" },
+      { id: "y", type: "fixedIncome", mode: "monthly", amount: 12500, note: "ppf" },
+    ]), DEFAULT_GROWTH);
+    expect(items.map((i) => [i.label, i.rate])).toEqual([["Planned: sukanya", 8.2], ["Planned: ppf", 7.1]]);
+  });
+
+  it("uses the notified rate for a saved scheme record with no rate of its own", () => {
+    expect(holdingGrowth("fixedIncome", { category: "Sukanya Samriddhi" }, DEFAULT_GROWTH)).toEqual({ rate: 8.2, basis: "Notified scheme rate" });
+    expect(holdingGrowth("fixedIncome", { category: "PPF" }, DEFAULT_GROWTH).rate).toBe(7.1);
   });
 });

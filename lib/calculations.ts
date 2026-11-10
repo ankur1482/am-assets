@@ -291,7 +291,40 @@ export const LOAN_FIELDS:LoanFieldNames={rate:'interest_rate',tenure:'tenure_mon
  * Works out a loan from whichever figures are known.
  * An entered EMI, balance or paid amount is the user's figure and always wins; anything left blank is derived.
  */
+/**
+ * Pre-EMI: while a home is being built, the buyer may choose to pay only the interest on what the
+ * bank has paid out so far, until possession. The full EMI then starts from possession over the
+ * loan's tenure. Returns null when the choice does not apply (or possession has passed).
+ */
+export function preEmiPosition(r:any,names:LoanFieldNames,asOf=new Date()){
+  if(!/^yes/i.test(String(r?.pre_emi||''))||!isUnderConstruction(r))return null;
+  const possession=String(r.possession_date||'');
+  if(/^\d{4}-\d{2}-\d{2}$/.test(possession)&&new Date(`${possession}T00:00:00`)<=asOf)return null;
+  const amount=num(r.loan_amount),annualRate=num(r[names.rate]),rate=annualRate/1200,tenure=num(r[names.tenure]);
+  const fromLoan=cleanConstructionLoanPaid(r);
+  // What the bank has paid the builder so far: recorded loan payments, else the balance entered, else the full loan.
+  const disbursed=Math.max(0,fromLoan||num(r.loan_balance)||amount);
+  const interest=disbursed*rate;
+  const monthsToPossession=/^\d{4}-\d{2}-\d{2}$/.test(possession)?Math.max(0,(Number(possession.slice(0,4))-asOf.getFullYear())*12+Number(possession.slice(5,7))-1-asOf.getMonth()):0;
+  const fullEmi=num(r.emi_amount)||emiFor(Math.max(disbursed,amount),rate,tenure);
+  const afterPossession=repayFrom(Math.max(disbursed,amount),0,rate,fullEmi);
+  const clearsMonths=monthsToPossession&&afterPossession.months?monthsToPossession+afterPossession.months:null;
+  const warnings:string[]=[];
+  if(!possession)warnings.push('Enter the expected possession date to see when the full EMI starts.');
+  if(!annualRate)warnings.push('Interest rate is missing, so no interest is being calculated.');
+  return{amount,annualRate,tenure,balance:disbursed,netBalance:disbursed,parked:0,emi:interest,monthsLeft:clearsMonths,
+    clearsOn:clearsMonths?new Date(asOf.getFullYear(),asOf.getMonth()+clearsMonths,1).toISOString().slice(0,7):possession?'':'After possession',
+    totalPayable:interest*monthsToPossession+afterPossession.paid,futureInterest:Math.max(0,interest*monthsToPossession+afterPossession.paid-Math.max(disbursed,amount)),
+    principalPaid:0,interestPaid:num(r.interest_paid),nextInterest:interest,nextPrincipal:0,warnings,preEmi:true,fullEmi,possessionDate:possession};
+}
+const cleanConstructionLoanPaid=(r:any)=>(Array.isArray(r?.construction_payments)?r.construction_payments:[]).filter((p:any)=>p&&p.from==='loan').reduce((s:number,p:any)=>s+Math.max(0,num(p.amount)),0);
 export function loanPosition(r:any,names:LoanFieldNames,asOf=new Date()){
+  const pre=preEmiPosition(r,names,asOf);
+  if(pre)return pre;
+  // While a home is being built the bank pays the builder in stages, so interest and the EMI are on what it has
+  // paid out (payments recorded 'from the home loan'), not the full sanctioned loan, which still shows as entered.
+  const disbursed=isUnderConstruction(r)?cleanConstructionLoanPaid(r):0;
+  if(disbursed>0)r={...r,loan_amount:disbursed,loan_balance:num(r.loan_balance)?Math.min(num(r.loan_balance),disbursed):''};
   const amount=num(r.loan_amount),annualRate=num(r[names.rate]),rate=annualRate/1200,tenure=num(r[names.tenure]),enteredMonths=num(r.emis_left),enteredEmi=num(r.emi_amount)||num(r.od_monthly_emi)||num(r.monthly_emi),
     enteredBalance=num(r.loan_balance),enteredPrincipal=num(r.principal_paid),elapsed=emisDueSince(r[names.start],asOf),originalEmi=emiFor(amount,rate,tenure);
   const isOd=isOverdraftLoan(r);

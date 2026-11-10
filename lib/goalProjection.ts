@@ -3,6 +3,7 @@
 // and silver; an assumed rate for property; the saved interest rate for fixed
 // income), and regular investments into it keep going until the target date.
 import { isCashAtHome, isSavingsAccount, num } from "./calculations";
+import { notifiedRate } from "./fixedIncomeRates";
 
 export type GrowthRates = { shares: number; gold: number; silver: number; property: number; fixedIncome: number; insurance: number; other: number };
 export const DEFAULT_GROWTH: GrowthRates = { shares: 11, gold: 12, silver: 9, property: 4, fixedIncome: 7, insurance: 5, other: 0 };
@@ -22,7 +23,10 @@ export function holdingGrowth(moduleKey: string, data: Record<string, any>, rate
     if (isCashAtHome(d)) return { rate: 0, basis: "Cash does not grow" };
     const saved = num(d.interest_rate);
     if (saved > 0) return { rate: saved, basis: "Its interest rate" };
-    return isSavingsAccount(d) ? { rate: 3, basis: "Savings account interest" } : { rate: rates.fixedIncome, basis: "Typical fixed income rate" };
+    if (isSavingsAccount(d)) return { rate: 3, basis: "Savings account interest" };
+    // No rate saved: a Sukanya, PPF, NSC… record grows at the scheme's notified rate.
+    const notified = notifiedRate(String(d.category || ""));
+    return notified !== null ? { rate: notified, basis: "Notified scheme rate" } : { rate: rates.fixedIncome, basis: "Typical fixed income rate" };
   }
   if (moduleKey === "insurance") return { rate: rates.insurance, basis: "Money-back policy growth" };
   return { rate: rates.other, basis: "Assumed" };
@@ -114,30 +118,85 @@ export function yearlyReturns(points: PricePoint[] | undefined) {
 }
 
 /** An investment the user plans to make for a goal: every month from now, or once now. */
-export type PlannedInvestment = { id: string; type: keyof GrowthRates; mode: "monthly" | "once"; amount: number; note?: string };
+export type PlannedInvestment = { id: string; type: keyof GrowthRates; instrument?: string; rate?: number; mode: "monthly" | "once"; amount: number; note?: string };
+
+/**
+ * What can be planned for a goal. Government schemes carry their notified rate (see
+ * fixedIncomeRates); market types use the saved growth rate for their category.
+ */
+export const PLANNED_INSTRUMENTS: { id: string; label: string; type: keyof GrowthRates; group: string; scheme?: string; match?: RegExp }[] = [
+  { id: "sukanya", label: "Sukanya Samriddhi", type: "fixedIncome", group: "Government savings", scheme: "Sukanya Samriddhi", match: /sukanya|\bssy\b|\bssa\b/i },
+  { id: "ppf", label: "PPF", type: "fixedIncome", group: "Government savings", scheme: "PPF", match: /\bppf\b|provident fund \(public\)/i },
+  { id: "nsc", label: "NSC", type: "fixedIncome", group: "Government savings", scheme: "NSC", match: /\bnsc\b/i },
+  { id: "kvp", label: "Kisan Vikas Patra", type: "fixedIncome", group: "Government savings", scheme: "KVP", match: /\bkvp\b|kisan/i },
+  { id: "td", label: "Post Office time deposit (5 year)", type: "fixedIncome", group: "Government savings", scheme: "FD", match: /time deposit|post office/i },
+  { id: "rd", label: "Recurring deposit (5 year)", type: "fixedIncome", group: "Government savings", scheme: "Recurring Deposit", match: /\brd\b|recurring/i },
+  { id: "epf", label: "EPF / VPF", type: "fixedIncome", group: "Government savings", scheme: "EPF", match: /\bepf\b|\bvpf\b/i },
+  { id: "bankfd", label: "Bank FD", type: "fixedIncome", group: "Bank deposits", match: /\bfd\b|fixed deposit/i },
+  { id: "sip", label: "Mutual fund SIP or shares", type: "shares", group: "Market", match: /\bsip\b|mutual|shares?|equity|index/i },
+  { id: "gold", label: "Gold", type: "gold", group: "Market", match: /gold/i },
+  { id: "silver", label: "Silver", type: "silver", group: "Market", match: /silver/i },
+  { id: "property", label: "Property (being built or planned)", type: "property", group: "Other", match: /property|flat|plot|house|home/i },
+  { id: "insurance", label: "Money-back insurance", type: "insurance", group: "Other", match: /\blic\b|endowment|money ?back|ulip/i },
+  { id: "other", label: "Something else", type: "other", group: "Other" },
+];
+
+/** Default yearly rate for a planned instrument: the scheme's notified rate, else its category's growth rate. */
+export function plannedDefaultRate(instrumentId: string, rates: GrowthRates) {
+  const inst = PLANNED_INSTRUMENTS.find((i) => i.id === instrumentId);
+  if (!inst) return rates.other;
+  const notified = inst.scheme ? notifiedRate(inst.scheme) : null;
+  return notified ?? rates[inst.type];
+}
 
 export function cleanPlanned(raw: unknown): PlannedInvestment[] {
   if (!Array.isArray(raw)) return [];
   return raw
     .filter((p) => p && typeof p === "object")
-    .map((p: any) => ({
-      id: String(p.id || ""),
-      type: (Object.keys(DEFAULT_GROWTH).includes(p.type) ? p.type : "other") as keyof GrowthRates,
-      mode: p.mode === "once" ? ("once" as const) : ("monthly" as const),
-      amount: Math.max(0, num(p.amount)),
-      note: p.note ? String(p.note).slice(0, 80) : undefined,
-    }))
+    .map((p: any) => {
+      const note = p.note ? String(p.note).slice(0, 80) : undefined;
+      // Plans saved before instruments existed are recognised from their name (e.g. "sukanya", "ppf").
+      const instrument = PLANNED_INSTRUMENTS.some((i) => i.id === p.instrument)
+        ? String(p.instrument)
+        : note ? PLANNED_INSTRUMENTS.find((i) => i.match?.test(note))?.id : undefined;
+      const type = instrument
+        ? PLANNED_INSTRUMENTS.find((i) => i.id === instrument)!.type
+        : ((Object.keys(DEFAULT_GROWTH).includes(p.type) ? p.type : "other") as keyof GrowthRates);
+      return {
+        id: String(p.id || ""),
+        type,
+        instrument,
+        rate: p.rate !== undefined && p.rate !== null && p.rate !== "" && Number.isFinite(Number(p.rate)) ? Math.max(-20, Math.min(40, Number(p.rate))) : undefined,
+        mode: p.mode === "once" ? ("once" as const) : ("monthly" as const),
+        amount: Math.max(0, num(p.amount)),
+        note,
+      };
+    })
     .filter((p) => p.id && p.amount > 0);
 }
 
-/** Planned investments as projection lines, each growing at its type's rate. */
+export const plannedName = (p: PlannedInvestment) =>
+  p.note || PLANNED_INSTRUMENTS.find((i) => i.id === p.instrument)?.label || GROWTH_LABELS[p.type];
+
+/** Yearly rate used for a planned investment, and where it comes from. */
+export function plannedRate(p: PlannedInvestment, rates: GrowthRates): Growth {
+  if (p.rate !== undefined) return { rate: p.rate, basis: "Rate you set" };
+  const inst = PLANNED_INSTRUMENTS.find((i) => i.id === p.instrument);
+  if (inst?.scheme && notifiedRate(inst.scheme) !== null) return { rate: notifiedRate(inst.scheme)!, basis: "Notified scheme rate" };
+  return { rate: rates[p.type], basis: `${GROWTH_LABELS[p.type]} rate` };
+}
+
+/** Planned investments as projection lines, at the rate set for them, else the instrument's or category's default. */
 export function plannedItems(planned: PlannedInvestment[], rates: GrowthRates): ProjectionItem[] {
-  return planned.map((p) => ({
-    id: `planned:${p.id}`,
-    label: `Planned: ${p.note || GROWTH_LABELS[p.type]}${p.mode === "once" ? " (one-off)" : ""}`,
-    today: p.mode === "once" ? p.amount : 0,
-    monthly: p.mode === "monthly" ? p.amount : 0,
-    rate: rates[p.type],
-    basis: `${GROWTH_LABELS[p.type]} rate`,
-  }));
+  return planned.map((p) => {
+    const growth = plannedRate(p, rates);
+    return {
+      id: `planned:${p.id}`,
+      label: `Planned: ${plannedName(p)}${p.mode === "once" ? " (one-off)" : ""}`,
+      today: p.mode === "once" ? p.amount : 0,
+      monthly: p.mode === "monthly" ? p.amount : 0,
+      rate: growth.rate,
+      basis: growth.basis,
+    };
+  });
 }

@@ -696,7 +696,12 @@ test.describe('logged-in app', () => {
 
     await open(page, app, 'Goals');
     await expect(page.getByLabel('Gold (% a year)')).toHaveValue('14');
+    // A government scheme brings its own notified rate; cancel and plan gold instead.
+    await page.getByRole('combobox', { name: 'Plan an investment for Example Goal' }).selectOption('sukanya');
+    await expect(page.getByLabel('Planned rate % a year')).toHaveValue('8.2');
+    await page.getByRole('button', { name: 'Cancel', exact: true }).click();
     await page.getByRole('combobox', { name: 'Plan an investment for Example Goal' }).selectOption('gold');
+    await expect(page.getByLabel('Planned rate % a year')).toHaveValue('14');
     await page.getByLabel('Planned amount').fill('5000');
     await page.getByLabel('Planned investment name').fill('Gold SIP');
     await page.getByLabel('Planned amount').press('Enter');
@@ -776,5 +781,27 @@ test.describe('logged-in app', () => {
     await expect(page.locator('.phone-content').getByText(/Choose from your records/).first()).toBeVisible();
     await fits('Planner cash flow');
     await expectHealthy(page, app, 'phone screens from today');
+  });
+
+  test('editing a home being built keeps its builder payments', async ({ page }) => {
+    test.skip(isPhone(page), 'Covered on desktop');
+    const app = await signedIn(page);
+    // Saving an edit asks for a 4-digit code shown in the prompt; type it back.
+    page.on('dialog', dialog => dialog.accept(dialog.message().match(/\b\d{4}\b/)?.[0] || ''));
+    await open(page, app, 'Property');
+    await page.getByRole('button', { name: /Record a payment to the builder/ }).click();
+    await page.getByLabel('Amount paid').fill('500000');
+    await page.getByRole('button', { name: 'Save payment' }).click();
+    await expect(page.getByText(/still to pay ₹35,00,000/).first()).toBeVisible();
+
+    const row = page.locator('.investment-table tbody tr', { hasText: 'Build Site' }).first();
+    await row.getByRole('button', { name: 'Manage' }).click();
+    await page.getByRole('button', { name: 'Edit', exact: true }).click();
+    await page.getByRole('button', { name: 'Save', exact: true }).click();
+    await expect.poll(() => app.writes.filter(w => w.table === 'records' && JSON.stringify(w.body).includes('construction_payments')).length).toBeGreaterThan(1);
+    const last = app.writes.filter(w => w.table === 'records').at(-1)!;
+    expect(JSON.stringify(last.body)).toContain('construction_payments');
+    await expect(page.getByText(/still to pay ₹35,00,000/).first()).toBeVisible();
+    await expectHealthy(page, app, 'edit keeps builder payments');
   });
 });

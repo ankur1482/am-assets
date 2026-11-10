@@ -40,7 +40,7 @@ import { supabase } from "@/lib/supabase";
 import { startForegroundRefresh } from "@/lib/foregroundRefresh";
 import { APP_VERSION } from "@/lib/appVersion";
 import { cleanSources, goalFunding, holdingSource, holdingsFor, isPrimaryResidence, typeSource, type GoalFunding, type Holding } from "@/lib/goals";
-import { cleanGrowth, cleanPlanned, DEFAULT_GROWTH, GROWTH_LABELS, holdingGrowth, holdingMonthly, plannedItems, projectGoal, yearlyReturns, type GrowthRates, type PlannedInvestment, type ProjectionItem } from "@/lib/goalProjection";
+import { cleanGrowth, cleanPlanned, DEFAULT_GROWTH, GROWTH_LABELS, PLANNED_INSTRUMENTS, plannedDefaultRate, plannedName, plannedRate, holdingGrowth, holdingMonthly, plannedItems, projectGoal, yearlyReturns, type GrowthRates, type PlannedInvestment, type ProjectionItem } from "@/lib/goalProjection";
 type YearReturn = { year: number; pct: number };
 import { LOCKED_TABS, normalizeHiddenTabs, toggleHiddenTab } from "@/lib/hiddenTabs";
 import { cleanPicks, type SourcePicks } from "@/lib/plannerSources";
@@ -83,6 +83,7 @@ import {
   LOAN_FIELDS,
   loanPosition,
   PROPERTY_LOAN_FIELDS,
+  preEmiPosition,
   calculateIndianGratuity,
   computeRecord,
   computeTotals,
@@ -261,6 +262,16 @@ const groups = [
   ["Admin", ["admin"]],
 ];
 const allViews = [...views, ["admin", "Admin", "Admin Console"]];
+// Stored with a record but not part of its edit form, so saving the form must carry them over.
+const PRESERVED_ON_EDIT = [
+  "construction_payments",
+  "planned_investments",
+  "funding_sources",
+  "linked_property_id",
+  "source_module",
+  "sold_out",
+  "sold_out_on",
+];
 // Asset types a goal can be paid from, in the order the Goals page lists them.
 const GOAL_ASSET_KEYS = ["fixedIncome", "stocks", "mutualFunds", "bullion", "property", "ulips", "nsel", "otherAssets", "insurance"];
 const goalTypeLabel = (k: string) => (k === "bullion" ? "Gold & Silver" : MODULES[k]?.title || k);
@@ -1053,7 +1064,7 @@ export default function AssetManagerApp() {
     // Goals table starts with the goals needing the most work first.
     [goalsSort, setGoalsSort] = useState<{ key: string; direction: "asc" | "desc" }>({ key: "projection_status", direction: "asc" }),
     [paymentDraft, setPaymentDraft] = useState<{ propertyId: string; date: string; amount: string; from: "own" | "loan"; note: string } | null>(null),
-    [plannedDraft, setPlannedDraft] = useState<{ goalId: string; type: keyof GrowthRates; mode: "monthly" | "once"; amount: string; note: string } | null>(null),
+    [plannedDraft, setPlannedDraft] = useState<{ goalId: string; instrument: string; type: keyof GrowthRates; mode: "monthly" | "once"; amount: string; note: string; rate: string } | null>(null),
     [goalGrowthInput, setGoalGrowthInput] = useState<Partial<Record<keyof GrowthRates, string>>>({}),
     [sourcePrefs, setSourcePrefs] = useState<Record<string, string>>(() => {
       if (typeof window === "undefined") return DEFAULT_SOURCE_PREFS;
@@ -15259,6 +15270,19 @@ export default function AssetManagerApp() {
                   {!b.total && <span className="ml-2 text-red-700">Enter the purchase price (the full price) to see what is still to pay.</span>}
                   {b.overpaid > 0 && <span className="ml-2 text-red-700">Payments are {fmt(b.overpaid)} more than the purchase price.</span>}
                 </div>
+                {(() => {
+                  const pre = preEmiPosition(r.data || {}, PROPERTY_LOAN_FIELDS);
+                  if (!pre)
+                    return num(r.data?.loan_amount) > 0 && !/^yes/i.test(String(r.data?.pre_emi || "")) ? (
+                      <div className="mt-1 text-xs text-gray-600">Paying the full EMI. To pay only interest until possession, choose it on the property (Manage).</div>
+                    ) : null;
+                  return (
+                    <div className="mt-1 rounded-lg bg-blue-50 px-2 py-1 text-xs text-blue-900">
+                      Paying interest only until possession: <b>{fmt(pre.emi)} a month</b> on {fmt(pre.balance)} the bank has paid out so far.{" "}
+                      {pre.possessionDate ? <>The full EMI of about {fmt(pre.fullEmi)} starts from {formatDate(pre.possessionDate)}.</> : <>Enter the expected possession date to see when the full EMI starts.</>}
+                    </div>
+                  );
+                })()}
                 {b.payments.length > 0 && (
                   <div className="mt-2 grid gap-1">
                     {b.payments.map((p) => (
@@ -15342,24 +15366,18 @@ export default function AssetManagerApp() {
   function plannedInvestmentsRow(goal: Rec, goalName: string) {
     const planned = cleanPlanned(goal.data?.planned_investments);
     const draft = plannedDraft?.goalId === goal.id ? plannedDraft : null;
-    const typeOptions: [keyof GrowthRates, string][] = [
-      ["shares", "Shares or mutual funds (SIP)"],
-      ["gold", "Gold"],
-      ["silver", "Silver"],
-      ["property", "Property (being built or planned)"],
-      ["fixedIncome", "Fixed income (FD, PPF, Sukanya…)"],
-      ["insurance", "Money-back insurance"],
-      ["other", "Something else"],
-    ];
+    const rates = goalGrowthRates();
+    const groups = [...new Set(PLANNED_INSTRUMENTS.map((i) => i.group))];
+    const instrumentOf = (id: string) => PLANNED_INSTRUMENTS.find((i) => i.id === id);
     return (
       <div className="mt-2 flex flex-wrap items-center gap-2">
         {planned.map((p) => (
           <span key={p.id} className="inline-flex items-center gap-1 rounded-full border border-[#d6dcf5] bg-[#f4f6ff] px-2.5 py-1 text-xs font-semibold text-[#1f2f6b]">
-            Planned: {p.note || GROWTH_LABELS[p.type]} {fmt(p.amount)}{p.mode === "monthly" ? "/month" : " one-off"}
+            Planned: {plannedName(p)} {fmt(p.amount)}{p.mode === "monthly" ? "/month" : " one-off"} at {plannedRate(p, rates).rate.toFixed(1)}%
             <button
               type="button"
               className="ml-1 text-gray-500 hover:text-red-700"
-              aria-label={`Remove planned ${p.note || GROWTH_LABELS[p.type]} for ${goalName}`}
+              aria-label={`Remove planned ${plannedName(p)} for ${goalName}`}
               onClick={() => setGoalPlanned(goal, planned.filter((x) => x.id !== p.id))}
             >
               ×
@@ -15373,11 +15391,21 @@ export default function AssetManagerApp() {
             value=""
             disabled={!canEditModule("goals")}
             onChange={(event) => {
-              if (event.target.value) setPlannedDraft({ goalId: goal.id, type: event.target.value as keyof GrowthRates, mode: "monthly", amount: "", note: "" });
+              const inst = instrumentOf(event.target.value);
+              if (inst)
+                setPlannedDraft({ goalId: goal.id, instrument: inst.id, type: inst.type, mode: "monthly", amount: "", note: "", rate: String(plannedDefaultRate(inst.id, rates)) });
             }}
           >
             <option value="">+ Plan an investment for this goal…</option>
-            {typeOptions.map(([type, label]) => <option key={type} value={type}>{label}</option>)}
+            {groups.map((group) => (
+              <optgroup key={group} label={group}>
+                {PLANNED_INSTRUMENTS.filter((i) => i.group === group).map((i) => (
+                  <option key={i.id} value={i.id}>
+                    {i.label} ({plannedDefaultRate(i.id, rates).toFixed(1)}% a year)
+                  </option>
+                ))}
+              </optgroup>
+            ))}
           </select>
         ) : (
           <form
@@ -15386,16 +15414,34 @@ export default function AssetManagerApp() {
               event.preventDefault();
               const amount = num(draft.amount);
               if (amount <= 0) return setToast("Enter an amount");
-              setGoalPlanned(goal, [...planned, { id: `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`, type: draft.type, mode: draft.mode, amount, note: draft.note.trim() || undefined }]);
+              const defaultRate = plannedDefaultRate(draft.instrument, rates), typed = Number(draft.rate);
+              setGoalPlanned(goal, [
+                ...planned,
+                {
+                  id: `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`,
+                  type: draft.type,
+                  instrument: draft.instrument,
+                  // Only a rate changed from the default is kept, so the default follows future notified rates.
+                  rate: draft.rate.trim() !== "" && Number.isFinite(typed) && Math.abs(typed - defaultRate) > 1e-9 ? typed : undefined,
+                  mode: draft.mode,
+                  amount,
+                  note: draft.note.trim() || undefined,
+                },
+              ]);
               setPlannedDraft(null);
             }}
           >
-            <b>{typeOptions.find(([t]) => t === draft.type)?.[1]}</b>
+            <b>{instrumentOf(draft.instrument)?.label}</b>
             <select className="field-input !w-auto" aria-label="How often" value={draft.mode} onChange={(e) => setPlannedDraft({ ...draft, mode: e.target.value as "monthly" | "once" })}>
               <option value="monthly">Every month from now</option>
               <option value="once">One-off amount now</option>
             </select>
             <input className="field-input !w-32" type="number" min="0" step="any" placeholder="Amount ₹" aria-label="Planned amount" value={draft.amount} onChange={(e) => setPlannedDraft({ ...draft, amount: e.target.value })} />
+            <label className="inline-flex items-center gap-1">
+              <span>Rate</span>
+              <input className="field-input !w-20" type="number" step="0.1" aria-label="Planned rate % a year" value={draft.rate} onChange={(e) => setPlannedDraft({ ...draft, rate: e.target.value })} />
+              <span>% a year</span>
+            </label>
             <input className="field-input !w-44" placeholder="Name (optional)" aria-label="Planned investment name" maxLength={80} value={draft.note} onChange={(e) => setPlannedDraft({ ...draft, note: e.target.value })} />
             <button type="submit" className="btn-primary !px-3 !py-1">Add</button>
             <button type="button" className="btn !px-3 !py-1" onClick={() => setPlannedDraft(null)}>Cancel</button>
@@ -17766,7 +17812,9 @@ export default function AssetManagerApp() {
               submitted = Object.fromEntries(fd),
               data: any = ["stocks", "insurance"].includes(editing!.moduleKey)
                 ? { ...raw }
-                : {};
+                : // Details kept outside the form (builder payments, a goal's picks and plans, links and
+                  // sale status) must survive an edit; only the form's own fields are replaced.
+                  Object.fromEntries(Object.entries(raw).filter(([field]) => PRESERVED_ON_EDIT.includes(field)));
             def.fields.forEach((f) => {
               // Keep values hidden by a dependent-field rule so switching back restores them.
               if (!fd.has(f.name) && !isFieldVisible(editing!.moduleKey, f.name, submitted)) {
