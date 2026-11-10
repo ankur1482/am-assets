@@ -727,4 +727,23 @@ test.describe('logged-in app', () => {
     expect((await row.boundingBox())!.height).toBeLessThan(60);
     await expectHealthy(page, app, 'goals table');
   });
+
+  test('a home being built records stage payments and shows what is still to pay', async ({ page }) => {
+    test.skip(isPhone(page), 'Covered on desktop');
+    const app = await signedIn(page);
+    await open(page, app, 'Property');
+    await expect(page.getByRole('heading', { name: 'Homes being built' })).toBeVisible();
+    const panel = page;
+    await expect(panel.getByText(/still to pay ₹40,00,000/).first()).toBeVisible();
+    await panel.getByRole('button', { name: /Record a payment to the builder/ }).click();
+    await panel.getByLabel('Amount paid').fill('1000000');
+    await panel.getByLabel('Payment stage').fill('Booking');
+    await panel.getByRole('button', { name: 'Save payment' }).click();
+    await expect(panel.getByText(/still to pay ₹30,00,000/).first()).toBeVisible();
+    await expect(panel.getByText(/Booking/)).toBeVisible();
+    await expect.poll(() => app.writes.some(w => w.table === 'records' && JSON.stringify(w.body).includes('construction_payments'))).toBe(true);
+    // The property table shows it too.
+    await expect(page.locator('.investment-table').getByText('₹30,00,000').first()).toBeVisible();
+    await expectHealthy(page, app, 'homes being built');
+  });
 });

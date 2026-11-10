@@ -44,6 +44,7 @@ import { cleanGrowth, cleanPlanned, DEFAULT_GROWTH, GROWTH_LABELS, holdingGrowth
 type YearReturn = { year: number; pct: number };
 import { LOCKED_TABS, normalizeHiddenTabs, toggleHiddenTab } from "@/lib/hiddenTabs";
 import { cleanPicks, type SourcePicks } from "@/lib/plannerSources";
+import { constructionSummary, type ConstructionPayment } from "@/lib/construction";
 import MonthlyUploads from "@/components/MonthlyUploads";
 import BackupCenter, { type BackupTarget } from "@/components/BackupCenter";
 import { backupFileName, backupFingerprint } from "@/lib/backups";
@@ -641,6 +642,10 @@ const GOAL_LABELS: Record<string, string> = {
 const fieldLabel = (moduleKey: string, field: string) =>
   moduleKey === "goals" && GOAL_LABELS[field]
     ? GOAL_LABELS[field]
+    : moduleKey === "property" && field === "construction_paid"
+    ? "Paid to builder"
+    : moduleKey === "property" && field === "construction_pending"
+    ? "Still to pay"
     : moduleKey === "property" && field === "broker"
     ? "Community"
     : moduleKey === "bullion" && field === "current_price"
@@ -695,6 +700,8 @@ const fieldLabel = (moduleKey: string, field: string) =>
         ? "Property Type"
       : OD_LOAN_LABELS[field] || pretty(field);
 const moneyCols = [
+  "construction_paid",
+  "construction_pending",
   "invested",
   "latest",
   "gain",
@@ -1045,6 +1052,7 @@ export default function AssetManagerApp() {
     [homeListOpen, setHomeListOpen] = useState<boolean | null>(null),
     // Goals table starts with the goals needing the most work first.
     [goalsSort, setGoalsSort] = useState<{ key: string; direction: "asc" | "desc" }>({ key: "projection_status", direction: "asc" }),
+    [paymentDraft, setPaymentDraft] = useState<{ propertyId: string; date: string; amount: string; from: "own" | "loan"; note: string } | null>(null),
     [plannedDraft, setPlannedDraft] = useState<{ goalId: string; type: keyof GrowthRates; mode: "monthly" | "once"; amount: string; note: string } | null>(null),
     [goalGrowthInput, setGoalGrowthInput] = useState<Partial<Record<keyof GrowthRates, string>>>({}),
     [sourcePrefs, setSourcePrefs] = useState<Record<string, string>>(() => {
@@ -14739,6 +14747,11 @@ export default function AssetManagerApp() {
     );
   }
   function formatModuleCell(moduleKey: string, col: string, c: any, record?: Rec) {
+    // Only properties being built have stage payments; ready ones show a dash.
+    if (moduleKey === "property" && ["construction_paid", "construction_pending"].includes(col)) {
+      if (c[col] === "" || c[col] === undefined) return <span className="text-gray-400">—</span>;
+      if (col === "construction_pending" && num(c[col]) > 0) return <span className="font-bold tabular-nums text-amber-700">{fmt(c[col])}</span>;
+    }
     if (moduleKey === "goals" && ["projection_status", "projected_value", "projected_gap", "extra_monthly"].includes(col)) {
       const status = String(c.projection_status || "");
       const tone = status === "On track" ? "emerald" : status === "Close" ? "amber" : status === "Needs work" ? "red" : "gray";
@@ -14987,7 +15000,8 @@ export default function AssetManagerApp() {
           if (k !== "property") return { id: r.id, moduleKey: k, label: goalHoldingLabel(k, r.data || {}), value: gross, gross };
           // A property funds a goal only with what is left after its own home loan (net of money parked in an OD).
           // A home being built counts at what you have paid into it from your own money, when entered.
-          const selfFunded = isUnderConstruction(r.data || {}) ? num(r.data?.self_funded_so_far) : 0;
+          // Own-money stage payments recorded under Homes being built, or the single amount typed on the property.
+          const selfFunded = isUnderConstruction(r.data || {}) ? constructionSummary(r.data).own : 0;
           if (selfFunded > 0)
             return { id: r.id, moduleKey: k, label: `${goalHoldingLabel(k, r.data || {})} — being built, paid ${fmt(selfFunded)} from own money`, value: selfFunded, gross };
           const c = computeRecord("property", r.data), loan = num(c.loan_balance) > 0 ? Math.max(0, num(c.net_loan_balance)) : 0;
@@ -15098,6 +15112,159 @@ export default function AssetManagerApp() {
           ))}
         </div>
       </details>
+    );
+  }
+  async function saveConstructionPayments(property: Rec, payments: ConstructionPayment[]) {
+    if (!canEditModule("property")) {
+      setToast("This household access is read-only for Property");
+      return;
+    }
+    try {
+      await saveRecordData(property.id, withSystemDates({ ...property.data, construction_payments: payments }, property));
+    } catch (e: any) {
+      setToast(e?.message || "Could not save the payment");
+    }
+  }
+  /** Properties being built: full price, stage payments made so far, and what is still to pay the builder. */
+  /** A totals line under the goals table: amounts added up, and how many goals are in each status. */
+  function goalsTotalsRow(goals: any[], cols: string[]) {
+    const sum = (col: string) => goals.reduce((t, c) => t + num(c[col]), 0);
+    const count = (label: string) => goals.filter((c) => c.projection_status === label).length;
+    const target = sum("target_amount"), projected = sum("projected_value");
+    const statusText = [["On track", "text-emerald-700"], ["Close", "text-amber-700"], ["Needs work", "text-red-700"]]
+      .map(([label, tone]) => [label, tone, count(label)] as const)
+      .filter(([, , n]) => n > 0);
+    return (
+      <tfoot>
+        <tr className="goals-total-row border-t-2 border-[#d9cfbb] bg-[#f5efe3] font-bold">
+          {cols.map((col, i) => (
+            <td key={col} className={`p-3 ${stockCellClass("goals", col)}`}>
+              {i === 0 ? `Total (${goals.length} goals)`
+                : ["target_amount", "current_value", "gap", "projected_gap", "extra_monthly"].includes(col) ? <span className="tabular-nums">{fmt(sum(col))}</span>
+                : col === "projected_value" ? (
+                  <span className="tabular-nums">
+                    {fmt(projected)}
+                    {target > 0 && <span className="block text-[10px] font-semibold opacity-80">{Math.round((projected / target) * 100)}% of all targets</span>}
+                  </span>
+                )
+                : col === "projection_status" ? (
+                  <span className="whitespace-nowrap text-xs">
+                    {statusText.map(([label, tone, n], j) => <span key={label} className={tone}>{j ? " · " : ""}{n} {label.toLowerCase()}</span>)}
+                  </span>
+                )
+                : ""}
+            </td>
+          ))}
+          <td />
+        </tr>
+      </tfoot>
+    );
+  }
+  function constructionPanel(propertyRecords: Rec[]) {
+    const building = propertyRecords.filter((r) => isUnderConstruction(r.data || {}));
+    if (!building.length) return null;
+    const totals = building
+      .map((r) => constructionSummary(r.data))
+      .reduce((t, b) => ({ total: t.total + b.total, paid: t.paid + b.paid, pending: t.pending + b.pending }), { total: 0, paid: 0, pending: 0 });
+    return (
+      <div className="mb-4 rounded-3xl border border-[#ded6c4] bg-white p-4 shadow-sm">
+        <div className="mb-2 flex flex-wrap items-baseline justify-between gap-2">
+          <h4 className="text-base font-semibold text-[#17382b]">Homes being built</h4>
+          <span className="text-sm tabular-nums">
+            Paid {fmt(totals.paid)} of {fmt(totals.total)} · <span className="font-semibold text-amber-700">still to pay {fmt(totals.pending)}</span>
+          </span>
+        </div>
+        <p className="mb-3 text-xs text-gray-600">
+          The purchase price is the full price of the home. Record each payment as the builder asks for it, and the app keeps the total paid and what is still to pay.
+          Payments from your own money are what count when the home is picked for a goal.
+        </p>
+        <div className="space-y-3">
+          {building.map((r) => {
+            const b = constructionSummary(r.data),
+              draft = paymentDraft?.propertyId === r.id ? paymentDraft : null;
+            return (
+              <div key={r.id} className="rounded-xl border border-[#e3dccc] p-3 text-sm">
+                <div className="flex flex-wrap items-baseline justify-between gap-2">
+                  <span className="font-semibold">{goalHoldingLabel("property", r.data || {})}</span>
+                  <span className="tabular-nums">
+                    Price {fmt(b.total)} · paid {fmt(b.paid)} ({b.paidPct.toFixed(0)}%) ·{" "}
+                    <span className="font-semibold text-amber-700">still to pay {fmt(b.pending)}</span>
+                  </span>
+                </div>
+                <div className="mt-1 h-2 w-full overflow-hidden rounded bg-[#eef1ec]">
+                  <div className="h-full bg-emerald-600" style={{ width: `${b.paidPct}%` }} />
+                </div>
+                <div className="mt-1 text-xs text-gray-600">
+                  From your own money {fmt(b.own)} · from the home loan {fmt(b.loan)}
+                  {!b.total && <span className="ml-2 text-red-700">Enter the purchase price (the full price) to see what is still to pay.</span>}
+                  {b.overpaid > 0 && <span className="ml-2 text-red-700">Payments are {fmt(b.overpaid)} more than the purchase price.</span>}
+                </div>
+                {b.payments.length > 0 && (
+                  <div className="mt-2 grid gap-1">
+                    {b.payments.map((p) => (
+                      <div key={p.id} className="flex flex-wrap items-center justify-between gap-2 border-t border-[#efe9dc] pt-1 text-xs">
+                        <span>
+                          {p.date ? formatDate(p.date) : "No date"} · {p.note || "Stage payment"} ·{" "}
+                          <span className="text-gray-600">{p.from === "own" ? "own money" : "home loan"}</span>
+                        </span>
+                        <span className="flex items-center gap-2 font-semibold tabular-nums">
+                          {fmt(p.amount)}
+                          <button
+                            type="button"
+                            className="text-gray-500 hover:text-red-700"
+                            aria-label={`Remove payment of ${fmt(p.amount)}`}
+                            disabled={!canEditModule("property")}
+                            onClick={() => {
+                              if (confirm(`Remove the payment of ${fmt(p.amount)}${p.date ? ` on ${formatDate(p.date)}` : ""}?`))
+                                saveConstructionPayments(r, b.payments.filter((x) => x.id !== p.id));
+                            }}
+                          >
+                            ×
+                          </button>
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {!draft ? (
+                  <button
+                    type="button"
+                    className="btn mt-2 text-xs"
+                    disabled={!canEditModule("property")}
+                    onClick={() => setPaymentDraft({ propertyId: r.id, date: isoDate(), amount: "", from: "own", note: "" })}
+                  >
+                    <Plus size={14} className="inline" /> Record a payment to the builder
+                  </button>
+                ) : (
+                  <form
+                    className="mt-2 flex flex-wrap items-center gap-2 rounded-lg border border-[#e3dccc] bg-[#fbfaf6] p-2 text-xs"
+                    onSubmit={(event) => {
+                      event.preventDefault();
+                      const amount = num(draft.amount);
+                      if (amount <= 0) return setToast("Enter the amount paid");
+                      saveConstructionPayments(r, [
+                        ...b.payments,
+                        { id: `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`, date: draft.date, amount, from: draft.from, note: draft.note.trim() || undefined },
+                      ]);
+                      setPaymentDraft(null);
+                    }}
+                  >
+                    <input className="field-input !w-36" type="date" aria-label="Payment date" value={draft.date} onChange={(e) => setPaymentDraft({ ...draft, date: e.target.value })} />
+                    <input className="field-input !w-32" type="number" min="0" step="any" placeholder="Amount ₹" aria-label="Amount paid" value={draft.amount} onChange={(e) => setPaymentDraft({ ...draft, amount: e.target.value })} />
+                    <select className="field-input !w-auto" aria-label="Paid from" value={draft.from} onChange={(e) => setPaymentDraft({ ...draft, from: e.target.value as "own" | "loan" })}>
+                      <option value="own">From my own money</option>
+                      <option value="loan">From the home loan</option>
+                    </select>
+                    <input className="field-input !w-44" placeholder="Stage (e.g. Slab 3)" aria-label="Payment stage" maxLength={80} value={draft.note} onChange={(e) => setPaymentDraft({ ...draft, note: e.target.value })} />
+                    <button type="submit" className="btn-primary !px-3 !py-1">Save payment</button>
+                    <button type="button" className="btn !px-3 !py-1" onClick={() => setPaymentDraft(null)}>Cancel</button>
+                  </form>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
     );
   }
   async function setGoalPlanned(goal: Rec, planned: PlannedInvestment[]) {
@@ -15986,6 +16153,7 @@ export default function AssetManagerApp() {
             ))}
           </div>
         )}
+        {k === "property" && constructionPanel(filtered)}
         {k === "insurance" && (() => {
           const calculated = filtered.map((record) => ({
               record,
@@ -16402,6 +16570,7 @@ export default function AssetManagerApp() {
                   ];
                 })}
               </tbody>
+              {k === "goals" && rows.length > 1 && goalsTotalsRow(rows.map((x) => x.c), visibleCols)}
             </table>
           </div>
         ) : (

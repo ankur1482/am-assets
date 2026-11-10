@@ -15,6 +15,15 @@ These backups cover the app itself, not your financial data. Your data is covere
 
 ---
 
+## Version 10.19 (10 Nov 2026, 14:01): Stage payments for homes being built, and a goals total
+
+Backup taken before this release: `backup-2026-11-10-1401-IST`
+
+- **Homes being built are paid in stages.** For a property marked Under Construction, the **Purchase Price** is the full price of the home. A new **Homes being built** section on the Property page lets you **Record a payment to the builder** each time one is made: the date, the amount, whether it came from your own money or the home loan, and the stage (for example "Slab 3"). The app adds them up and shows **paid so far**, **still to pay** (the price less what has been paid) and a progress bar, with a total across all homes being built. Remove a payment with ×; it asks first.
+- **In the property table**, two new columns, **Paid to builder** and **Still to pay**, show the same figures for homes being built, and a dash for ready ones. A community with several units adds them up.
+- **Goals use the own-money payments.** When a home being built is picked for a goal, it counts at the total of the payments made from your own money. If you have not recorded individual payments, the single **Paid so far from your own money** box on the property still works.
+- **Goals table total.** A **Total** line under the goals table adds up the target amounts, today's values, what is short today, the expected value by the target dates (with the share of all targets), the expected shortfall and the extra a month needed. It also counts how many goals are on track, close or need work.
+
 ## Version 10.18 (10 Nov 2026, 13:40): A colour-coded goals table at the top, and shorter table rows
 
 Backup taken before this release: `backup-2026-11-10-1340-IST`
