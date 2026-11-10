@@ -3853,3 +3853,54 @@ thead th {
   /* Lists that read better one per line on a phone than in the usual two columns. */
   .phone-screen .grid.phone-one-col { grid-template-columns: minmax(0, 1fr) !important; }
 }
+
+/* Dividends earned: a table on the computer, cards on the phone. */
+.div-earned-cards { display: none; }
+@media (max-width: 1024px) {
+  .mom-scroll:has(+ .div-earned-cards) { display: none; }
+  .div-earned-cards { display: grid; gap: 8px; }
+  .div-earned-total { display: flex; justify-content: space-between; padding: 10px 12px; border-radius: 14px; background: #f5efe3; color: #17382b; font-size: 14px; }
+  .div-earned-card { padding: 10px 12px; border: 1px solid #e3dccc; border-radius: 14px; background: #fff; color: #17382b; }
+  .div-earned-head { display: flex; justify-content: space-between; gap: 8px; align-items: flex-start; }
+  .div-earned-head small { display: block; color: #5b6b63; font-size: 12px; }
+  .div-earned-amount { white-space: nowrap; color: #047857; font-size: 16px; }
+  .div-earned-card dl { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px 12px; margin: 8px 0 0; font-size: 12px; }
+  .div-earned-card dt { color: #5b6b63; }
+  .div-earned-card dd { margin: 0; font-weight: 600; }
+}
+
+/* Phone investments: a slim bar in place of the tab rows, and a drawer from the left. */
+.phone-invest-bar { display: none; }
+@media (max-width: 1024px) {
+  .phone-invest-bar {
+    position: sticky; top: calc(env(safe-area-inset-top) + 8px); z-index: 39;
+    display: flex; align-items: center; gap: 8px;
+    width: calc(100vw - 18px); margin: 10px auto 8px; padding: 6px;
+    border: 1px solid rgba(198,150,50,.25); border-radius: 18px;
+    background: rgba(255,253,248,.92); box-shadow: 0 10px 26px rgba(15,23,42,.10); backdrop-filter: blur(14px);
+  }
+  .phone-invest-bar button { min-height: 40px; border-radius: 12px; color: #17382b; font-weight: 700; }
+  .phone-invest-menu { width: 44px; flex: none; background: #17382b; color: #fff !important; font-size: 18px; }
+  .phone-invest-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; padding: 0 6px; font-size: 16px; }
+  .phone-invest-title span { color: #5b6b63; font-weight: 600; }
+  .phone-invest-home { flex: none; padding: 0 12px; border: 1px solid #e3dccc; background: #fff; font-size: 14px; }
+  .phone-invest-drawer-wrap { position: fixed; inset: 0; z-index: 80; }
+  .phone-invest-backdrop { position: absolute; inset: 0; background: rgba(15,23,42,.38); }
+  .phone-invest-drawer {
+    position: absolute; top: 0; bottom: 0; left: 0; width: min(320px, 84vw); overflow-y: auto;
+    padding: calc(env(safe-area-inset-top) + 12px) 12px 24px; background: #fff; box-shadow: 8px 0 30px rgba(15,23,42,.2);
+    animation: phone-drawer-in .18s ease-out;
+  }
+  @keyframes phone-drawer-in { from { transform: translateX(-100%); } to { transform: none; } }
+  .phone-invest-drawer-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; font-size: 18px; color: #17382b; }
+  .phone-invest-drawer-head button { width: 40px; height: 40px; border-radius: 12px; color: #17382b; }
+  .phone-invest-section { margin: 12px 4px 4px; font-size: 11px; font-weight: 800; letter-spacing: .14em; text-transform: uppercase; color: #5b6b63; }
+  .phone-invest-item {
+    display: flex; width: 100%; justify-content: space-between; gap: 8px; align-items: center;
+    min-height: 44px; padding: 8px 10px; border-radius: 12px; color: #17382b; font-size: 15px; font-weight: 600; text-align: left;
+  }
+  .phone-invest-item span:last-child { color: #5b6b63; font-size: 13px; font-weight: 600; }
+  .phone-invest-item.active { background: #17382b; color: #fff; }
+  .phone-invest-item.active span:last-child { color: #d9efe2; }
+  .phone-invest-item.empty { opacity: .6; }
+}

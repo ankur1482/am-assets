@@ -1065,6 +1065,7 @@ export default function AssetManagerApp() {
     // Goals table starts with the goals needing the most work first.
     [goalsSort, setGoalsSort] = useState<{ key: string; direction: "asc" | "desc" }>({ key: "projection_status", direction: "asc" }),
     [showAllInvestmentTypes, setShowAllInvestmentTypes] = useState(false),
+    [investDrawerOpen, setInvestDrawerOpen] = useState(false),
     [paymentDraft, setPaymentDraft] = useState<{ propertyId: string; date: string; amount: string; from: "own" | "loan"; note: string } | null>(null),
     [plannedDraft, setPlannedDraft] = useState<{ goalId: string; instrument: string; type: keyof GrowthRates; mode: "monthly" | "once"; amount: string; note: string; rate: string } | null>(null),
     [goalGrowthInput, setGoalGrowthInput] = useState<Partial<Record<keyof GrowthRates, string>>>({}),
@@ -4804,6 +4805,10 @@ export default function AssetManagerApp() {
     }
   }
   const heldTypes = new Set(records.map((r) => r.module_key));
+  // On the phone, investment screens use the slim bar and drawer however they were reached.
+  const PHONE_INVEST_KEYS = ["stocks", "property", "bullion", "fixedIncome", "insurance", "mutualFunds", "ulips", "otherAssets", "nsel"];
+  // Only investment screens (or Investments just tapped from Home) use it; Goals, Loans and the rest keep the main tabs.
+  const phoneInvestMode = phoneMode && (PHONE_INVEST_KEYS.includes(view) || (mobileNavMode === "investments" && view === "dashboard"));
   const visibleGroups = groups
     .map(([g, ids]: any) => [
       g,
@@ -4934,6 +4939,7 @@ export default function AssetManagerApp() {
     }
     if (id === "investments") {
       setMobileNavMode("investments");
+      setInvestDrawerOpen(true);
       return;
     }
     if (id === "__back") {
@@ -4946,7 +4952,7 @@ export default function AssetManagerApp() {
       setAccountTabs((p) => ({ ...p, __phone: "All" }));
       return;
     }
-    if (MODULES[id]) setMobileNavMode("investments");
+    setMobileNavMode(["stocks", "property", "bullion", "fixedIncome", "insurance", "mutualFunds", "ulips", "otherAssets", "nsel"].includes(id) ? "investments" : "main");
   }
   async function adminFetch(body?: any) {
     if (!session?.access_token) throw new Error("Missing session");
@@ -5018,8 +5024,83 @@ export default function AssetManagerApp() {
       </div>
     );
   }
+  /**
+   * Phone investments: one slim bar (☰, where you are, Home) instead of rows of tabs, and a drawer
+   * from the left with the investment types and the people or views for the current one.
+   */
+  function phoneInvestBar() {
+    const typeTitle = view === "bullion" ? "Gold/Silver" : MODULES[view]?.title || "Investments";
+    const onInvestment = mobileInvestmentTabs.some(([id]) => id === view);
+    return (
+      <div className="phone-invest-bar" role="navigation" aria-label="Investments navigation">
+        <button type="button" className="phone-invest-menu" aria-label="Open investments menu" aria-expanded={investDrawerOpen} onClick={() => setInvestDrawerOpen(true)}>
+          <span aria-hidden="true">☰</span>
+        </button>
+        <button type="button" className="phone-invest-title" onClick={() => setInvestDrawerOpen(true)}>
+          {onInvestment ? <>{typeTitle}<span> · {phoneAccountTab()}</span></> : "Choose an investment"}
+        </button>
+        <button type="button" className="phone-invest-home" onClick={() => { setInvestDrawerOpen(false); selectMobileTab("dashboard"); }}>
+          Home
+        </button>
+      </div>
+    );
+  }
+  function phoneInvestDrawer() {
+    if (!investDrawerOpen) return null;
+    const value = (k: string) => records.filter((r) => r.module_key === k && !r.data?.sold_out).reduce((s, r) => s + num(computeLiveRecord(k, r.data).latest), 0);
+    const types = mobileInvestmentTabs
+      .map(([id, label]) => ({ id, label: id === "fixedIncome" ? "Fixed Income" : id === "mutualFunds" ? "Mutual Funds" : id === "ulips" ? "ULIPs" : id === "otherAssets" ? "Other Assets" : id === "nsel" ? "NSEL e-Series" : label, held: records.some((r) => r.module_key === id), value: value(id) }))
+      .filter((t) => isTabShown(t.id) && canViewModule(t.id))
+      .sort((a, b) => Number(b.held) - Number(a.held) || b.value - a.value);
+    const close = () => setInvestDrawerOpen(false);
+    const onInvestment = mobileInvestmentTabs.some(([id]) => id === view);
+    return (
+      <div className="phone-invest-drawer-wrap" role="dialog" aria-modal="true" aria-label="Investments menu">
+        <button type="button" className="phone-invest-backdrop" aria-label="Close investments menu" onClick={close} />
+        <nav className="phone-invest-drawer phone-light-card">
+          <div className="phone-invest-drawer-head">
+            <b>Investments</b>
+            <button type="button" aria-label="Close investments menu" onClick={close}>✕</button>
+          </div>
+          <div className="phone-invest-section">Types</div>
+          {types.map((t) => (
+            <button
+              key={t.id}
+              type="button"
+              className={`phone-invest-item ${view === t.id ? "active" : ""} ${t.held ? "" : "empty"}`}
+              aria-current={view === t.id ? "page" : undefined}
+              onClick={() => { setView(t.id); setMobileNavMode("investments"); setAccountTabs((p) => ({ ...p, __phone: "All" })); close(); }}
+            >
+              <span>{t.label}</span>
+              <span className="tabular-nums">{t.held ? fmt(t.value) : "None yet"}</span>
+            </button>
+          ))}
+          {onInvestment && mobileTabAccounts.length > 0 && (
+            <>
+              <div className="phone-invest-section">{view === "stocks" ? "People and views" : "People"}</div>
+              {mobileTabAccounts.map((account) => (
+                <button
+                  key={account}
+                  type="button"
+                  className={`phone-invest-item ${phoneAccountTab() === account ? "active" : ""}`}
+                  aria-current={phoneAccountTab() === account ? "page" : undefined}
+                  onClick={() => { setAccountTabs((p) => ({ ...p, __phone: account })); close(); }}
+                >
+                  <span>{account}</span>
+                  <span className="tabular-nums">
+                    {account === DIVIDENDS_EARNED_TAB ? receivedDividends(records).length : account === DIVIDEND_RADAR_TAB ? currentBuySignals().length : ""}
+                  </span>
+                </button>
+              ))}
+            </>
+          )}
+        </nav>
+      </div>
+    );
+  }
   function phoneAccountStrip() {
-    if (!mobileTabAccounts.length) return null;
+    // In the investments drawer on the phone, people and views are listed there instead.
+    if (!mobileTabAccounts.length || phoneInvestMode) return null;
     return (
       <OneRowTabs
         label="Accounts"
@@ -8115,7 +8196,7 @@ export default function AssetManagerApp() {
             </div>
           </div>
         )}
-        <OneRowTabs
+        {phoneInvestMode ? phoneInvestBar() : <OneRowTabs
           navigation
           sticky
           label="Mobile section navigation"
@@ -8132,7 +8213,8 @@ export default function AssetManagerApp() {
                 onSelect: () => selectMobileTab(id),
               })),
           ]}
-        />
+        />}
+        {phoneMode && phoneInvestDrawer()}
         {canSubmitUploads && uploadStatus.missing.length > 0 && view !== MONTHLY_UPLOAD_MODULE && (
           <button type="button" className="monthly-banner" onClick={() => setView(MONTHLY_UPLOAD_MODULE)}>
             <Paperclip size={15} />

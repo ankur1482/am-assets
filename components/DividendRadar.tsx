@@ -62,5 +62,18 @@ export function DividendHistory({ history }: { history: ReturnType<typeof divide
       </tr>)}</tbody>
       <tfoot><tr><th scope="row" className="mom-sticky">Total</th><td colSpan={7} /><td>{fmt(total)}</td><td /></tr></tfoot>
     </table></div>}
+    {/* On a phone the wide table becomes one card per dividend, so nothing runs off the screen. */}
+    {!!rows.length && <div className="div-earned-cards" aria-label="Dividends earned list">
+      <div className="div-earned-total"><span>Total received</span><b>{fmt(total)}</b></div>
+      {rows.map(({ group, receipt }, index) => <article key={`card|${group.account}|${group.ticker}|${receipt.ex_date}|${index}`} className="div-earned-card">
+        <div className="div-earned-head"><span><b>{group.name}</b><small>{group.ticker} · {group.account}{group.stillHeld ? "" : " · sold"}</small></span><b className="div-earned-amount">{fmt(receipt.amount)}</b></div>
+        <dl>
+          <div><dt>Received</dt><dd>{formatDate(receipt.received_on)}</dd></div>
+          <div><dt>Ex-date</dt><dd>{formatDate(receipt.ex_date)}</dd></div>
+          <div><dt>Shares × per share</dt><dd>{Number(Number(receipt.quantity || 0).toFixed(4))} × {receipt.per_share ? `₹${receipt.per_share}` : "—"}</dd></div>
+          <div><dt>Credited to</dt><dd>{receipt.credit_name || "—"}</dd></div>
+        </dl>
+      </article>)}
+    </div>}
   </section>;
 }

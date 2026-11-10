@@ -15,6 +15,14 @@ These backups cover the app itself, not your financial data. Your data is covere
 
 ---
 
+## Version 10.24 (10 Nov 2026, 15:41): Investments drawer on the phone, and dividend cards
+
+Backup taken before this release: `backup-2026-11-10-1541-IST`
+
+- **More room on investment screens (phone).** The rows of tabs at the top of Stocks, Property, Fixed Income and the other investment screens are replaced by one slim bar: a **☰** button, the screen you are on (for example "Stocks & ETFs · Shilpi") and **Home**. The content now starts right below it.
+- **Investments drawer.** Tapping **☰**, the screen name, or **Investments** in the bottom row slides in a panel from the left. It lists every investment type with its value (the ones you hold first, the rest as "None yet"), then the people and views for the current type: All, each person, and for Stocks, Watchlist, Dividends Earned and Dividend Buy Radar. Tap one to go there; tap outside or ✕ to close. Goals, Forecast and Settings keep the usual bottom row.
+- **Dividends Earned on the phone.** The wide table is now one card per dividend, with the stock, person and amount at the top, and the received date, ex-date, shares × per share and where it was credited beneath. A total sits at the top. The computer keeps the table.
+
 ## Version 10.23 (10 Nov 2026, 15:16): New Home screen and a five-area menu
 
 Backup taken before this release: `backup-2026-11-10-1516-IST`

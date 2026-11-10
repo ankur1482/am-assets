@@ -26,6 +26,23 @@ async function open(page: Page, app: MockedApp, name: string | RegExp) {
   await expectHealthy(page, app, String(name));
 }
 
+// On the phone, investments are picked from a drawer that slides in from the left.
+async function openInvestDrawer(page: Page) {
+  const drawer = page.getByRole('dialog', { name: 'Investments menu' });
+  if (!(await drawer.isVisible())) {
+    const menu = page.getByRole('button', { name: 'Open investments menu' });
+    if (await menu.isVisible()) await menu.click();
+    else await page.getByRole('navigation', { name: 'Mobile section navigation' }).getByRole('button', { name: 'Investments' }).click();
+  }
+  await expect(drawer).toBeVisible();
+  return drawer;
+}
+async function pickInvestment(page: Page, type?: string | RegExp, account?: string | RegExp) {
+  if (type) await (await openInvestDrawer(page)).getByRole('button', { name: type }).first().click();
+  if (account) await (await openInvestDrawer(page)).getByRole('button', { name: account }).first().click();
+  await expect(page.getByRole('dialog', { name: 'Investments menu' })).toHaveCount(0);
+}
+
 test.describe('logged-in app', () => {
   test('opens the dashboard without crashing', async ({ page }) => {
     const app = await signedIn(page);
@@ -176,21 +193,17 @@ test.describe('logged-in app', () => {
   test('phone screens open without crashing', async ({ page }) => {
     test.skip(!isPhone(page), 'Phone layout only');
     const app = await signedIn(page);
-    const tap = (name: string) => tapTab(page.getByRole('navigation', { name: 'Mobile section navigation' }), new RegExp(name));
-    // Opening a section swaps the menu for that section's own, with a Back button to the main one.
-    const back = page.getByRole('button', { name: 'Back to summary navigation' });
+    const strip = page.getByRole('navigation', { name: 'Mobile section navigation' });
     for (const name of ['Goals', 'Forecast', 'Settings', 'Home']) {
-      await tap(name);
-      await expectHealthy(page, app, `phone ${name}`);
-      if (await back.isVisible()) await back.click();
-    }
-    await tap('Investments');
-    for (const name of ['Property', 'Fixed', 'Insurance', 'Stocks']) {
-      await tap(name);
+      await tapTab(strip, new RegExp(name));
       await expectHealthy(page, app, `phone ${name}`);
     }
-    await tapTab(page.getByRole('group', { name: 'Accounts' }), /^Dividends Earned \(/);
-    await expect(page.getByRole('region', { name: 'Dividends earned table' }).getByText('Sold Example')).toBeVisible();
+    for (const name of [/^Property/, /^Fixed Income/, /^Insurance/, /^Stocks/]) {
+      await pickInvestment(page, name);
+      await expectHealthy(page, app, `phone ${name}`);
+    }
+    await pickInvestment(page, undefined, /^Dividends Earned/);
+    await expect(page.getByLabel('Dividends earned list').getByText('Sold Example')).toBeVisible();
     await expectHealthy(page, app, 'phone dividends earned');
   });
 
@@ -255,27 +268,17 @@ test.describe('logged-in app', () => {
     const app = await signedIn(page);
     await page.getByRole('button', { name: 'Open menu' }).click();
     await page.locator('.mobile-menu-panel').getByRole('button', { name: 'Stocks' }).click();
-    const accounts = page.getByRole('group', { name: 'Accounts' });
-    await tapTab(accounts, /^Dividend Buy Radar \(/);
+    // However Stocks is reached, the slim bar and drawer are used, with the dividend views in the drawer.
+    await expect(page.getByRole('navigation', { name: 'Investments navigation' })).toContainText(/Stocks.* · All/);
+    await pickInvestment(page, undefined, /^Dividend Buy Radar/);
     await expect(page.getByText('This shows a date, not a recommendation.')).toBeVisible();
-    // The chosen tab moves into the row, so it stays on show.
-    await expect(accounts.getByRole('button', { name: /^Dividend Buy Radar \(/ })).toHaveClass(/active/);
-    await expect(accounts.getByRole('button', { name: /^Dividend Buy Radar \(/ })).toBeInViewport({ ratio: 1 });
-    // Every option in an open More list must be what a finger lands on, not the row beneath it.
-    await accounts.getByRole('button', { name: 'More ▾' }).click();
-    const covered = await accounts.locator('.one-row-more-menu button').evaluateAll((items) => items.filter((item) => {
-      const box = item.getBoundingClientRect();
-      return !item.contains(document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2));
-    }).map((item) => item.textContent));
-    expect(covered).toEqual([]);
-    await tapTab(accounts, /^Dividends Earned \(/);
-    await expect(page.getByRole('region', { name: 'Dividends earned table' }).getByText('Sold Example')).toBeVisible();
-
-    // A dividend tab belongs to Stocks, so it must not empty another screen.
-    await page.getByRole('button', { name: 'Open menu' }).click();
-    await page.locator('.mobile-menu-panel').getByRole('button', { name: 'Property' }).click();
+    await expect(page.getByRole('navigation', { name: 'Investments navigation' })).toContainText('Dividend Buy Radar');
+    await pickInvestment(page, undefined, /^Dividends Earned/);
+    await expect(page.getByLabel('Dividends earned list').getByText('Sold Example')).toBeVisible();
+    // A dividend view belongs to Stocks, so another type opens on All.
+    await pickInvestment(page, /^Property/);
     await expect(page.getByText('Consolidated Holdings')).toBeVisible();
-    await expect(page.getByRole('button', { name: 'All', exact: true })).toHaveClass(/active/);
+    await expect(page.getByRole('navigation', { name: 'Investments navigation' })).toContainText('Property · All');
     await expectHealthy(page, app, 'phone dividend tabs');
   });
 
@@ -404,12 +407,9 @@ test.describe('logged-in app', () => {
       await page.setViewportSize({ width, height: 800 });
       await onOneLine(strip, `main menu at ${width}`);
       await onOneLine(page.getByRole('group', { name: 'Dashboard sections' }), `dashboard tabs at ${width}`);
-      await strip.getByRole('button', { name: 'Investments' }).click();
-      await onOneLine(strip, `investments menu at ${width}`);
-      await tapTab(strip, 'Stocks');
-      await onOneLine(page.getByRole('group', { name: 'Accounts' }), `stock accounts at ${width}`);
-      await strip.getByRole('button', { name: 'Back to summary navigation' }).click();
-      await strip.getByRole('button', { name: 'Home' }).click();
+      await pickInvestment(page, /^Stocks/);
+      await onOneLine(page.getByRole('navigation', { name: 'Investments navigation' }), `investments bar at ${width}`);
+      await page.getByRole('navigation', { name: 'Investments navigation' }).getByRole('button', { name: 'Home' }).click();
     }
     await expectHealthy(page, app, 'phone single rows');
   });
@@ -432,11 +432,9 @@ test.describe('logged-in app', () => {
       const goals = page.getByRole('group', { name: 'Forecast type' }).getByRole('button', { name: 'Goal readiness' });
       await tapTab(page.getByRole('group', { name: 'Forecast type' }), 'Goal readiness');
       await expect(goals).toHaveAttribute('aria-pressed', 'true');
-      await strip.getByRole('button', { name: 'Investments' }).click().catch(() => undefined);
-      await tapTab(strip, 'Stocks');
-      await tapTab(page.getByRole('group', { name: 'Accounts' }), /^Dividend Buy Radar \(/);
+      await pickInvestment(page, /^Stocks/, /^Dividend Buy Radar/);
       await check('Which stocks', width);
-      await strip.getByRole('button', { name: 'Back to summary navigation' }).click();
+      await page.getByRole('navigation', { name: 'Investments navigation' }).getByRole('button', { name: 'Home' }).click();
     }
     await expectHealthy(page, app, 'phone screen rows');
   });
@@ -496,20 +494,17 @@ test.describe('logged-in app', () => {
     await expectHealthy(page, app, 'phone sticky menu');
   });
 
-  test('account tabs come first on an investment screen, and Add stays on one line', async ({ page }) => {
+  test('an investment screen starts right below one slim bar, and Add stays on one line', async ({ page }) => {
     test.skip(!isPhone(page), 'Phone layout only');
     await signedIn(page);
-    const strip = page.getByRole('navigation', { name: 'Mobile section navigation' });
     await page.setViewportSize({ width: 320, height: 700 });
-    await strip.getByRole('button', { name: 'Investments' }).click();
-    await tapTab(strip, 'Stocks');
-    const accounts = page.getByRole('group', { name: 'Accounts' });
-    await expect(accounts).toBeVisible();
-    const order = await page.evaluate(() => {
-      const row = document.querySelector('.phone-screen .one-row-inline')!, market = document.querySelector('.phone-market-strip')!;
-      return row.getBoundingClientRect().top < market.getBoundingClientRect().top;
-    });
-    expect(order).toBe(true);
+    await pickInvestment(page, /^Stocks/);
+    const bar = page.getByRole('navigation', { name: 'Investments navigation' });
+    await expect(bar).toBeVisible();
+    // People and views moved into the drawer, so no rows of tabs sit above the content.
+    await expect(page.getByRole('group', { name: 'Accounts' })).toHaveCount(0);
+    await expect(page.getByRole('navigation', { name: 'Mobile section navigation' })).toHaveCount(0);
+    expect((await bar.boundingBox())!.height).toBeLessThan(64);
     const add = page.locator('.phone-add-btn');
     const lines = await add.evaluate((el) => el.getBoundingClientRect().height);
     expect(lines).toBeLessThan(50);
@@ -527,17 +522,14 @@ test.describe('logged-in app', () => {
     await expect(page.getByText(/^\d{2}-[A-Z][a-z]{2}-\d{4}$/).locator('visible=true').first()).toBeVisible();
   });
 
-  test('the More list closes when you tap away', async ({ page }) => {
+  test('the investments drawer closes when you tap outside it', async ({ page }) => {
     test.skip(!isPhone(page), 'Phone layout only');
     await signedIn(page);
-    const strip = page.getByRole('navigation', { name: 'Mobile section navigation' }), accounts = page.getByRole('group', { name: 'Accounts' });
-    await strip.getByRole('button', { name: 'Investments' }).click();
-    await strip.getByRole('button', { name: 'Stocks' }).click();
-    await accounts.getByRole('button', { name: 'More ▾' }).click();
-    const menu = accounts.locator('.one-row-more-menu');
-    await expect(menu).toBeVisible();
-    await page.locator('.mobile-appbar').click({ position: { x: 20, y: 20 } });
-    await expect(menu).toHaveCount(0);
+    const drawer = await openInvestDrawer(page);
+    const box = (await drawer.locator('nav').boundingBox())!;
+    // Tap the dimmed area to the right of the drawer.
+    await drawer.getByRole('button', { name: 'Close investments menu' }).first().click({ position: { x: Math.round(box.x + box.width + 20), y: 300 } });
+    await expect(page.getByRole('dialog', { name: 'Investments menu' })).toHaveCount(0);
   });
 
   test('the phone add button sits on the left', async ({ page }) => {
@@ -570,15 +562,12 @@ test.describe('logged-in app', () => {
     const app = await signedIn(page);
     const strip = page.getByRole('navigation', { name: 'Mobile section navigation' });
     for (const name of ['Home', 'Investments', 'Goals', 'Forecast', 'Settings']) await expect(strip.getByRole('button', { name })).toBeInViewport({ ratio: 1 });
-    await strip.getByRole('button', { name: 'Investments' }).click();
-    // Types with holdings sit in the row. Empty ones leave it, but the menu still reaches them.
-    for (const name of ['Stocks', 'Property', 'Fixed', 'Insurance', 'MF']) await expect(strip.getByRole('button', { name })).toBeInViewport({ ratio: 1 });
-    for (const name of ['Gold/Silver', 'ULIP', 'NSEL']) await expect(strip.getByRole('button', { name })).toHaveCount(0);
-    await expect(strip.getByRole('button', { name: 'More ▾' })).toHaveCount(0);
-    await page.getByRole('button', { name: 'Open menu' }).click();
-    await page.locator('.mobile-menu-panel').getByRole('button', { name: /Show all types/ }).click();
-    await page.locator('.mobile-menu-panel').getByRole('button', { name: 'Gold/Silver' }).click();
-    await expect(strip.getByRole('button', { name: 'Gold/Silver' })).toHaveClass(/active/);
+    // The drawer lists every type: the ones held with their value, the others as "None yet".
+    const drawer = await openInvestDrawer(page);
+    for (const name of [/^Stocks/, /^Property/, /^Fixed Income/, /^Insurance/, /^Mutual Funds/]) await expect(drawer.getByRole('button', { name })).toBeVisible();
+    await expect(drawer.getByRole('button', { name: /^Gold\/Silver/ })).toContainText('None yet');
+    await drawer.getByRole('button', { name: /^Gold\/Silver/ }).click();
+    await expect(page.getByRole('navigation', { name: 'Investments navigation' })).toContainText('Gold/Silver');
 
     // The menu sits clear of the header, and its last option can be scrolled to.
     await page.getByRole('button', { name: 'Open menu' }).click();
