@@ -683,4 +683,27 @@ test.describe('logged-in app', () => {
     await expect(insurance.getByText('Family protection (term, health)')).toBeVisible();
     await expectHealthy(page, app, 'cash flow pickers');
   });
+
+  test('a goal takes planned investments, and growth rates saved in Admin reach the goals', async ({ page }) => {
+    test.skip(isPhone(page), 'Covered on desktop');
+    const app = await signedIn(page);
+    await open(page, app, 'Admin Console');
+    await expect(page.getByRole('heading', { name: 'Growth Rates' })).toBeVisible();
+    const gold = page.getByLabel('Gold (% a year)');
+    await gold.fill('14');
+    await gold.blur();
+    await expect(page.getByText('Your saved rate. Clear the box to go back to the default.').first()).toBeVisible();
+
+    await open(page, app, 'Goals');
+    await expect(page.getByLabel('Gold (% a year)')).toHaveValue('14');
+    await page.getByRole('combobox', { name: 'Plan an investment for Example Goal' }).selectOption('gold');
+    await page.getByLabel('Planned amount').fill('5000');
+    await page.getByLabel('Planned investment name').fill('Gold SIP');
+    await page.getByLabel('Planned amount').press('Enter');
+    await expect(page.getByText('Planned: Gold SIP ₹5,000/month')).toBeVisible();
+    // It joins the projection, growing at the saved gold rate.
+    await expect(page.getByText(/14\.0% a year \(Gold rate\)/)).toBeVisible();
+    await expect.poll(() => app.writes.some(w => w.table === 'records' && JSON.stringify(w.body).includes('planned_investments'))).toBe(true);
+    await expectHealthy(page, app, 'planned investments');
+  });
 });

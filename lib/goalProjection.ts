@@ -81,3 +81,63 @@ export function projectGoal(input: { target: number; months: number | null; item
     onTrack: projected >= input.target,
   };
 }
+
+export const GROWTH_LABELS: Record<keyof GrowthRates, string> = {
+  shares: "Shares & funds",
+  gold: "Gold",
+  silver: "Silver",
+  property: "Property",
+  fixedIncome: "Fixed income (when no rate is saved)",
+  insurance: "Money-back insurance",
+  other: "Other assets",
+};
+
+/** Saved growth rates, keeping only known categories with sensible numbers. */
+export function cleanGrowth(raw: unknown): Partial<GrowthRates> {
+  if (!raw || typeof raw !== "object") return {};
+  const out: Partial<GrowthRates> = {};
+  for (const key of Object.keys(DEFAULT_GROWTH) as (keyof GrowthRates)[]) {
+    const value = Number((raw as Record<string, unknown>)[key]);
+    if ((raw as Record<string, unknown>)[key] !== "" && (raw as Record<string, unknown>)[key] !== null && Number.isFinite(value)) out[key] = Math.max(-20, Math.min(40, value));
+  }
+  return out;
+}
+
+export type PricePoint = { date: string; value: number };
+/** % change for each calendar year, from the last price of one year to the last of the next. The latest year is year-to-date. */
+export function yearlyReturns(points: PricePoint[] | undefined) {
+  const lastByYear = new Map<number, number>();
+  for (const p of [...(points || [])].filter((p) => p && Number.isFinite(p.value) && p.value > 0).sort((a, b) => a.date.localeCompare(b.date)))
+    lastByYear.set(Number(p.date.slice(0, 4)), p.value);
+  const years = [...lastByYear.keys()].sort((a, b) => a - b);
+  return years.slice(1).map((year, i) => ({ year, pct: (lastByYear.get(year)! / lastByYear.get(years[i])! - 1) * 100 }));
+}
+
+/** An investment the user plans to make for a goal: every month from now, or once now. */
+export type PlannedInvestment = { id: string; type: keyof GrowthRates; mode: "monthly" | "once"; amount: number; note?: string };
+
+export function cleanPlanned(raw: unknown): PlannedInvestment[] {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .filter((p) => p && typeof p === "object")
+    .map((p: any) => ({
+      id: String(p.id || ""),
+      type: (Object.keys(DEFAULT_GROWTH).includes(p.type) ? p.type : "other") as keyof GrowthRates,
+      mode: p.mode === "once" ? ("once" as const) : ("monthly" as const),
+      amount: Math.max(0, num(p.amount)),
+      note: p.note ? String(p.note).slice(0, 80) : undefined,
+    }))
+    .filter((p) => p.id && p.amount > 0);
+}
+
+/** Planned investments as projection lines, each growing at its type's rate. */
+export function plannedItems(planned: PlannedInvestment[], rates: GrowthRates): ProjectionItem[] {
+  return planned.map((p) => ({
+    id: `planned:${p.id}`,
+    label: `Planned: ${p.note || GROWTH_LABELS[p.type]}${p.mode === "once" ? " (one-off)" : ""}`,
+    today: p.mode === "once" ? p.amount : 0,
+    monthly: p.mode === "monthly" ? p.amount : 0,
+    rate: rates[p.type],
+    basis: `${GROWTH_LABELS[p.type]} rate`,
+  }));
+}

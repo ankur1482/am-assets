@@ -40,7 +40,8 @@ import { supabase } from "@/lib/supabase";
 import { startForegroundRefresh } from "@/lib/foregroundRefresh";
 import { APP_VERSION } from "@/lib/appVersion";
 import { cleanSources, goalFunding, holdingSource, holdingsFor, isPrimaryResidence, typeSource, type GoalFunding, type Holding } from "@/lib/goals";
-import { DEFAULT_GROWTH, holdingGrowth, holdingMonthly, projectGoal, type GrowthRates, type ProjectionItem } from "@/lib/goalProjection";
+import { cleanGrowth, cleanPlanned, DEFAULT_GROWTH, GROWTH_LABELS, holdingGrowth, holdingMonthly, plannedItems, projectGoal, yearlyReturns, type GrowthRates, type PlannedInvestment, type ProjectionItem } from "@/lib/goalProjection";
+type YearReturn = { year: number; pct: number };
 import { LOCKED_TABS, normalizeHiddenTabs, toggleHiddenTab } from "@/lib/hiddenTabs";
 import { cleanPicks, type SourcePicks } from "@/lib/plannerSources";
 import MonthlyUploads from "@/components/MonthlyUploads";
@@ -1030,6 +1031,7 @@ export default function AssetManagerApp() {
     [hiddenTabsPending, setHiddenTabsPending] = useState<string[] | null>(null),
     [plannerPicksPending, setPlannerPicksPending] = useState<SourcePicks | null>(null),
     [homeListOpen, setHomeListOpen] = useState<boolean | null>(null),
+    [plannedDraft, setPlannedDraft] = useState<{ goalId: string; type: keyof GrowthRates; mode: "monthly" | "once"; amount: string; note: string } | null>(null),
     [goalGrowthInput, setGoalGrowthInput] = useState<Partial<Record<keyof GrowthRates, string>>>({}),
     [sourcePrefs, setSourcePrefs] = useState<Record<string, string>>(() => {
       if (typeof window === "undefined") return DEFAULT_SOURCE_PREFS;
@@ -1097,7 +1099,8 @@ export default function AssetManagerApp() {
     [projectionMonthlyUntilAge, setProjectionMonthlyUntilAge] = useState(""),
     [projectionYearlyUntilAge, setProjectionYearlyUntilAge] = useState(""),
     [projectionOtherIncomeUntilAge, setProjectionOtherIncomeUntilAge] = useState(""),
-    [projectionHistoryRates, setProjectionHistoryRates] = useState({ shares: 12, gold: 10, silver: 8, loaded: false }),
+    [projectionHistoryRates, setProjectionHistoryRates] = useState({ shares: 12, gold: 10, silver: 8, loaded: false, yearly: { shares: [] as YearReturn[], gold: [] as YearReturn[], silver: [] as YearReturn[] } }),
+    [growthPending, setGrowthPending] = useState<Partial<GrowthRates> | null>(null),
     [historicalPerformance, setHistoricalPerformance] = useState<
       { date: string; invested: number; current: number; type: string }[]
     >([]),
@@ -1277,6 +1280,7 @@ export default function AssetManagerApp() {
         shares: Math.max(-10, Math.min(25, cagr(shares.points) || 12)),
         gold: Math.max(-10, Math.min(25, cagr(gold.points) || 10)),
         silver: Math.max(-10, Math.min(25, cagr(silver?.points) || 8)),
+        yearly: { shares: yearlyReturns(shares.points), gold: yearlyReturns(gold.points), silver: yearlyReturns(silver?.points) },
         loaded: true,
       });
     }).catch(() => undefined);
@@ -2003,6 +2007,7 @@ export default function AssetManagerApp() {
   // every device. A just-made change shows at once while it saves.
   const hiddenTabs = hiddenTabsPending ?? normalizeHiddenTabs(user?.user_metadata?.hidden_tabs);
   const isTabShown = (id: string) => !hiddenTabs.includes(id);
+  const savedGrowth = growthPending ?? cleanGrowth(user?.user_metadata?.growth_rates);
   // Which records each Predictive Planner cash flow box adds up, also kept on the login profile.
   const plannerPicks = plannerPicksPending ?? cleanPicks(user?.user_metadata?.planner_picks);
   async function savePlannerPicks(next: SourcePicks) {
@@ -13882,6 +13887,66 @@ export default function AssetManagerApp() {
           )}
         </div>
         <section className="rounded-[26px] border border-[#ded6c4] bg-white/90 p-5 shadow-[0_14px_34px_rgba(15,23,42,0.05)]">
+          <h3 className="text-xl font-semibold tracking-tight">Growth Rates</h3>
+          <p className="mb-3 text-sm text-gray-600">
+            How much each kind of investment went up or down in each calendar year, and the yearly rates used to project your goals.
+          </p>
+          {(() => {
+            const y = projectionHistoryRates.yearly;
+            const years = [...new Set([...y.shares, ...y.gold, ...y.silver].map((r) => r.year))].sort((a, b) => b - a);
+            const cell = (list: YearReturn[], year: number) => {
+              const r = list.find((x) => x.year === year);
+              return r ? <span className={r.pct >= 0 ? "text-emerald-700" : "text-red-700"}>{r.pct >= 0 ? "+" : ""}{r.pct.toFixed(1)}%</span> : <span className="text-gray-400">—</span>;
+            };
+            if (!years.length)
+              return <p className="mb-3 text-sm text-gray-500">{projectionHistoryRates.loaded ? "Price history is not available right now." : "Loading 10 years of price history…"}</p>;
+            const thisYear = Number(isoDate().slice(0, 4));
+            return (
+              <div className="mb-4 overflow-x-auto">
+                <table className="w-full min-w-[420px] text-sm tabular-nums">
+                  <thead>
+                    <tr className="border-b border-[#e3dccc] text-left text-xs uppercase tracking-wider text-gray-500">
+                      <th className="py-2 pr-3">Year</th>
+                      <th className="py-2 pr-3 text-right">Shares (NIFTY 50)</th>
+                      <th className="py-2 pr-3 text-right">Gold</th>
+                      <th className="py-2 text-right">Silver</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {years.map((year) => (
+                      <tr key={year} className="border-b border-[#f0ebe0]">
+                        <td className="py-1.5 pr-3 font-semibold">{year}{year === thisYear ? " (so far)" : ""}</td>
+                        <td className="py-1.5 pr-3 text-right">{cell(y.shares, year)}</td>
+                        <td className="py-1.5 pr-3 text-right">{cell(y.gold, year)}</td>
+                        <td className="py-1.5 text-right">{cell(y.silver, year)}</td>
+                      </tr>
+                    ))}
+                    <tr className="font-semibold">
+                      <td className="py-2 pr-3">10-year average a year</td>
+                      <td className="py-2 pr-3 text-right">{projectionHistoryRates.shares.toFixed(1)}%</td>
+                      <td className="py-2 pr-3 text-right">{projectionHistoryRates.gold.toFixed(1)}%</td>
+                      <td className="py-2 text-right">{projectionHistoryRates.silver.toFixed(1)}%</td>
+                    </tr>
+                  </tbody>
+                </table>
+                <p className="mt-1 text-[11px] text-gray-500">
+                  Shares: NIFTY 50 index. Gold: Gold BeES (in rupees). Silver: world silver price at today&apos;s dollar rate, so it slightly understates rupee growth. Each year runs from the last trading day of one year to the last of the next. There is no reliable year-by-year source for property or fixed income, so their rates below are assumptions you set.
+                </p>
+              </div>
+            );
+          })()}
+          <div className="mb-1 text-sm font-semibold text-[#17382b]">Rates used to project your goals</div>
+          {growthRateInputs(Object.keys(DEFAULT_GROWTH) as (keyof GrowthRates)[], {
+            shares: `10-year average: ${projectionHistoryRates.shares.toFixed(1)}%`,
+            gold: `10-year average: ${projectionHistoryRates.gold.toFixed(1)}%`,
+            silver: `10-year average: ${projectionHistoryRates.silver.toFixed(1)}%`,
+            property: "Assumed: typically 4% to 5%",
+            fixedIncome: "Used only when a record has no interest rate saved",
+            insurance: "LIC, endowment, money back",
+            other: "Anything else",
+          })}
+        </section>
+        <section className="rounded-[26px] border border-[#ded6c4] bg-white/90 p-5 shadow-[0_14px_34px_rgba(15,23,42,0.05)]">
           <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
             <div>
               <h3 className="text-xl font-semibold tracking-tight">Menu Tabs</h3>
@@ -14881,6 +14946,10 @@ export default function AssetManagerApp() {
           const gross = num(computeLiveRecord(k, r.data).latest);
           if (k !== "property") return { id: r.id, moduleKey: k, label: goalHoldingLabel(k, r.data || {}), value: gross, gross };
           // A property funds a goal only with what is left after its own home loan (net of money parked in an OD).
+          // A home being built counts at what you have paid into it from your own money, when entered.
+          const selfFunded = isUnderConstruction(r.data || {}) ? num(r.data?.self_funded_so_far) : 0;
+          if (selfFunded > 0)
+            return { id: r.id, moduleKey: k, label: `${goalHoldingLabel(k, r.data || {})} — being built, paid ${fmt(selfFunded)} from own money`, value: selfFunded, gross };
           const c = computeRecord("property", r.data), loan = num(c.loan_balance) > 0 ? Math.max(0, num(c.net_loan_balance)) : 0;
           const label = goalHoldingLabel(k, r.data || {}) + (loan ? ` — worth ${fmt(gross)} less loan ${fmt(loan)}` : "");
           return { id: r.id, moduleKey: k, label, value: Math.max(0, gross - loan), gross };
@@ -14991,18 +15060,127 @@ export default function AssetManagerApp() {
       </details>
     );
   }
-  /** Yearly growth for goal projections: 10-year trends for shares, gold and silver, unless the user typed their own. */
+  async function setGoalPlanned(goal: Rec, planned: PlannedInvestment[]) {
+    if (!canEditModule("goals")) {
+      setToast("This household access is read-only for Goals");
+      return;
+    }
+    try {
+      await saveRecordData(goal.id, withSystemDates({ ...goal.data, planned_investments: planned }, goal));
+    } catch (e: any) {
+      setToast(e?.message || "Could not save the planned investment");
+    }
+  }
+  /** Investments the user plans to make for a goal: pick a type from the dropdown, then monthly or one-off and the amount. */
+  function plannedInvestmentsRow(goal: Rec, goalName: string) {
+    const planned = cleanPlanned(goal.data?.planned_investments);
+    const draft = plannedDraft?.goalId === goal.id ? plannedDraft : null;
+    const typeOptions: [keyof GrowthRates, string][] = [
+      ["shares", "Shares or mutual funds (SIP)"],
+      ["gold", "Gold"],
+      ["silver", "Silver"],
+      ["property", "Property (being built or planned)"],
+      ["fixedIncome", "Fixed income (FD, PPF, Sukanya…)"],
+      ["insurance", "Money-back insurance"],
+      ["other", "Something else"],
+    ];
+    return (
+      <div className="mt-2 flex flex-wrap items-center gap-2">
+        {planned.map((p) => (
+          <span key={p.id} className="inline-flex items-center gap-1 rounded-full border border-[#d6dcf5] bg-[#f4f6ff] px-2.5 py-1 text-xs font-semibold text-[#1f2f6b]">
+            Planned: {p.note || GROWTH_LABELS[p.type]} {fmt(p.amount)}{p.mode === "monthly" ? "/month" : " one-off"}
+            <button
+              type="button"
+              className="ml-1 text-gray-500 hover:text-red-700"
+              aria-label={`Remove planned ${p.note || GROWTH_LABELS[p.type]} for ${goalName}`}
+              onClick={() => setGoalPlanned(goal, planned.filter((x) => x.id !== p.id))}
+            >
+              ×
+            </button>
+          </span>
+        ))}
+        {!draft ? (
+          <select
+            className="field-input !w-auto max-w-full text-xs"
+            aria-label={`Plan an investment for ${goalName}`}
+            value=""
+            disabled={!canEditModule("goals")}
+            onChange={(event) => {
+              if (event.target.value) setPlannedDraft({ goalId: goal.id, type: event.target.value as keyof GrowthRates, mode: "monthly", amount: "", note: "" });
+            }}
+          >
+            <option value="">+ Plan an investment for this goal…</option>
+            {typeOptions.map(([type, label]) => <option key={type} value={type}>{label}</option>)}
+          </select>
+        ) : (
+          <form
+            className="flex flex-wrap items-center gap-2 rounded-lg border border-[#d6dcf5] bg-[#f8f9ff] p-2 text-xs"
+            onSubmit={(event) => {
+              event.preventDefault();
+              const amount = num(draft.amount);
+              if (amount <= 0) return setToast("Enter an amount");
+              setGoalPlanned(goal, [...planned, { id: `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`, type: draft.type, mode: draft.mode, amount, note: draft.note.trim() || undefined }]);
+              setPlannedDraft(null);
+            }}
+          >
+            <b>{typeOptions.find(([t]) => t === draft.type)?.[1]}</b>
+            <select className="field-input !w-auto" aria-label="How often" value={draft.mode} onChange={(e) => setPlannedDraft({ ...draft, mode: e.target.value as "monthly" | "once" })}>
+              <option value="monthly">Every month from now</option>
+              <option value="once">One-off amount now</option>
+            </select>
+            <input className="field-input !w-32" type="number" min="0" step="any" placeholder="Amount ₹" aria-label="Planned amount" value={draft.amount} onChange={(e) => setPlannedDraft({ ...draft, amount: e.target.value })} />
+            <input className="field-input !w-44" placeholder="Name (optional)" aria-label="Planned investment name" maxLength={80} value={draft.note} onChange={(e) => setPlannedDraft({ ...draft, note: e.target.value })} />
+            <button type="submit" className="btn-primary !px-3 !py-1">Add</button>
+            <button type="button" className="btn !px-3 !py-1" onClick={() => setPlannedDraft(null)}>Cancel</button>
+          </form>
+        )}
+      </div>
+    );
+  }
+  /** Saves a growth rate to the login profile (blank goes back to the trend or default). */
+  async function saveGrowthRate(key: keyof GrowthRates, raw: string) {
+    const next: Partial<GrowthRates> = { ...savedGrowth };
+    if (raw.trim() === "" || !Number.isFinite(Number(raw))) delete next[key];
+    else next[key] = Math.max(-20, Math.min(40, Number(raw)));
+    setGrowthPending(next);
+    setGoalGrowthInput((prev) => { const copy = { ...prev }; delete copy[key]; return copy; });
+    const { data, error } = await supabase.auth.updateUser({ data: { growth_rates: next } });
+    if (error) setToast(error.message || "Could not save the growth rate");
+    if (error || data?.user) setGrowthPending(null);
+  }
+  /** Editable growth-rate boxes; each saves when you leave it. */
+  function growthRateInputs(keys: (keyof GrowthRates)[], notes: Partial<Record<keyof GrowthRates, string>>) {
+    const rates = goalGrowthRates();
+    return (
+      <div className="grid grid-cols-4 gap-2 max-lg:grid-cols-2">
+        {keys.map((key) => (
+          <label key={key} className="text-xs">
+            <span className="font-semibold text-gray-700">{GROWTH_LABELS[key]} (% a year)</span>
+            <input
+              className="field-input mt-1"
+              type="number"
+              step="0.1"
+              value={goalGrowthInput[key] ?? String(Math.round(rates[key] * 10) / 10)}
+              onChange={(event) => setGoalGrowthInput((prev) => ({ ...prev, [key]: event.target.value }))}
+              onBlur={(event) => { if (goalGrowthInput[key] !== undefined) saveGrowthRate(key, event.target.value); }}
+            />
+            <span className="text-[10px] text-gray-500">
+              {savedGrowth[key] !== undefined ? "Your saved rate. Clear the box to go back to the default." : notes[key] || "Default"}
+            </span>
+          </label>
+        ))}
+      </div>
+    );
+  }
+  /** Yearly growth for goal projections: 10-year trends for shares, gold and silver, unless the user saved their own. */
   function goalGrowthRates(): GrowthRates {
-    const typed = (key: keyof GrowthRates, fallback: number) => {
-      const raw = goalGrowthInput[key];
-      return raw === undefined || raw === "" || !Number.isFinite(Number(raw)) ? fallback : Math.max(-20, Math.min(40, Number(raw)));
-    };
+    // Order: built-in defaults, then the 10-year trends, then rates saved in Admin Console or on the Goals page.
     return {
       ...DEFAULT_GROWTH,
-      shares: typed("shares", projectionHistoryRates.shares),
-      gold: typed("gold", projectionHistoryRates.gold),
-      silver: typed("silver", projectionHistoryRates.silver),
-      property: typed("property", DEFAULT_GROWTH.property),
+      shares: projectionHistoryRates.shares,
+      gold: projectionHistoryRates.gold,
+      silver: projectionHistoryRates.silver,
+      ...savedGrowth,
     };
   }
   /** Where a goal is heading by its target date if its holdings keep growing and deposits continue. */
@@ -15024,6 +15202,8 @@ export default function AssetManagerApp() {
       const rate = weight > 0 ? pool.reduce((t, i) => t + i.rate * (i.today - (i.deduct || 0)), 0) / weight : 0;
       items = g.allocated > 0 ? [{ id: "shared", label: "Its share of your net worth", today: g.allocated, monthly: 0, rate, basis: "Average of your unpicked holdings" }] : [];
     }
+    // Investments the user plans to make for this goal grow alongside what they already hold.
+    items = [...items, ...plannedItems(cleanPlanned(records.find((r) => r.id === g.id)?.data?.planned_investments), rates)];
     if (!items.length) return null;
     const p = projectGoal({ target: g.target, months: g.monthsLeft, items });
     const shareOfTarget = g.target ? Math.min(999, (p.projected / g.target) * 100) : 0;
@@ -15062,7 +15242,6 @@ export default function AssetManagerApp() {
   }
   function goalsFundingPanel() {
     const { f, holdings, goalRecords, homeRecords, homeValue, protection } = goalFundingNow();
-    const growthRates = goalGrowthRates();
     if (!f.target) {
       return (
         <>
@@ -15175,28 +15354,14 @@ export default function AssetManagerApp() {
           </p>
           <div className="mb-3 rounded-xl border border-[#e3dccc] bg-[#f7fbf5] p-3">
             <div className="mb-2 text-xs font-semibold text-[#17382b]">
-              Growth a year used to project each goal to its target date. Shares, gold and silver start at their actual averages over the last 10 years; change any figure to try your own.
+              Growth a year used to project each goal to its target date. Shares, gold and silver start at their actual averages over the last 10 years; change any figure and it is saved for you (all categories and the year-by-year history are in Admin Console → Growth Rates).
             </div>
-            <div className="grid grid-cols-4 gap-2 max-md:grid-cols-2">
-              {([
-                ["shares", "Shares & funds", `NIFTY 50, last 10 years: ${projectionHistoryRates.shares.toFixed(1)}%`],
-                ["gold", "Gold", `Gold, last 10 years: ${projectionHistoryRates.gold.toFixed(1)}%`],
-                ["silver", "Silver", `Silver, last 10 years: ${projectionHistoryRates.silver.toFixed(1)}%`],
-                ["property", "Property", "Typical 4% to 5% a year"],
-              ] as const).map(([key, label, note]) => (
-                <label key={key} className="text-xs">
-                  <span className="font-semibold text-gray-700">{label} (% a year)</span>
-                  <input
-                    className="field-input mt-1"
-                    type="number"
-                    step="0.1"
-                    value={goalGrowthInput[key] ?? String(Math.round(growthRates[key] * 10) / 10)}
-                    onChange={(event) => setGoalGrowthInput((prev) => ({ ...prev, [key]: event.target.value }))}
-                  />
-                  <span className="text-[10px] text-gray-500">{note}</span>
-                </label>
-              ))}
-            </div>
+            {growthRateInputs(["shares", "gold", "silver", "property"], {
+              shares: `NIFTY 50, last 10 years: ${projectionHistoryRates.shares.toFixed(1)}%`,
+              gold: `Gold, last 10 years: ${projectionHistoryRates.gold.toFixed(1)}%`,
+              silver: `Silver, last 10 years: ${projectionHistoryRates.silver.toFixed(1)}%`,
+              property: "Typical 4% to 5% a year",
+            })}
             <div className="mt-2 text-[10px] text-gray-500">
               Fixed income grows at its own saved interest rate. Regular deposits (SIPs, PPF, Sukanya) are assumed to continue until each target date. Property loans are taken off as they stand today, which is cautious. Past trends are not a guarantee.
             </div>
@@ -15301,6 +15466,7 @@ export default function AssetManagerApp() {
                       </select>
                     )}
                   </div>
+                  {record && plannedInvestmentsRow(record, g.name)}
                   {goalProjectionBlock(g, holdings, f.unclaimedIds)}
                 </div>
               );

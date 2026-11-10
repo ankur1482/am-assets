@@ -15,6 +15,14 @@ These backups cover the app itself, not your financial data. Your data is covere
 
 ---
 
+## Version 10.17 (10 Nov 2026, 13:16): Year-by-year growth, planned investments, homes being built
+
+Backup taken before this release: `backup-2026-11-10-1316-IST`
+
+- **Growth Rates in Admin Console.** A new section lists, for each of the last 10 years, how much shares (NIFTY 50), gold and silver went up or down that year, with this year so far and the 10-year average. Below it are the yearly rates used to project your goals, for every category: shares and funds, gold, silver, property, fixed income (used when a record has no interest rate), money-back insurance and other assets. Change any of them and it is saved to your login. Clear a box to go back to the default. The Goals page shows the same shares, gold, silver and property rates, and changing them there saves too.
+- **Planned investments for a goal.** Each goal has a new **+ Plan an investment for this goal…** dropdown. Choose what it is (shares or SIP, gold, silver, property, fixed income, money-back insurance or something else), then whether it is every month or a one-off amount, and how much. It shows as a "Planned" label on the goal and is added to that goal's projection, growing at that category's rate. It does not change what the goal has today, only where it is heading. Remove one with ×.
+- **Homes being built.** A property marked Under Construction now has **Paid so far from your own money**. When you pick that property for a goal, it counts at that amount, and the dropdown says "being built, paid ₹X from own money".
+
 ## Version 10.16 (10 Nov 2026, 13:00): Where each goal is heading by its target date
 
 Backup taken before this release: `backup-2026-11-10-1300-IST`
