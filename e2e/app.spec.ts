@@ -641,4 +641,39 @@ test.describe('logged-in app', () => {
     await expect(sidebar.getByRole('button', { name: 'ULIPs' })).toBeVisible();
     await expectHealthy(page, app, 'menu tabs');
   });
+
+  test('the home you live in is left out of goals', async ({ page }) => {
+    test.skip(isPhone(page), 'Covered on desktop');
+    const home = { id: '33333333-3333-4333-8333-000000000900', module_key: 'property', user_id: '22222222-2222-4222-8222-222222222222', workspace_id: '11111111-1111-4111-8111-111111111111', created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z',
+      data: { account_name: 'Asha', security_name: 'Residential', location: 'Hometown', purchase_price: 4000000, latest_value: 6000000, construction_status: 'Ready', occupancy: 'Residing' } };
+    const app = await openApp(page, [...fixtureRecords(), home]);
+    await expect(page.getByText(/Overall Dashboard|Summary/i).locator('visible=true').first()).toBeVisible();
+    await open(page, app, 'Goals');
+    const before = await page.getByText(/^Net worth as cash = everything you own/).textContent();
+    const homePicker = page.getByLabel('Do you live in one of your properties?');
+    await homePicker.selectOption(await homePicker.locator('option', { hasText: 'Hometown' }).getAttribute('value') || '');
+    await expect(page.getByText(/Your home \(₹60,00,000\) stays yours for good/)).toBeVisible();
+    await expect.poll(() => app.writes.some(w => w.table === 'records' && JSON.stringify(w.body).includes('"primary_residence":"Yes"'))).toBe(true);
+    await expect(page.getByText(/^Net worth as cash = everything you own/)).not.toHaveText(before || '');
+    // The term plan is family protection: shown, but not counted.
+    await expect(page.getByText(/Family protection, not counted towards goals/)).toBeVisible();
+    await expectHealthy(page, app, 'home left out of goals');
+  });
+
+  test('cash flow boxes add up the records ticked in their dropdowns', async ({ page }) => {
+    test.skip(isPhone(page), 'Covered on desktop');
+    const app = await signedIn(page);
+    await open(page, app, 'Predictive Planner');
+    await page.getByRole('tab', { name: 'Cash flow & loans' }).click();
+    const cash = page.getByLabel('Cash outside OD accounts (₹)');
+    const before = Number(await cash.inputValue());
+    const box = cash.locator('xpath=ancestor::div[2]');
+    await box.getByText(/Choose from your records/).click();
+    await box.getByRole('checkbox', { name: /Savings account/ }).uncheck();
+    await expect(cash).toHaveValue(String(before - 500000));
+    const insurance = page.getByLabel('Insurance premiums / year (₹)').locator('xpath=ancestor::div[2]');
+    await insurance.getByText(/Choose from your records/).click();
+    await expect(insurance.getByText('Family protection (term, health)')).toBeVisible();
+    await expectHealthy(page, app, 'cash flow pickers');
+  });
 });

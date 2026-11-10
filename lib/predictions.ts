@@ -13,7 +13,7 @@ export const indiaDate = (date = new Date()) => {
 const validDate = (s: string) => /^\d{4}-\d{2}-\d{2}$/.test(s) && !Number.isNaN(Date.parse(s)) && new Date(s).toISOString().slice(0, 10) === s;
 export type PlanningRecord = { id: string; module_key: string; data: Record<string, any> };
 /** One policy's premiums: `amount` every `everyMonths` months, first due in calendar month `dueMonth` (1-12), or spread evenly when the due date is unknown. */
-export type PremiumDue = { name: string; amount: number; everyMonths: number; dueMonth: number | null };
+export type PremiumDue = { id?: string; name: string; amount: number; everyMonths: number; dueMonth: number | null };
 const PAYMENTS_PER_YEAR: Record<string, number> = { Monthly: 12, Quarterly: 4, 'Half-yearly': 2, Yearly: 1, Single: 1 };
 
 /** Premium falling due in a calendar month ('YYYY-MM'). Policies with no due date are spread over the year. */
@@ -60,7 +60,7 @@ export function planningSnapshot(records: PlanningRecord[], asOf = indiaDate()) 
       if (policy.premiumStatus === 'PAYING' && !/^(closed|lapsed|paid-up|matured)$/i.test(String(d.status || ''))) {
         monthlyPremium += policy.annualPremium / 12;
         const perYear = PAYMENTS_PER_YEAR[normalizeInsurancePolicy(d).premium_frequency] || 1, due = String(policy.nextPremiumDueDate || '');
-        if (policy.annualPremium > 0) premiumSchedule.push({ name: String(d.security_name || d.policy_name || 'Policy'), amount: policy.annualPremium / perYear, everyMonths: 12 / perYear, dueMonth: validDate(due) ? Number(due.slice(5, 7)) : null });
+        if (policy.annualPremium > 0) premiumSchedule.push({ id: record.id, name: String(d.security_name || d.policy_name || 'Policy'), amount: policy.annualPremium / perYear, everyMonths: 12 / perYear, dueMonth: validDate(due) ? Number(due.slice(5, 7)) : null });
       }
     }
     if (['loans', 'property'].includes(record.module_key) && isOverdraftLoan(d)) odParked += Math.max(0, num(d.od_parked_balance));

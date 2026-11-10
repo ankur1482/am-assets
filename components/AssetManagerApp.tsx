@@ -39,8 +39,9 @@ import {
 import { supabase } from "@/lib/supabase";
 import { startForegroundRefresh } from "@/lib/foregroundRefresh";
 import { APP_VERSION } from "@/lib/appVersion";
-import { cleanSources, goalFunding, holdingSource, holdingsFor, typeSource, type Holding } from "@/lib/goals";
+import { cleanSources, goalFunding, holdingSource, holdingsFor, isPrimaryResidence, typeSource, type Holding } from "@/lib/goals";
 import { LOCKED_TABS, normalizeHiddenTabs, toggleHiddenTab } from "@/lib/hiddenTabs";
+import { cleanPicks, type SourcePicks } from "@/lib/plannerSources";
 import MonthlyUploads from "@/components/MonthlyUploads";
 import BackupCenter, { type BackupTarget } from "@/components/BackupCenter";
 import { backupFileName, backupFingerprint } from "@/lib/backups";
@@ -73,6 +74,7 @@ import {
   isIncomeRecord,
   isEarningRent,
   isRentedProperty,
+  isUnderConstruction,
   occupancyOf,
   propertyGroupTotals,
   LOAN_FIELDS,
@@ -94,6 +96,7 @@ import {
   readRowsFromFile,
 } from "@/lib/imports";
 import {
+  insuranceKind,
   insurancePolicyType,
   normalizeInsurancePolicy,
   validateInsurancePolicy,
@@ -1024,6 +1027,7 @@ export default function AssetManagerApp() {
   const [adminUsers, setAdminUsers] = useState<AdminUser[]>([]),
     [adminBusy, setAdminBusy] = useState(false),
     [hiddenTabsPending, setHiddenTabsPending] = useState<string[] | null>(null),
+    [plannerPicksPending, setPlannerPicksPending] = useState<SourcePicks | null>(null),
     [sourcePrefs, setSourcePrefs] = useState<Record<string, string>>(() => {
       if (typeof window === "undefined") return DEFAULT_SOURCE_PREFS;
       try {
@@ -1993,6 +1997,14 @@ export default function AssetManagerApp() {
   // every device. A just-made change shows at once while it saves.
   const hiddenTabs = hiddenTabsPending ?? normalizeHiddenTabs(user?.user_metadata?.hidden_tabs);
   const isTabShown = (id: string) => !hiddenTabs.includes(id);
+  // Which records each Predictive Planner cash flow box adds up, also kept on the login profile.
+  const plannerPicks = plannerPicksPending ?? cleanPicks(user?.user_metadata?.planner_picks);
+  async function savePlannerPicks(next: SourcePicks) {
+    setPlannerPicksPending(next);
+    const { data, error } = await supabase.auth.updateUser({ data: { planner_picks: next } });
+    if (error) setToast(error.message || "Could not save your planner choices");
+    if (error || data?.user) setPlannerPicksPending(null);
+  }
   async function saveHiddenTabs(next: string[]) {
     setHiddenTabsPending(next);
     const { data, error } = await supabase.auth.updateUser({ data: { hidden_tabs: next } });
@@ -10291,7 +10303,7 @@ export default function AssetManagerApp() {
   function predictivePlannerView() {
     return <div className="space-y-5">
       {phoneMode && canViewModule(MONTHLY_VALUATION_MODULE) && <button type="button" className="btn" onClick={() => setView(MONTHLY_VALUATION_MODULE)}><BarChart3 size={15} /> Month on Month</button>}
-      {phoneMode && workspaceAccess.all_modules && <button type="button" className="btn" onClick={() => setView("earnings")}><Users size={15} /> Earnings by Person</button>}      <PredictivePlanner key={`${user?.id}:${activeWorkspaceId}:${plannerTab}`} records={records} netWorth={totals.net} accessToken={session?.access_token || ""} initialTab={plannerTab} goalCurrent={goalCurrentValues()} />
+      {phoneMode && workspaceAccess.all_modules && <button type="button" className="btn" onClick={() => setView("earnings")}><Users size={15} /> Earnings by Person</button>}      <PredictivePlanner key={`${user?.id}:${activeWorkspaceId}:${plannerTab}`} records={records} netWorth={totals.net} accessToken={session?.access_token || ""} initialTab={plannerTab} goalCurrent={goalCurrentValues()} homeValue={goalFundingNow().homeValue} protectionValue={goalFundingNow().protectionValue} picks={plannerPicks} onPicksChange={savePlannerPicks} />
       <details className="forecast-legacy">
         <summary>Advanced contribution combinations and AI commentary</summary>
         <p className="forecast-note">This separate calculator keeps its own assumptions. Its outputs may differ from the Predictive Planner above.</p>
@@ -14836,18 +14848,29 @@ export default function AssetManagerApp() {
   // measured against the goal targets. Uses the same figures as the Overall
   // Dashboard's My Networth line. Shared by the Goals page, the goals table
   // and the Predictive Planner so all three agree.
+  /** Weight of a gold or silver holding, in grams (or units for coins and bars counted by piece). */
+  function bullionWeightLabel(d: Record<string, any>) {
+    const quantity = num(d.quantity);
+    if (!quantity) return "";
+    if (/unit/i.test(String(d.unit || ""))) return `${quantity.toLocaleString("en-IN")} unit${quantity === 1 ? "" : "s"}`;
+    return `${(quantity * metalUnitFactor(d.unit)).toLocaleString("en-IN", { maximumFractionDigits: 2 })} g`;
+  }
   function goalHoldingLabel(k: string, d: Record<string, any>) {
     const name =
-      k === "bullion" ? bullionDisplayName(d)
+      k === "bullion" ? [bullionDisplayName(d), bullionWeightLabel(d)].filter(Boolean).join(" · ")
       : k === "property" ? [d.security_name, d.location || d.broker].filter(Boolean).join(" · ")
       : k === "fixedIncome" ? [d.category, d.broker || d.security_name].filter(Boolean).join(" · ")
       : d.security_name || d.policy_name || d.category;
     return [name || "Holding", d.account_name].filter(Boolean).join(" — ");
   }
   function goalFundingNow() {
+    // The home you live in for good is never counted towards goals or retirement.
+    const homeRecords = records.filter((r) => r.module_key === "property" && isPrimaryResidence(r.data));
+    const homeValue = homeRecords.reduce((s, r) => s + num(computeLiveRecord("property", r.data).latest), 0);
     const holdings: Holding[] = GOAL_ASSET_KEYS.filter((k) => MODULES[k]).flatMap((k) =>
       records
-        .filter((r) => r.module_key === k)
+        // Term, health and other protection cover only pays out if something happens, so it never funds a goal.
+        .filter((r) => r.module_key === k && !(k === "property" && isPrimaryResidence(r.data)) && !(k === "insurance" && insuranceKind(r.data) === "protection"))
         .map((r) => ({ id: r.id, moduleKey: k, label: goalHoldingLabel(k, r.data || {}), value: num(computeLiveRecord(k, r.data).latest) })),
     );
     const assetClasses = GOAL_ASSET_KEYS.filter((k) => MODULES[k]).map((k) => ({
@@ -14876,7 +14899,15 @@ export default function AssetManagerApp() {
       priority: r.data?.priority ? String(r.data.priority) : undefined,
       sources: cleanSources(r.data?.funding_sources),
     }));
-    return { f: goalFunding(assetClasses, liabilityClasses, goalInputs, new Date(), holdings), holdings, goalRecords };
+    const protection = records
+      .filter((r) => r.module_key === "insurance" && insuranceKind(r.data) === "protection")
+      .map((r) => computeLiveRecord("insurance", r.data))
+      .filter((c) => ["Active", "Paid-up"].includes(String(c.status || "")))
+      .reduce((t, c) => ({ life: t.life + num(c.death_cover), health: t.health + num(c.health_cover) + num(c.critical_illness_cover) }), { life: 0, health: 0 });
+    const protectionValue = records
+      .filter((r) => r.module_key === "insurance" && insuranceKind(r.data) === "protection")
+      .reduce((t, r) => t + num(computeLiveRecord("insurance", r.data).latest), 0);
+    return { f: goalFunding(assetClasses, liabilityClasses, goalInputs, new Date(), holdings), holdings, goalRecords, homeRecords, homeValue, protection, protectionValue };
   }
   /** Each goal's value today, by goal id, for the goals table and the Predictive Planner. */
   function goalCurrentValues() {
@@ -14893,13 +14924,62 @@ export default function AssetManagerApp() {
       setToast(e?.message || "Could not save what pays for this goal");
     }
   }
+  /** Marks one property as the home you live in for good (or none), clearing the mark on any other. */
+  async function setHomeProperty(propertyId: string) {
+    if (!canEditModule("property")) {
+      setToast("This household access is read-only for Property");
+      return;
+    }
+    const changes = records.filter(
+      (r) => r.module_key === "property" && (r.id === propertyId) !== /^(yes|true|1)$/i.test(String(r.data?.primary_residence ?? "").trim()),
+    );
+    try {
+      for (const r of changes)
+        await saveRecordData(r.id, withSystemDates({ ...r.data, primary_residence: r.id === propertyId ? "Yes" : "No" }, r));
+    } catch (e: any) {
+      setToast(e?.message || "Could not save the home you live in");
+    }
+  }
+  function homeQuestion(homeRecords: Rec[], homeValue: number) {
+    const candidates = records.filter(
+      (r) => r.module_key === "property" && !isRentedProperty(r.data || {}) && !isUnderConstruction(r.data || {}),
+    );
+    if (!candidates.length && !homeRecords.length) return null;
+    return (
+      <div className="mb-3 flex flex-wrap items-center gap-3 rounded-2xl border border-[#e3dccc] bg-[#fffaf0] px-4 py-3 text-sm">
+        <label className="font-semibold text-[#17382b]" htmlFor="goal-home-property">Do you live in one of your properties?</label>
+        <select
+          id="goal-home-property"
+          className="field-input !w-auto max-w-full"
+          value={homeRecords[0]?.id || ""}
+          disabled={!canEditModule("property")}
+          onChange={(event) => setHomeProperty(event.target.value)}
+        >
+          <option value="">No, none of them</option>
+          {candidates.map((r) => (
+            <option key={r.id} value={r.id}>
+              Yes: {goalHoldingLabel("property", r.data || {})} ({fmt(computeLiveRecord("property", r.data).latest)})
+            </option>
+          ))}
+        </select>
+        {homeRecords.length > 0 && (
+          <span className="text-xs text-gray-600">
+            Your home ({fmt(homeValue)}) stays yours for good, so it is left out of goals and retirement. Its home loan still counts, as it has to be repaid.
+          </span>
+        )}
+      </div>
+    );
+  }
   function goalsFundingPanel() {
-    const { f, holdings, goalRecords } = goalFundingNow();
+    const { f, holdings, goalRecords, homeRecords, homeValue, protection } = goalFundingNow();
     if (!f.target) {
       return (
-        <div className="mb-4 rounded-2xl border border-[#ded6c4] bg-[#f7fbf5] p-4 text-sm text-[#37534a]">
-          Add a goal with a <b>Target Amount</b> to see how far your current net worth (all assets minus all loans) is from it.
-        </div>
+        <>
+          {homeQuestion(homeRecords, homeValue)}
+          <div className="mb-4 rounded-2xl border border-[#ded6c4] bg-[#f7fbf5] p-4 text-sm text-[#37534a]">
+            Add a goal with a <b>Target Amount</b> to see how far your current net worth (all assets minus all loans) is from it.
+          </div>
+        </>
       );
     }
     const colors = ["#2f7d5b", "#3b6fb6", "#7a5bb5", "#c9962b", "#a0522d", "#2a9d8f", "#6b7f2a", "#8c6d62", "#4f6d7a"];
@@ -14911,6 +14991,7 @@ export default function AssetManagerApp() {
     );
     return (
       <div className="mb-4 rounded-3xl border border-[#ded6c4] bg-white p-4 shadow-sm">
+        {homeQuestion(homeRecords, homeValue)}
         <div className="mb-3 grid grid-cols-4 gap-3 max-lg:grid-cols-2">
           {[
             ["Total target", fmt(f.target), "text-[#17382b]"],
@@ -14926,7 +15007,15 @@ export default function AssetManagerApp() {
         </div>
         <p className="mb-3 text-xs font-semibold text-[#40584c]">
           Net worth as cash = everything you own at today&apos;s value ({fmt(f.totalAssets)}) − all loans and borrowings ({fmt(f.totalLiabilities)}).
+          {homeValue > 0 && <> The home you live in ({fmt(homeValue)}) is left out.</>}
+          {" "}Insurance counts only policies that pay money back (LIC, endowment, money back, ULIP).
         </p>
+        {(protection.life > 0 || protection.health > 0) && (
+          <p className="mb-3 rounded-xl border border-blue-100 bg-blue-50 px-3 py-2 text-xs font-semibold text-blue-900">
+            Family protection, not counted towards goals: life cover {fmt(protection.life)}
+            {protection.health > 0 && <>, health and critical illness cover {fmt(protection.health)}</>}. It pays out only if something happens.
+          </p>
+        )}
         <div className="space-y-2">
           <div>
             <div className="mb-1 flex justify-between text-xs font-semibold text-gray-600">

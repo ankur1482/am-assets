@@ -163,3 +163,15 @@ export function validateInsurancePolicy(policyInput: any) {
   if (type === "CRITICAL_ILLNESS" && !n(policy.critical_illness_cover)) errors.push("Critical illness cover is required.");
   return errors;
 }
+
+/**
+ * "returns": policies that pay money back (LIC/endowment, money back, life, ULIP), which can fund goals.
+ * "protection": cover that only pays if something happens (term, health, accident, critical illness).
+ * Protection keeps the family secure but is never counted towards goals or retirement, even a term plan
+ * with return of premium.
+ */
+export type InsuranceKind = "returns" | "protection";
+export function insuranceKind(policyInput: any): InsuranceKind {
+  const type = normalizeInsurancePolicy(policyInput || {}).policy_type;
+  return ["LIFE_INSURANCE", "ENDOWMENT", "MONEY_BACK", "ULIP", "OTHER"].includes(type) ? "returns" : "protection";
+}

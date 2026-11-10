@@ -15,6 +15,15 @@ These backups cover the app itself, not your financial data. Your data is covere
 
 ---
 
+## Version 10.14 (10 Nov 2026, 12:36): Your home, family protection, and record dropdowns in the Planner
+
+Backup taken before this release: `backup-2026-11-10-1236-IST`
+
+- **The home you live in.** The Goals page now asks **Do you live in one of your properties?** Pick the one you live in (it can also be set on the property itself: **Is this the home you live in, for good?**). Only one property can be your home. Its value is then left out of your goals and out of the Predictive Planner's retirement projection, because you will not sell it. Its home loan still counts, as it has to be repaid from your other savings. The dashboard's net worth is unchanged. If the home is later let out, it stops counting as your home.
+- **Two kinds of insurance.** Policies that pay money back (LIC, endowment, money back, ULIP) still count towards goals. Family protection (term plans, including those that return premiums, plus health, accident and critical illness cover) no longer counts towards goals or retirement. The Goals page instead shows how much life and health cover your family has, marked as not counted.
+- **Pick records for each Cash flow box.** On the Planner's **Cash flow & loans** tab, each box now has a **Choose from your records** dropdown. Tick the savings accounts and cash for **Cash outside OD**; salary, rent and dividends for **Take-home income**; regular payments for **Living expenses**; SIPs and deposits for **Cash-funded investments**; and policies for **Insurance premiums**, which are grouped into *Pays money back* and *Family protection*. Each box adds up what is ticked. Other fixed income, such as an FD, can be ticked as cash if you would draw on it. Your ticks are saved to your login. You can still type a figure over any box.
+- **Grams for gold and silver.** In the Goals dropdown, each gold and silver holding now shows its weight, for example "Gold · 20 g — Ankur", so you can see what you would be setting aside.
+
 ## Version 10.13 (10 Nov 2026, 12:12): Choose what pays for each goal; insurance as a yearly cost
 
 Backup taken before this release: `backup-2026-11-10-1212-IST`

@@ -1,3 +1,5 @@
+import { isRentedProperty, isUnderConstruction } from "./calculations";
+
 // Goal funding: treat everything owned as if it were cash today, subtract
 // everything owed, and measure what is left against the goal targets.
 //
@@ -31,6 +33,11 @@ const n = (v: unknown) => {
   const x = Number(v);
   return Number.isFinite(x) ? x : 0;
 };
+
+/** The home you live in for good. Its value is never counted towards goals or retirement. */
+/** A home later let out or still being built no longer counts as the home you live in. */
+export const isPrimaryResidence = (data: Record<string, unknown> | null | undefined) =>
+  !!data && /^(yes|true|1)$/i.test(String(data.primary_residence ?? "").trim()) && !isRentedProperty(data) && !isUnderConstruction(data);
 
 export const typeSource = (moduleKey: string) => `type:${moduleKey}`;
 export const holdingSource = (recordId: string) => `rec:${recordId}`;

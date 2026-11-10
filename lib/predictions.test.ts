@@ -156,8 +156,8 @@ describe('insurance as a yearly expense', () => {
     ], '2026-11-10');
     expect(p.annualPremium).toBe(36000);
     expect(p.premiumSchedule).toEqual([
-      { name: 'Term', amount: 24000, everyMonths: 12, dueMonth: 1 },
-      { name: 'Health', amount: 3000, everyMonths: 3, dueMonth: 12 },
+      { id: 't', name: 'Term', amount: 24000, everyMonths: 12, dueMonth: 1 },
+      { id: 'h', name: 'Health', amount: 3000, everyMonths: 3, dueMonth: 12 },
     ]);
     expect(premiumsDueIn(p.premiumSchedule, '2027-01')).toBe(24000);
     expect(premiumsDueIn(p.premiumSchedule, '2027-03')).toBe(3000);

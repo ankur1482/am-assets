@@ -16,6 +16,7 @@ const isCashCategory = (values: Values) => /^(salary|rental\s*income|dividend\s*
 const FIELD_RULES: Record<string, FieldRule[]> = {
   property: [
     { controllers: ['construction_status', 'category'], fields: ['occupancy'], visible: values => !isUnderConstruction(values) },
+    { controllers: ['construction_status', 'category', 'occupancy'], fields: ['primary_residence'], visible: values => !isUnderConstruction(values) && !isRentedProperty(values) },
     { controllers: ['construction_status', 'category', 'occupancy'], fields: ['monthly_rent', 'rentee_name', 'rentee_phone', 'rent_agreement_start_date', 'rent_agreement_end_date', 'vacant_from', 'vacant_to'], visible: isRentedProperty },
     { controllers: ['loan_amount', 'loan_balance'], fields: ['loan_structure', 'loan_institution', 'loan_interest_rate', 'loan_tenure_months', 'loan_start_date', 'emi_amount', 'loan_balance', 'emis_left', 'principal_paid', 'interest_paid', 'monthly_emi', 'loan_clears_on', 'emiFuture', 'od_parked_balance', 'net_loan_balance', 'od_monthly_interest'], visible: values => num(values.loan_amount) > 0 || num(values.loan_balance) > 0 },
     OD_RULE,

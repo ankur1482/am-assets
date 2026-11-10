@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { calculateInsurance, normalizeInsurancePolicy, validateInsurancePolicy } from "./insurance";
+import { calculateInsurance, insuranceKind, normalizeInsurancePolicy, validateInsurancePolicy } from "./insurance";
 
 describe("insurance calculations", () => {
   const today = new Date(2026, 5, 29);
@@ -37,5 +37,16 @@ describe("insurance calculations", () => {
   it("validates required type-specific fields", () => {
     const errors = validateInsurancePolicy({account_name:"A",security_name:"Plan",category:"ULIP",broker:"Insurer",status:"Active"});
     expect(errors.join(" ")).toContain("fund value");
+  });
+});
+
+describe("insuranceKind", () => {
+  it("splits policies that pay back from family protection", () => {
+    expect(insuranceKind({ category: "Endowment / LIC" })).toBe("returns");
+    expect(insuranceKind({ category: "ULIP" })).toBe("returns");
+    expect(insuranceKind({ category: "Money Back" })).toBe("returns");
+    expect(insuranceKind({ category: "Term Plan", return_of_premium: "Yes" })).toBe("protection");
+    expect(insuranceKind({ category: "Health Insurance" })).toBe("protection");
+    expect(insuranceKind({ category: "Critical Illness" })).toBe("protection");
   });
 });
