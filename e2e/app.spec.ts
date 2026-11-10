@@ -462,6 +462,35 @@ test.describe('logged-in app', () => {
     await expect(page.getByRole('tab', { name: 'Wealth & retirement' })).toBeVisible();
   });
 
+  test('net worth shows every plus and minus, and they add up to the figure shown', async ({ page }) => {
+    const app = await signedIn(page);
+    const panel = page.getByRole('group', { name: 'How your net worth adds up' }).locator('visible=true');
+    await expect(panel).toBeVisible();
+    const rupees = (t: string) => Number(t.replace(/[^\d-]/g, ''));
+    const lines = async (sign: string) => (await panel.locator('.networth-line').filter({ hasText: sign }).locator('.tabular-nums').allTextContents()).map(rupees);
+    // The lines fill in once the records have loaded.
+    await expect.poll(async () => (await lines('+')).length).toBeGreaterThan(1);
+    const own = await lines('+'), owe = await lines('−');
+    // On a phone the two lists stack, so labels are not squeezed into a narrow column.
+    if (isPhone(page)) expect(await panel.locator('.networth-line-label').first().evaluate((el) => el.getBoundingClientRect().width)).toBeGreaterThan(150);
+    expect(own.length).toBeGreaterThan(1);
+    expect(owe.length).toBeGreaterThan(0);
+    const total = rupees((await panel.locator('.networth-total .tabular-nums').textContent())!);
+    expect(own.reduce((a, b) => a + b, 0) - owe.reduce((a, b) => a + b, 0)).toBe(total);
+    // The same figure as the Net worth tile.
+    const tile = page.getByRole('button', { name: 'Net worth: open' }).locator('visible=true').locator('.tabular-nums').first();
+    expect(rupees((await tile.textContent())!)).toBe(total);
+    await expectHealthy(page, app, 'net worth breakdown');
+  });
+
+  test('an app left open offers to reload when a newer version is live', async ({ page }) => {
+    await signedIn(page);
+    await expect(page.locator('.update-banner')).toHaveCount(0);
+    await page.route('**/api/version', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ version: '99.1' }) }));
+    await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
+    await expect(page.locator('.update-banner')).toContainText('A newer version (99.1) is ready');
+  });
+
   test('the removed dashboard panels stay removed', async ({ page }) => {
     const app = await signedIn(page);
     for (const text of ['Month Start Value', 'Monthly Portfolio Analysis', 'Portfolio health at a glance', 'Data Freshness', 'Asset Allocation', 'Risk & Performers'])

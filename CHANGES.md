@@ -15,6 +15,14 @@ These backups cover the app itself, not your financial data. Your data is covere
 
 ---
 
+## Version 10.30 (10 Nov 2026, 20:02): Net worth added up, and a prompt when a newer version is out
+
+Backup taken before this release: `backup-2026-11-10-2002-IST`
+
+- **Why the phone and the computer could show different net worth.** Both use exactly the same sum, but a phone app left open (especially one added to the home screen) keeps running the version it was opened with. A phone still on a version before 10.26 did not take off what is still owed to builders, so it showed a higher net worth. Prices are also loaded separately on each device, so shares, funds, gold and silver can differ for a moment until both have refreshed.
+- **The app now tells you when it is out of date.** Every few minutes, and whenever you come back to it, the app checks which version is live. If yours is older, a banner says **A newer version is ready** with a **Reload** button.
+- **Every plus and minus behind your net worth.** Under the Home tiles, **How your net worth adds up** lists what you own (each investment type, property, fixed income, insurance) and what you owe (loans, home loans on your property less money parked in the OD, borrowings, and what is still to pay builders). It shows the two subtotals and the final sum: Net worth = what you own − what you owe. Tap any line to open that section. The lines always add up to the net worth shown everywhere else.
+
 ## Version 10.29 (10 Nov 2026, 18:47): Close is always reachable on the phone
 
 Backup taken before this release: `backup-2026-11-10-1847-IST`

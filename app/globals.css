@@ -3941,3 +3941,11 @@ thead th {
     background: #17382b !important; color: #fff !important; border-color: #17382b !important; font-weight: 800;
   }
 }
+
+/* Net worth, added up: one line per plus and minus. */
+.networth-line { display: grid; grid-template-columns: 14px minmax(0, 1fr) auto; gap: 8px; align-items: baseline; width: 100%; padding: 4px 4px; border-radius: 8px; text-align: left; font-size: 14px; color: #17382b; }
+.networth-line:hover { background: #f7faf6; }
+.networth-line > span:first-child { font-weight: 800; }
+.networth-line-label { min-width: 0; overflow-wrap: anywhere; }
+.networth-subtotal { display: flex; justify-content: space-between; gap: 8px; margin-top: 6px; padding: 6px 4px 0 26px; border-top: 1px solid #e3dccc; font-size: 14px; font-weight: 800; color: #17382b; }
+.networth-total { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px; margin-top: 12px; padding: 10px 12px; border-radius: 12px; background: #eef5ee; font-size: 15px; font-weight: 800; color: #17382b; }

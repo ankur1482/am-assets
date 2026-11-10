@@ -1066,6 +1066,8 @@ export default function AssetManagerApp() {
     [goalsSort, setGoalsSort] = useState<{ key: string; direction: "asc" | "desc" }>({ key: "projection_status", direction: "asc" }),
     [showAllInvestmentTypes, setShowAllInvestmentTypes] = useState(false),
     [investDrawerOpen, setInvestDrawerOpen] = useState(false),
+    // A newer release than the one running, found by asking the server (an app left open on a phone keeps the old one).
+    [newerVersion, setNewerVersion] = useState(""),
     [paymentDraft, setPaymentDraft] = useState<{ propertyId: string; date: string; amount: string; from: "own" | "loan"; note: string } | null>(null),
     [plannedDraft, setPlannedDraft] = useState<{ goalId: string; instrument: string; type: keyof GrowthRates; mode: "monthly" | "once"; amount: string; note: string; rate: string } | null>(null),
     [goalGrowthInput, setGoalGrowthInput] = useState<Partial<Record<keyof GrowthRates, string>>>({}),
@@ -1274,6 +1276,20 @@ export default function AssetManagerApp() {
         can_view_documents: true,
         can_upload_documents: true,
       };
+  useEffect(() => {
+    const check = async () => {
+      try {
+        const res = await fetch("/api/version", { cache: "no-store" });
+        const live = String((await res.json())?.version || "");
+        if (live && live !== APP_VERSION) setNewerVersion(live);
+      } catch {}
+    };
+    const onShow = () => { if (document.visibilityState === "visible") check(); };
+    check();
+    const timer = setInterval(check, 5 * 60_000);
+    document.addEventListener("visibilitychange", onShow);
+    return () => { clearInterval(timer); document.removeEventListener("visibilitychange", onShow); };
+  }, []);
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
       setSession(data.session);
@@ -8136,6 +8152,13 @@ export default function AssetManagerApp() {
           </button>
         )}
         {phoneMode && phoneSideMenu()}
+        {newerVersion && (
+          <button type="button" className="monthly-banner update-banner" onClick={() => window.location.reload()}>
+            <RefreshCw size={15} />
+            <span>A newer version ({newerVersion}) is ready. You are on {APP_VERSION}.</span>
+            <strong>Reload</strong>
+          </button>
+        )}
         {canSubmitUploads && uploadStatus.missing.length > 0 && view !== MONTHLY_UPLOAD_MODULE && (
           <button type="button" className="monthly-banner" onClick={() => setView(MONTHLY_UPLOAD_MODULE)}>
             <Paperclip size={15} />
@@ -12919,6 +12942,67 @@ Salary will stop counting as income, Company PF contributions will stop (interes
       setToast(e?.message || "Could not save");
     }
   }
+  /**
+   * Every plus and minus behind the net worth figure, built with the same rules as computeLiveTotals,
+   * so the lines always add up to the net worth shown everywhere else.
+   */
+  function netWorthBreakdown() {
+    const plus = new Map<string, number>(), minus = new Map<string, number>();
+    const add = (m: Map<string, number>, key: string, v: number) => { if (v) m.set(key, (m.get(key) || 0) + v); };
+    for (const rec of records) {
+      const k = rec.module_key, c = computeLiveRecord(k, rec.data);
+      if (["stocks", "mutualFunds", "ulips", "bullion", "nsel", "fixedIncome", "property", "otherAssets", "insurance"].includes(k)) add(plus, k, num(c.latest));
+      if (k === "loans" || k === "borrowings") add(minus, k, num(c.balance));
+      if (k === "property") { add(minus, "propertyLoans", num(c.balance)); add(minus, "builders", num(c.construction_owed)); }
+    }
+    const label: Record<string, string> = {
+      bullion: "Gold & Silver", insurance: "Insurance (value today)", fixedIncome: "Fixed Income (incl. interest so far)",
+      property: "Property (value today)", loans: "Loans", borrowings: "Borrowings",
+      propertyLoans: "Home loans on your property (less money parked in OD)", builders: "Still to pay builders",
+    };
+    const opens: Record<string, string> = { propertyLoans: "property", builders: "property" };
+    const lines = (m: Map<string, number>) => [...m.entries()].filter(([, v]) => v).sort((a, b) => b[1] - a[1])
+      .map(([k, v]) => ({ k, label: label[k] || MODULES[k]?.title || k, value: v, open: opens[k] || k }));
+    const own = lines(plus), owe = lines(minus);
+    const ownTotal = own.reduce((t, x) => t + x.value, 0), oweTotal = owe.reduce((t, x) => t + x.value, 0);
+    return { own, owe, ownTotal, oweTotal, net: ownTotal - oweTotal };
+  }
+  function netWorthBreakdownPanel() {
+    const b = netWorthBreakdown();
+    const row = (x: { k: string; label: string; value: number; open: string }, sign: "+" | "−") => (
+      <li key={sign + x.k}>
+        <button type="button" className="networth-line" onClick={() => openModuleAll(x.open)}>
+          <span className={sign === "+" ? "text-emerald-700" : "text-red-700"} aria-hidden="true">{sign}</span>
+          <span className="networth-line-label">{x.label}</span>
+          <span className="tabular-nums">{fmt(x.value)}</span>
+        </button>
+      </li>
+    );
+    return (
+      <details className="networth-breakdown rounded-2xl border border-[#e3dccc] bg-white p-4 shadow-sm" open aria-label="How your net worth adds up">
+        <summary className="cursor-pointer text-sm font-bold text-[#17382b]">
+          How your net worth of <span className="tabular-nums">{fmt(b.net)}</span> adds up
+        </summary>
+        <div className="phone-one-col mt-3 grid grid-cols-2 gap-5 max-md:grid-cols-1">
+          <div>
+            <div className="text-[11px] font-bold uppercase tracking-[.14em] text-gray-500">What you own</div>
+            <ul className="mt-1">{b.own.map((x) => row(x, "+"))}</ul>
+            <div className="networth-subtotal"><span>You own</span><span className="tabular-nums">{fmt(b.ownTotal)}</span></div>
+          </div>
+          <div>
+            <div className="text-[11px] font-bold uppercase tracking-[.14em] text-gray-500">What you owe</div>
+            {b.owe.length ? <ul className="mt-1">{b.owe.map((x) => row(x, "−"))}</ul> : <p className="mt-1 text-sm text-gray-600">Nothing owed.</p>}
+            <div className="networth-subtotal"><span>You owe</span><span className="tabular-nums">{fmt(b.oweTotal)}</span></div>
+          </div>
+        </div>
+        <div className="networth-total">
+          <span>Net worth = {fmt(b.ownTotal)} − {fmt(b.oweTotal)}</span>
+          <span className="tabular-nums">{fmt(b.net)}</span>
+        </div>
+        <p className="mt-1 text-xs text-gray-500">Shares, funds, gold and silver use the latest prices loaded on this device, so the figure moves as prices refresh.</p>
+      </details>
+    );
+  }
   function homeTiles(onPhone = false) {
     const assetRecords = records.filter((r) => MODULES[r.module_key]?.kind === "asset" || r.module_key === "insurance");
     const todayMove = assetRecords.reduce((s, r) => (showsDailyChange(r.module_key) ? s + todayGainFor(r.module_key, r) : s), 0);
@@ -13068,6 +13152,7 @@ Salary will stop counting as income, Company PF contributions will stop (interes
             </div>
           )}
         </div>
+        {netWorthBreakdownPanel()}
       </section>
     );
   }
