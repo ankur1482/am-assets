@@ -97,7 +97,7 @@ export default function PredictivePlanner({ records, netWorth, accessToken, init
   const defaultCash = sourceTotal('cash');
   const openingCash = cash === '' ? defaultCash : num(cash);
   const expenseAmount = expenses === '' ? sourceTotal('expenses') : num(expenses);
-  const cashInputs = { rentals: snapshot.rentals, opening: openingCash, income: incomeAmount, expenses: expenseAmount, investment: cashInvestment, premiums: premiumAmount, premiumSchedule, debts: debtInputs, extraDebtId: selectedDebt?.id, extraPayment: extraAmount };
+  const cashInputs = { rentals: snapshot.rentals, opening: openingCash, income: incomeAmount, expenses: expenseAmount, investment: cashInvestment, premiums: premiumAmount, premiumSchedule, incomeEnds: snapshot.salaryEnds.filter(e => picked('income').includes(e.id)), debts: debtInputs, extraDebtId: selectedDebt?.id, extraPayment: extraAmount };
   const cashPoints = projectCashFlow({ ...cashInputs, sweepToOd });
   const hasOdLoan = debtInputs.some(d => d.isOd), totalInterest = (points: { interest: number }[]) => points.reduce((sum, point) => sum + point.interest, 0);
   const sweepSaving = hasOdLoan ? Math.max(0, totalInterest(projectCashFlow(cashInputs)) - totalInterest(projectCashFlow({ ...cashInputs, sweepToOd: true }))) : 0;

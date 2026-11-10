@@ -5,6 +5,7 @@ import { isCashAtHome, isDividendIncome, isEarningRent, isRentedProperty, isSavi
 import { dividendsReceivedIn } from "./dividends";
 import { calculateInsurance, insuranceKind } from "./insurance";
 import { recurringPayments } from "./monthlyPayments";
+import { employmentOf } from "./employment";
 import type { PlanningRecord } from "./predictions";
 
 export type CashField = "cash" | "income" | "expenses" | "investment" | "insurance";
@@ -13,7 +14,6 @@ export const CASH_FIELDS: CashField[] = ["cash", "income", "expenses", "investme
 export type SourceItem = { id: string; label: string; group: string; value: number; defaultOn: boolean };
 export type SourcePicks = Partial<Record<CashField, string[]>>;
 
-const validDate = (s: string) => /^\d{4}-\d{2}-\d{2}$/.test(s) && !Number.isNaN(Date.parse(s));
 const who = (d: Record<string, any>) => (d.account_name ? ` — ${d.account_name}` : "");
 const join = (...parts: unknown[]) => parts.map((p) => String(p ?? "").trim()).filter(Boolean).join(" · ");
 
@@ -30,7 +30,7 @@ export function plannerSources(records: PlanningRecord[], asOf: string): Record<
       } else if (isDividendIncome(d)) {
         out.income.push({ id: r.id, label: "Dividend income" + who(d), group: "Dividends", value: Math.max(0, num(d.employee_contribution)), defaultOn: true });
       } else if (lower === "salary") {
-        const ended = validDate(String(d.last_working_date || "")) && d.last_working_date < asOf;
+        const ended = !employmentOf(r, asOf).employed;
         out.income.push({ id: r.id, label: join("Salary", d.broker) + who(d) + (ended ? " (ended)" : ""), group: "Salary", value: ended ? 0 : Math.max(0, num(d.employee_contribution)), defaultOn: !ended });
       } else if (lower === "rental income") {
         // Rent on a saved property is counted from the property itself, so its linked income row stays unticked.

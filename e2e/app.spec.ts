@@ -793,4 +793,16 @@ test.describe('logged-in app', () => {
     await expect(page.getByText('What pays for each goal').locator('visible=true').first()).toBeVisible();
     await expectHealthy(page, app, 'home tiles');
   });
+
+  test('home asks each month whether each earner is still employed, and No stops their salary', async ({ page }) => {
+    test.skip(isPhone(page), 'Covered on desktop');
+    const app = await signedIn(page);
+    page.on('dialog', dialog => dialog.accept());
+    const ask = page.getByRole('group', { name: 'Still employed: Asha' }).locator('visible=true').first();
+    await expect(ask).toBeVisible();
+    await ask.getByRole('button', { name: 'No', exact: true }).click();
+    await expect.poll(() => app.writes.some(w => w.table === 'records' && JSON.stringify(w.body).includes('"currently_employed":"No"'))).toBe(true);
+    await expect(page.getByRole('group', { name: 'Still employed: Asha' })).toHaveCount(0);
+    await expectHealthy(page, app, 'employment check');
+  });
 });

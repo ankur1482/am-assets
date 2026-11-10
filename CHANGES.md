@@ -15,6 +15,22 @@ These backups cover the app itself, not your financial data. Your data is covere
 
 ---
 
+## Version 10.25 (10 Nov 2026, 15:55): Employment drives salary, Company PF and gratuity
+
+Backup taken before this release: `backup-2026-11-10-1555-IST`
+
+- **A monthly question.** Each month, Home's **To do** tile asks for each salary: **Still employed — Ankur (HDFC Bank)? Yes / No**. **Yes** confirms it for the month.
+- **When you answer No.** After you confirm, the app sets today as the last working day on that person's Salary, Company PF and Gratuity records, and marks them as not employed. From then on:
+  - The salary stops counting as income.
+  - Company PF contributions stop. Interest on the balance continues.
+  - Gratuity is worked out up to that day and does not grow further.
+
+  If a PF or gratuity record already has an earlier last working day, that earlier date is kept.
+- **Planning to work until.** A Salary record now has **Currently employed?** and **Planning to work until** (for example 1 June 2030). Goals and the Planner use it:
+  - **Goal projections:** Company PF contributions continue only until that date, and the balance keeps earning interest after it. Gratuity is valued at whichever comes first, that date or the goal's target date, because it grows with years of service.
+  - **Planner cash flow:** the salary is paid for its last month and then stops in the 12-month forecast.
+- **Applies only to the same person.** PF and gratuity follow the Salary record with the same account name, so one person leaving a job does not affect another.
+
 ## Version 10.24 (10 Nov 2026, 15:41): Investments drawer on the phone, and dividend cards
 
 Backup taken before this release: `backup-2026-11-10-1541-IST`

@@ -176,3 +176,16 @@ describe('insurance as a yearly expense', () => {
     expect(projectCashFlow({ ...flow, premiumSchedule: [], premiums: 12000 })[0].premiums).toBe(1000);
   });
 });
+
+describe('salary and planned employment end', () => {
+  it('drops a salary from the cash forecast after the planned last month, and ignores ended jobs', () => {
+    const p = planningSnapshot([
+      { id: 's', module_key: 'fixedIncome', data: { category: 'Salary', employee_contribution: 100000, planned_employment_end: '2027-02-28' } },
+      { id: 'old', module_key: 'fixedIncome', data: { category: 'Salary', employee_contribution: 50000, currently_employed: 'No' } },
+    ], '2026-11-10');
+    expect(p.monthlySalary).toBe(100000);
+    expect(p.salaryEnds).toEqual([{ id: 's', month: '2027-02', amount: 100000 }]);
+    const points = projectCashFlow({ asOf: '2026-11-10', opening: 0, income: 100000, expenses: 0, investment: 0, premiums: 0, debts: [], incomeEnds: p.salaryEnds });
+    expect(points.map(x => [x.month, x.income])).toEqual(expect.arrayContaining([['2027-02', 100000], ['2027-03', 0]]));
+  });
+});

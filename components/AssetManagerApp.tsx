@@ -45,6 +45,7 @@ type YearReturn = { year: number; pct: number };
 import { LOCKED_TABS, normalizeHiddenTabs, toggleHiddenTab } from "@/lib/hiddenTabs";
 import { cleanPicks, type SourcePicks } from "@/lib/plannerSources";
 import { constructionSummary, type ConstructionPayment } from "@/lib/construction";
+import { employmentChecksDue, employmentFor, isEmploymentLinked, monthsUntilDate, recordsEndedBy } from "@/lib/employment";
 import MonthlyUploads from "@/components/MonthlyUploads";
 import BackupCenter, { type BackupTarget } from "@/components/BackupCenter";
 import { backupFileName, backupFingerprint } from "@/lib/backups";
@@ -12951,6 +12952,33 @@ export default function AssetManagerApp() {
    * Home: one tile per question people open the app to answer. Each tile shows the answer at a
    * glance and opens the screen with the detail. The dashboard sections below are the detail view.
    */
+  /** "Yes, still employed" for this month. */
+  async function confirmEmployed(salary: Rec) {
+    if (!canEditModule("fixedIncome")) return setToast("This household access is read-only for Fixed Income");
+    try {
+      await saveRecordData(salary.id, withSystemDates({ ...salary.data, currently_employed: "Yes", employment_confirmed_month: isoDate().slice(0, 7) }, salary));
+    } catch (e: any) {
+      setToast(e?.message || "Could not save");
+    }
+  }
+  /** "No longer employed": salary stops, Company PF contributions stop and gratuity freezes from today. */
+  async function endEmployment(salary: Rec) {
+    if (!canEditModule("fixedIncome")) return setToast("This household access is read-only for Fixed Income");
+    const who = String(salary.data?.account_name || "");
+    if (!confirm(`Mark ${who || "this person"} as no longer employed from today?
+
+Salary will stop counting as income, Company PF contributions will stop (interest continues) and gratuity will be worked out up to today.`)) return;
+    const today = isoDate();
+    try {
+      for (const r of recordsEndedBy(records, who)) {
+        const keepEarlier = r.id !== salary.id && /^d{4}-d{2}-d{2}$/.test(String(r.data?.last_working_date || "")) && String(r.data.last_working_date) < today;
+        await saveRecordData(r.id, withSystemDates({ ...r.data, last_working_date: keepEarlier ? r.data.last_working_date : today, currently_employed: "No", employment_confirmed_month: today.slice(0, 7) }, r));
+      }
+      setToast(`${who || "Employment"} marked as ended from ${formatDate(today)}`);
+    } catch (e: any) {
+      setToast(e?.message || "Could not save");
+    }
+  }
   function homeTiles(onPhone = false) {
     const assetRecords = records.filter((r) => MODULES[r.module_key]?.kind === "asset" || r.module_key === "insurance");
     const todayMove = assetRecords.reduce((s, r) => (showsDailyChange(r.module_key) ? s + todayGainFor(r.module_key, r) : s), 0);
@@ -12983,6 +13011,8 @@ export default function AssetManagerApp() {
       { n: records.filter((r) => r.module_key === "fixedIncome" && fixedIncomeReviewDue(r)).length, text: "fixed income value to review", many: "fixed income values to review", action: () => setView("fixedIncome") },
       { n: goalCount("off"), text: "goal needing work", many: "goals needing work", action: () => setView("goals") },
     ].filter((t) => t.n > 0);
+    // Asked once a month for each salary: is this person still employed?
+    const jobChecks = employmentChecksDue(records, todayIso);
     // Investments by type
     const byType = GOAL_ASSET_KEYS.filter((k) => MODULES[k])
       .map((k) => {
@@ -13054,7 +13084,18 @@ export default function AssetManagerApp() {
           ) : <span className="block text-sm text-emerald-700">No loans.</span>)}
           <div className={`home-tile flex min-h-[150px] max-md:min-h-0 flex-col rounded-2xl border p-4 shadow-sm ${todos.length ? "border-amber-200 bg-amber-50/60" : "border-emerald-200 bg-emerald-50/60"}`}>
             <span className="text-[11px] font-bold uppercase tracking-[.14em] text-gray-500">To do</span>
-            {todos.length ? (
+            {jobChecks.map((job) => (
+              <div key={job.salary.id} className="mt-1 rounded-xl border border-[#e3dccc] bg-white px-2 py-1.5 text-sm" role="group" aria-label={`Still employed: ${job.account || "salary"}`}>
+                <span className="font-semibold text-[#17382b]">
+                  Still employed{job.account ? ` — ${job.account}` : ""}{job.salary.data?.broker ? ` (${job.salary.data.broker})` : ""}?
+                </span>
+                <span className="ml-2 inline-flex gap-1">
+                  <button type="button" className="btn !min-h-0 !px-2.5 !py-0.5 text-xs" onClick={() => confirmEmployed(job.salary)}>Yes</button>
+                  <button type="button" className="btn !min-h-0 !px-2.5 !py-0.5 text-xs" onClick={() => endEmployment(job.salary)}>No</button>
+                </span>
+              </div>
+            ))}
+            {todos.length || jobChecks.length ? (
               <ul className="mt-1 space-y-1 text-sm">
                 {todos.map((t) => (
                   <li key={t.text}>
@@ -15627,7 +15668,24 @@ export default function AssetManagerApp() {
     const rates = goalGrowthRates();
     const itemFor = (h: Holding & { gross: number }): ProjectionItem => {
       const data = records.find((r) => r.id === h.id)?.data || {}, growth = holdingGrowth(h.moduleKey, data, rates);
-      return { id: h.id, label: h.label, today: h.gross, deduct: h.gross - h.value, monthly: holdingMonthly(h.moduleKey, data), rate: growth.rate, basis: growth.basis };
+      const item: ProjectionItem = { id: h.id, label: h.label, today: h.gross, deduct: h.gross - h.value, monthly: holdingMonthly(h.moduleKey, data), rate: growth.rate, basis: growth.basis };
+      // Company PF and gratuity depend on the same person still being employed.
+      const linked = h.moduleKey === "fixedIncome" && isEmploymentLinked({ id: h.id, module_key: h.moduleKey, data });
+      const job = linked ? employmentFor(records, String(data.account_name || ""), isoDate()) : null;
+      if (job) {
+        if (/gratuity/i.test(String(data.category || ""))) {
+          // Gratuity grows with years of service, so value it at the earlier of the last working day and the target date.
+          const until = [job.endDate, g.targetDate].filter((d): d is string => !!d && /^\d{4}-\d{2}-\d{2}$/.test(d)).sort()[0];
+          if (data.purchase_date && num(data.monthly_basic_salary) > 0 && until) {
+            const at = calculateIndianGratuity({ dateOfJoining: data.purchase_date, calculationDate: until, monthlyBasicSalary: data.monthly_basic_salary, monthlyDA: data.monthly_da, coveredUnderAct: data.covered_under_gratuity_act });
+            return { ...item, monthly: 0, fixedAtTarget: num(at.totalGratuity), rate: 0, basis: job.employed ? `Service until ${formatDate(until)}` : "Frozen at the last working day" };
+          }
+          return { ...item, monthly: 0, rate: 0, basis: "Frozen at the last working day" };
+        }
+        const payMonths = job.employed ? monthsUntilDate(job.endDate, isoDate()) : 0;
+        return { ...item, payMonths, basis: job.employed ? (job.endDate ? `${growth.basis}; contributions until ${formatDate(job.endDate)}` : growth.basis) : `${growth.basis}; contributions stopped` };
+      }
+      return item;
     };
     let items: ProjectionItem[];
     if (g.funding === "selected") {

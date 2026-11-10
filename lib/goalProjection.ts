@@ -44,9 +44,14 @@ export function holdingMonthly(moduleKey: string, data: Record<string, any>) {
 const monthlyRate = (yearlyPct: number) => Math.pow(1 + Math.max(-50, Math.min(40, yearlyPct)) / 100, 1 / 12) - 1;
 
 /** Value after `months`: today's amount grows, and each month-end payment grows from when it is made. */
-export function futureValue(today: number, monthly: number, yearlyPct: number, months: number) {
-  const n = Math.max(0, Math.round(months)), i = monthlyRate(yearlyPct), growth = Math.pow(1 + i, n);
-  return Math.max(0, today) * growth + Math.max(0, monthly) * (i ? (growth - 1) / i : n);
+/**
+ * Value after `months`: today's amount grows, and each month-end payment grows from when it is made.
+ * Payments stop after `payMonths` (for example when employment ends) while what is there keeps growing.
+ */
+export function futureValue(today: number, monthly: number, yearlyPct: number, months: number, payMonths: number = months) {
+  const n = Math.max(0, Math.round(months)), m = Math.min(n, Math.max(0, Math.round(payMonths))), i = monthlyRate(yearlyPct), growth = Math.pow(1 + i, n);
+  const paid = Math.max(0, monthly) * (i ? (Math.pow(1 + i, m) - 1) / i : m) * Math.pow(1 + i, n - m);
+  return Math.max(0, today) * growth + paid;
 }
 
 /** Extra monthly amount, growing at `yearlyPct`, that closes `gap` in `months`. */
@@ -56,7 +61,8 @@ export function monthlyToClose(gap: number, yearlyPct: number, months: number) {
   return gap / (i ? (Math.pow(1 + i, n) - 1) / i : n);
 }
 
-export type ProjectionItem = { id: string; label: string; today: number; monthly: number; rate: number; basis: string; deduct?: number };
+/** payMonths: how long the monthly amount continues (employment end); fixedAtTarget: a value worked out directly, such as gratuity. */
+export type ProjectionItem = { id: string; label: string; today: number; monthly: number; rate: number; basis: string; deduct?: number; payMonths?: number | null; fixedAtTarget?: number };
 export type ProjectedItem = ProjectionItem & { atTarget: number };
 
 /**
@@ -67,7 +73,7 @@ export function projectGoal(input: { target: number; months: number | null; item
   const months = Math.max(0, input.months ?? 0);
   const items: ProjectedItem[] = input.items.map((item) => ({
     ...item,
-    atTarget: Math.max(0, futureValue(item.today, item.monthly, item.rate, months) - Math.max(0, item.deduct || 0)),
+    atTarget: item.fixedAtTarget !== undefined ? Math.max(0, item.fixedAtTarget) : Math.max(0, futureValue(item.today, item.monthly, item.rate, months, item.payMonths ?? months) - Math.max(0, item.deduct || 0)),
   }));
   const projected = items.reduce((s, i) => s + i.atTarget, 0);
   const weight = items.reduce((s, i) => s + Math.max(0, i.today - (i.deduct || 0)) + i.monthly, 0);

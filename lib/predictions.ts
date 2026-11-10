@@ -3,6 +3,7 @@ import { calculateInsurance, normalizeInsurancePolicy } from './insurance';
 import { dividendsReceivedIn } from './dividends';
 import { monthlyDirectExpenses } from './expenses';
 import { monthlyRegularTotal, recurringPayments } from './monthlyPayments';
+import { employmentOf } from './employment';
 
 const clamp = (value: number, low: number, high: number) => Math.min(high, Math.max(low, Number.isFinite(value) ? value : low));
 export const indiaDate = (date = new Date()) => {
@@ -34,7 +35,7 @@ export function monthlyPayment(balance: number, annualRate: number, months: numb
 
 export function planningSnapshot(records: PlanningRecord[], asOf = indiaDate()) {
   let monthlySalary = 0, monthlyRent = 0, monthlyDividend = 0, savingsBalance = 0, cashAtHome = 0, odParked = 0, monthlyInvestment = 0, monthlyPremium = 0;
-  const debts: DebtInput[] = [], warnings: string[] = [], rentals: Record<string, any>[] = [], premiumSchedule: PremiumDue[] = [];
+  const debts: DebtInput[] = [], warnings: string[] = [], rentals: Record<string, any>[] = [], premiumSchedule: PremiumDue[] = [], salaryEnds: { id: string; month: string; amount: number }[] = [];
   const propertyIds = new Set(records.filter(r => r.module_key === 'property').map(r => r.id));
   for (const record of records) {
     const d = record.data || {}, category = String(d.category || '').toLowerCase();
@@ -46,7 +47,11 @@ export function planningSnapshot(records: PlanningRecord[], asOf = indiaDate()) 
       monthlyDividend += Math.max(0, num(d.employee_contribution));
     } else if (record.module_key === 'fixedIncome' && /^(salary|rental\s*income)$/.test(category)) {
       // Rent on a saved property is counted from the property itself, so its linked income row is skipped.
-      if (category === 'salary') { if (!(validDate(String(d.last_working_date || '')) && d.last_working_date < asOf)) monthlySalary += Math.max(0, num(d.employee_contribution)); }
+      if (category === 'salary') {
+        // A salary counts while the person is employed, and stops after the day they plan to stop working.
+        const job = employmentOf(record, asOf), amount = Math.max(0, num(d.employee_contribution));
+        if (job.employed) { monthlySalary += amount; if (job.endDate) salaryEnds.push({ id: record.id, month: job.endDate.slice(0, 7), amount }); }
+      }
       else if (!propertyIds.has(d.linked_property_id)) monthlyRent += Math.max(0, num(d.employee_contribution));
     } else if (['fixedIncome', 'stocks', 'mutualFunds', 'ulips', 'bullion', 'otherAssets'].includes(record.module_key)) {
       monthlyInvestment += Math.max(0, num(d.monthly_contribution) || num(d.sip_amount) || num(d.monthly_investment) || (record.module_key === 'fixedIncome' ? num(d.employee_contribution) + num(d.company_contribution) + num(d.yearly_investment) / 12 : num(d.monthly_premium)));
@@ -83,7 +88,7 @@ export function planningSnapshot(records: PlanningRecord[], asOf = indiaDate()) 
   const monthlyRegular = monthlyRegularTotal(recurringPayments(records));
   const directExpenses = monthlyDirectExpenses(records, asOf.slice(0, 7));
   const availableCashFlow = monthlyIncome - monthlyEmi - monthlyPremium - monthlyInvestment - monthlyRegular - directExpenses;
-  return { monthlyDirectExpenses: directExpenses, monthlyRegular, rentals, monthlySalary, monthlyRent, monthlyDividend, savingsBalance, cashAtHome, odParked, liquidity: savingsBalance + cashAtHome + odParked, monthlyIncome, monthlyEmi, availableCashFlow, monthlyInvestment, monthlyPremium, annualPremium: monthlyPremium * 12, premiumSchedule, debts, warnings };
+  return { monthlyDirectExpenses: directExpenses, monthlyRegular, rentals, monthlySalary, monthlyRent, monthlyDividend, savingsBalance, cashAtHome, odParked, liquidity: savingsBalance + cashAtHome + odParked, monthlyIncome, monthlyEmi, availableCashFlow, monthlyInvestment, monthlyPremium, annualPremium: monthlyPremium * 12, premiumSchedule, salaryEnds, debts, warnings };
 }
 
 export function projectWealth(input: { starting: number; years: number; annualReturn: number; inflation: number; monthly: number; annualStepUp: number; contributionYears: number; retirementMonthly: number }) {
@@ -133,7 +138,7 @@ export function amortizeDebt(debt: DebtInput, extra = 0) {
   return { months: null, interest, paidOff: false };
 }
 
-export function projectCashFlow(input: { opening: number; income: number; expenses: number; investment: number; premiums: number; premiumSchedule?: PremiumDue[]; debts: DebtInput[]; extraDebtId?: string; extraPayment?: number; sweepToOd?: boolean; rentals?: Record<string, any>[]; asOf?: string }) {
+export function projectCashFlow(input: { opening: number; income: number; expenses: number; investment: number; premiums: number; premiumSchedule?: PremiumDue[]; incomeEnds?: { month: string; amount: number }[]; debts: DebtInput[]; extraDebtId?: string; extraPayment?: number; sweepToOd?: boolean; rentals?: Record<string, any>[]; asOf?: string }) {
   const date = input.asOf || indiaDate(), [year, month] = date.split('-').map(Number);
   let cash = num(input.opening);
   const balances = input.debts.map(d => Math.max(0, d.balance)), parked = input.debts.map(d => Math.max(0, num(d.parked)));
@@ -149,7 +154,9 @@ export function projectCashFlow(input: { opening: number; income: number; expens
     const label = new Date(Date.UTC(year, month + index, 1)).toISOString().slice(0, 7);
     // Income reflects today's lettings, so adjust it for vacancies that start or end during the forecast.
     const rentChange = (input.rentals || []).reduce((sum, rental) => sum + Math.max(0, num(rental.monthly_rent)) * (occupiedShareOfMonth(rental, label) - (isEarningRent(rental, date) ? 1 : 0)), 0);
-    const income = Math.max(0, Math.max(0, input.income) + rentChange);
+    // A salary is paid for its last month, then stops.
+    const ended = (input.incomeEnds || []).reduce((sum, end) => sum + (label > end.month ? Math.max(0, end.amount) : 0), 0);
+    const income = Math.max(0, Math.max(0, input.income) + rentChange - ended);
     // With a schedule, `premiums` is the yearly total and each policy is paid in its due month; otherwise it is a monthly amount.
     const schedule = input.premiumSchedule, scheduledYear = schedule ? schedule.reduce((sum, p) => sum + p.amount * (12 / p.everyMonths), 0) : 0;
     const premiums = !schedule ? Math.max(0, input.premiums) : scheduledYear > 0 ? premiumsDueIn(schedule, label) * Math.max(0, input.premiums) / scheduledYear : Math.max(0, input.premiums) / 12;

@@ -26,6 +26,8 @@ const FIELD_RULES: Record<string, FieldRule[]> = {
   ],
   loans: [OD_RULE],
   fixedIncome: [
+    // Employment questions belong to a salary; PF and gratuity follow the same person's answers.
+    { controllers: ['category', 'currently_employed'], fields: ['currently_employed', 'planned_employment_end'], visible: values => /^salary$/i.test(String(values.category || '').trim()) },
     { controllers: ['category'], fields: ['interest_rate', 'rate_year', 'yearly_investment', 'investment_due_month'], visible: values => !earnsNoTrackedInterest(values) },
     { controllers: ['category'], fields: ['lock_in_years', 'maturity_value', 'maturity_date', 'year_end_maturity_value', 'interest_incurred_fy'], visible: values => !isCashCategory(values) },
     { controllers: ['category'], fields: ['current_value_today', 'latest'], visible: values => !/^(salary|rental\s*income|dividend)/i.test(String(values.category || '').trim()) },

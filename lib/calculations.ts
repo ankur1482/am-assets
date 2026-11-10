@@ -187,10 +187,12 @@ function pfMonthlyFyProjection(r:any,asOf=new Date()){
   const base=fixedIncomeBaseValue(r),ratePerMonth=num(r.interest_rate)/100/12,monthly=num(r.employee_contribution)+num(r.company_contribution);
   if(!base&&!monthly)return{base,contributions:0,interest:0,latest:0};
   const investmentDate=localDate(fiBaseDate(r)),fyStart=fyStartDate(asOf),start=investmentDate&&investmentDate>fyStart?investmentDate:fyStart,today=new Date(asOf.getFullYear(),asOf.getMonth(),asOf.getDate()),monthsCount=Math.min(12,monthCountInclusive(start,today));
+  // Contributions stop after the last working day (when employment ends); interest keeps accruing.
+  const lastDay=r.last_working_date?localDate(r.last_working_date):null;
   let balance=base,contributions=0,interest=0;
   for(let i=0;i<monthsCount;i++){
-    balance+=monthly;
-    contributions+=monthly;
+    const contributing=!lastDay||new Date(start.getFullYear(),start.getMonth()+i,1)<=lastDay;
+    if(contributing){balance+=monthly;contributions+=monthly}
     const monthlyInterest=balance*ratePerMonth;
     interest+=monthlyInterest;
     balance+=monthlyInterest;
@@ -227,7 +229,8 @@ function fixedIncomeRecord(r:any){
     Object.assign(r,{calculation_date:result.calculationDate,total_service:`${result.serviceYears} years, ${result.serviceMonths} months, ${result.serviceDays} days`,service_years:result.serviceYears,service_months:result.serviceMonths,service_days:result.serviceDays,eligible_years:result.eligibleYears,salary_basis:result.salaryBasis,gratuity_per_year:result.gratuityPerYear,gratuity_value:result.totalGratuity,tax_exempt_gratuity:result.taxExemptGratuity,taxable_gratuity:result.taxableGratuity,monthly_ctc_gratuity:result.monthlyCtcAccrual,annual_ctc_gratuity:result.annualCtcAccrual,gratuity_eligible:result.eligible,eligibility_message:result.eligibilityMessage,invested:0,interest_incurred_fy:0,current_value_today:result.totalGratuity,worth_till_date:result.totalGratuity,latest:result.totalGratuity,year_end_maturity_value:result.totalGratuity,maturity_value:result.totalGratuity,maturity_date:'',locked_until:''});
     return r;
   }
-  const elapsed=years(fiBaseDate(r));if(isCompanyPf(r))r.broker='Govt';r.maturity_date=isCompanyPf(r)?'':fixedIncomeMaturityDate(r)||r.maturity_date;r.invested=fixedIncomeInvested(r,elapsed);r.interest_incurred_fy=fixedIncomeInterestIncurredFy(r);r.worth_till_date=fixedIncomeWorthTillDate(r);r.latest=r.worth_till_date;r.maturity_value=isCompanyPf(r)?'':fixedIncomeMaturityValue(r);r.year_end_maturity_value=fixedIncomeYearEndValue(r);r.locked_until=r.maturity_date||'';
+  // A PF only receives contributions up to the last working day.
+  const pfEnd=isPf(r)&&r.last_working_date?new Date(r.last_working_date):null,elapsed=pfEnd&&!Number.isNaN(pfEnd.getTime())&&pfEnd<new Date()?Math.max(0,years(fiBaseDate(r))-years(r.last_working_date)):years(fiBaseDate(r));if(isCompanyPf(r))r.broker='Govt';r.maturity_date=isCompanyPf(r)?'':fixedIncomeMaturityDate(r)||r.maturity_date;r.invested=fixedIncomeInvested(r,elapsed);r.interest_incurred_fy=fixedIncomeInterestIncurredFy(r);r.worth_till_date=fixedIncomeWorthTillDate(r);r.latest=r.worth_till_date;r.maturity_value=isCompanyPf(r)?'':fixedIncomeMaturityValue(r);r.year_end_maturity_value=fixedIncomeYearEndValue(r);r.locked_until=r.maturity_date||'';
   if(/^salary$|^rental\s*income$/.test(typeKey(r)))r.yearly_total_value=(num(r.employee_contribution)+num(r.company_contribution))*12;
   return r
 }

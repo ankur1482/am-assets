@@ -108,3 +108,16 @@ describe("planned instruments", () => {
     expect(holdingGrowth("fixedIncome", { category: "PPF" }, DEFAULT_GROWTH).rate).toBe(7.1);
   });
 });
+
+describe("payments that stop before the target date", () => {
+  it("stops monthly payments after payMonths, while the balance keeps growing", () => {
+    expect(futureValue(0, 100, 0, 24, 12)).toBe(1200);
+    expect(futureValue(0, 100, 12, 24, 12)).toBeCloseTo(futureValue(0, 100, 12, 12) * Math.pow(1.12, 1), 6);
+    expect(futureValue(0, 100, 0, 12, 99)).toBe(1200);
+  });
+
+  it("uses a value worked out directly when one is given", () => {
+    const p = projectGoal({ target: 100, months: 12, items: [{ id: "g", label: "Gratuity", today: 50, monthly: 0, rate: 0, basis: "", fixedAtTarget: 80 }] });
+    expect(p.projected).toBe(80);
+  });
+});
