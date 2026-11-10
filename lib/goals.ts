@@ -1,4 +1,4 @@
-import { isRentedProperty, isUnderConstruction } from "./calculations";
+import { isRentedProperty } from "./calculations";
 
 // Goal funding: treat everything owned as if it were cash today, subtract
 // everything owed, and measure what is left against the goal targets.
@@ -20,6 +20,8 @@ export type GoalInput = {
 };
 export type GoalFunding = GoalInput & {
   funding: "selected" | "shared";
+  /** The holdings set aside for this goal (none when it shares net worth). */
+  holdingIds: string[];
   allocated: number;
   gap: number;
   fundedPct: number;
@@ -35,9 +37,9 @@ const n = (v: unknown) => {
 };
 
 /** The home you live in for good. Its value is never counted towards goals or retirement. */
-/** A home later let out or still being built no longer counts as the home you live in. */
+/** A home you or your family live in, or will move into once built. One that is let out no longer counts. */
 export const isPrimaryResidence = (data: Record<string, unknown> | null | undefined) =>
-  !!data && /^(yes|true|1)$/i.test(String(data.primary_residence ?? "").trim()) && !isRentedProperty(data) && !isUnderConstruction(data);
+  !!data && /^(yes|true|1)$/i.test(String(data.primary_residence ?? "").trim()) && !isRentedProperty(data);
 
 export const typeSource = (moduleKey: string) => `type:${moduleKey}`;
 export const holdingSource = (recordId: string) => `rec:${recordId}`;
@@ -96,11 +98,12 @@ export function goalFunding(
   // goals goes to the higher-priority one, so nothing is counted twice.
   const ordered = [...goals].sort(byPriorityThenDate);
   const claimed = new Set<string>();
-  const earmarked = new Map<string, number>();
+  const earmarked = new Map<string, number>(), ownIds = new Map<string, string[]>();
   for (const g of ordered) {
     const own = holdingsFor(g.sources, holdings).filter((h) => !claimed.has(h.id));
     if (!cleanSources(g.sources).length) continue;
     own.forEach((h) => claimed.add(h.id));
+    ownIds.set(g.id, own.map((h) => h.id));
     earmarked.set(g.id, own.reduce((s, h) => s + Math.max(0, n(h.value)), 0));
   }
   const setAside = [...earmarked.values()].reduce((s, v) => s + v, 0);
@@ -123,6 +126,7 @@ export function goalFunding(
     return {
       ...g,
       funding: own !== undefined ? "selected" : "shared",
+      holdingIds: ownIds.get(g.id) || [],
       target: goalTarget,
       allocated,
       gap: goalGap,
@@ -143,6 +147,8 @@ export function goalFunding(
     surplus,
     fundedPct,
     setAside,
+    /** Holdings not set aside for any goal, which the sharing goals draw on. */
+    unclaimedIds: holdings.filter((h) => !claimed.has(h.id)).map((h) => h.id),
     goals: goalRows,
   };
 }

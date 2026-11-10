@@ -1,6 +1,6 @@
 {
   "name": "asset-manager-vercel-supabase",
-  "version": "10.15.0",
+  "version": "10.16.0",
   "private": true,
   "scripts": {
     "dev": "node --use-system-ca node_modules/next/dist/bin/next dev --turbopack",

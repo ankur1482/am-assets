@@ -652,9 +652,14 @@ test.describe('logged-in app', () => {
     await expect(page.getByText(/Overall Dashboard|Summary/i).locator('visible=true').first()).toBeVisible();
     await open(page, app, 'Goals');
     const before = await page.getByText(/^Net worth as cash = everything you own/).textContent();
-    const homePicker = page.getByLabel('Do you live in one of your properties?');
-    await homePicker.selectOption(await homePicker.locator('option', { hasText: 'Hometown' }).getAttribute('value') || '');
-    await expect(page.getByText(/Your home \(₹60,00,000\) stays yours for good/)).toBeVisible();
+    // Several homes can be ticked; the tick shows once the choice is saved.
+    const homeBox = page.getByRole('checkbox', { name: /Hometown/ });
+    await homeBox.click();
+    await expect(homeBox).toBeChecked();
+    await expect(page.getByText(/1 home \(₹60,00,000\) left out of goals and retirement/)).toBeVisible();
+    // Each goal is projected to its target date.
+    await expect(page.getByText(/by 01-Jan-2032/).first()).toBeVisible();
+    await expect(page.getByText(/If these keep growing and deposits continue/).first()).toBeVisible();
     await expect.poll(() => app.writes.some(w => w.table === 'records' && JSON.stringify(w.body).includes('"primary_residence":"Yes"'))).toBe(true);
     await expect(page.getByText(/^Net worth as cash = everything you own/)).not.toHaveText(before || '');
     // The term plan is family protection: shown, but not counted.

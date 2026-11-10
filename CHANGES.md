@@ -15,6 +15,22 @@ These backups cover the app itself, not your financial data. Your data is covere
 
 ---
 
+## Version 10.16 (10 Nov 2026, 13:00): Where each goal is heading by its target date
+
+Backup taken before this release: `backup-2026-11-10-1300-IST`
+
+- **Each goal shows its target date**, for example "by 01-Jan-2032 (62 months)", next to its name.
+- **A projection under every goal.** It shows what the holdings you picked should be worth by the target date if they keep growing and your regular deposits carry on, and whether that reaches the target. If it falls short, it says how much more to invest each month. Each holding has its own line: value today, how fast it is assumed to grow and why, what you are adding each month, and its value at the target date.
+- **How growth is worked out:**
+  - Shares and funds use the NIFTY 50's average over the last 10 years, gold uses gold's 10-year average and silver uses silver's.
+  - Property uses 4% a year.
+  - Fixed income uses its own saved interest rate (for example PPF 7.1%, Sukanya 8.2%), and savings accounts 3%.
+  - All of these are shown in a **Growth a year** row at the top, and you can type your own figures to see the difference.
+  - Property loans are taken off as they stand today, which is cautious because loans shrink over time.
+  - Past trends are not a guarantee.
+- **Several homes.** The home question is now a tick list: **Which properties do you or your family live in, or will once built?** Tick as many as apply, including a home still being built. All of them are left out of goals and retirement. A holding picked for a goal before it was marked as a home now says so on its label, rather than "Removed holding".
+- **Cash outside OD fix.** Money parked in an OD account beyond what its loan needs used to be added to **Cash outside OD accounts** on its own, which is why the box showed a figure (such as ₹1,47,500) with nothing ticked. It is now a line in the dropdown, **Spare money parked in OD**, ticked by default, and can be unticked like the rest.
+
 ## Version 10.15 (10 Nov 2026, 12:44): Property counts after its home loan
 
 Backup taken before this release: `backup-2026-11-10-1244-IST`

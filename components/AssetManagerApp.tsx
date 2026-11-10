@@ -39,7 +39,8 @@ import {
 import { supabase } from "@/lib/supabase";
 import { startForegroundRefresh } from "@/lib/foregroundRefresh";
 import { APP_VERSION } from "@/lib/appVersion";
-import { cleanSources, goalFunding, holdingSource, holdingsFor, isPrimaryResidence, typeSource, type Holding } from "@/lib/goals";
+import { cleanSources, goalFunding, holdingSource, holdingsFor, isPrimaryResidence, typeSource, type GoalFunding, type Holding } from "@/lib/goals";
+import { DEFAULT_GROWTH, holdingGrowth, holdingMonthly, projectGoal, type GrowthRates, type ProjectionItem } from "@/lib/goalProjection";
 import { LOCKED_TABS, normalizeHiddenTabs, toggleHiddenTab } from "@/lib/hiddenTabs";
 import { cleanPicks, type SourcePicks } from "@/lib/plannerSources";
 import MonthlyUploads from "@/components/MonthlyUploads";
@@ -1028,6 +1029,8 @@ export default function AssetManagerApp() {
     [adminBusy, setAdminBusy] = useState(false),
     [hiddenTabsPending, setHiddenTabsPending] = useState<string[] | null>(null),
     [plannerPicksPending, setPlannerPicksPending] = useState<SourcePicks | null>(null),
+    [homeListOpen, setHomeListOpen] = useState<boolean | null>(null),
+    [goalGrowthInput, setGoalGrowthInput] = useState<Partial<Record<keyof GrowthRates, string>>>({}),
     [sourcePrefs, setSourcePrefs] = useState<Record<string, string>>(() => {
       if (typeof window === "undefined") return DEFAULT_SOURCE_PREFS;
       try {
@@ -1094,7 +1097,7 @@ export default function AssetManagerApp() {
     [projectionMonthlyUntilAge, setProjectionMonthlyUntilAge] = useState(""),
     [projectionYearlyUntilAge, setProjectionYearlyUntilAge] = useState(""),
     [projectionOtherIncomeUntilAge, setProjectionOtherIncomeUntilAge] = useState(""),
-    [projectionHistoryRates, setProjectionHistoryRates] = useState({ shares: 12, gold: 10, loaded: false }),
+    [projectionHistoryRates, setProjectionHistoryRates] = useState({ shares: 12, gold: 10, silver: 8, loaded: false }),
     [historicalPerformance, setHistoricalPerformance] = useState<
       { date: string; invested: number; current: number; type: string }[]
     >([]),
@@ -1266,11 +1269,14 @@ export default function AssetManagerApp() {
     Promise.all([
       fetch("/api/market-trend?asset=shares-history&range=10y").then((r) => r.ok ? r.json() : Promise.reject()),
       fetch("/api/market-trend?asset=gold-history&range=10y").then((r) => r.ok ? r.json() : Promise.reject()),
-    ]).then(([shares, gold]) => {
+      // Silver is optional: if its history fails, the default stays and the rest still loads.
+      fetch("/api/market-trend?asset=silver&range=10y&historyOnly=1").then((r) => r.ok ? r.json() : null).catch(() => null),
+    ]).then(([shares, gold, silver]) => {
       if (cancelled) return;
       setProjectionHistoryRates({
         shares: Math.max(-10, Math.min(25, cagr(shares.points) || 12)),
         gold: Math.max(-10, Math.min(25, cagr(gold.points) || 10)),
+        silver: Math.max(-10, Math.min(25, cagr(silver?.points) || 8)),
         loaded: true,
       });
     }).catch(() => undefined);
@@ -14932,54 +14938,131 @@ export default function AssetManagerApp() {
       setToast(e?.message || "Could not save what pays for this goal");
     }
   }
-  /** Marks one property as the home you live in for good (or none), clearing the mark on any other. */
-  async function setHomeProperty(propertyId: string) {
+  /** Marks a property as a home you or your family live in (or will once built), or clears the mark. */
+  async function setHomeProperty(record: Rec, isHome: boolean) {
     if (!canEditModule("property")) {
       setToast("This household access is read-only for Property");
       return;
     }
-    const changes = records.filter(
-      (r) => r.module_key === "property" && (r.id === propertyId) !== /^(yes|true|1)$/i.test(String(r.data?.primary_residence ?? "").trim()),
-    );
     try {
-      for (const r of changes)
-        await saveRecordData(r.id, withSystemDates({ ...r.data, primary_residence: r.id === propertyId ? "Yes" : "No" }, r));
+      await saveRecordData(record.id, withSystemDates({ ...record.data, primary_residence: isHome ? "Yes" : "No" }, record));
     } catch (e: any) {
-      setToast(e?.message || "Could not save the home you live in");
+      setToast(e?.message || "Could not save the homes you live in");
     }
   }
   function homeQuestion(homeRecords: Rec[], homeValue: number) {
-    const candidates = records.filter(
-      (r) => r.module_key === "property" && !isRentedProperty(r.data || {}) && !isUnderConstruction(r.data || {}),
-    );
-    if (!candidates.length && !homeRecords.length) return null;
+    const candidates = records.filter((r) => r.module_key === "property" && !isRentedProperty(r.data || {}));
+    if (!candidates.length) return null;
     return (
-      <div className="mb-3 flex flex-wrap items-center gap-3 rounded-2xl border border-[#e3dccc] bg-[#fffaf0] px-4 py-3 text-sm">
-        <label className="font-semibold text-[#17382b]" htmlFor="goal-home-property">Do you live in one of your properties?</label>
-        <select
-          id="goal-home-property"
-          className="field-input !w-auto max-w-full"
-          value={homeRecords[0]?.id || ""}
-          disabled={!canEditModule("property")}
-          onChange={(event) => setHomeProperty(event.target.value)}
-        >
-          <option value="">No, none of them</option>
-          {candidates.map((r) => (
-            <option key={r.id} value={r.id}>
-              Yes: {goalHoldingLabel("property", r.data || {})} ({fmt(computeLiveRecord("property", r.data).latest)})
-            </option>
-          ))}
-        </select>
-        {homeRecords.length > 0 && (
-          <span className="text-xs text-gray-600">
-            Your home ({fmt(homeValue)}) stays yours for good, so it is left out of goals and retirement. Its home loan still counts, as it has to be repaid.
+      <details
+        className="mb-3 rounded-2xl border border-[#e3dccc] bg-[#fffaf0] px-4 py-3 text-sm"
+        // Opens by itself until a home is chosen, then stays as the user leaves it, so several can be ticked.
+        open={homeListOpen ?? !homeRecords.length}
+        onToggle={(event) => setHomeListOpen(event.currentTarget.open)}
+      >
+        <summary className="cursor-pointer font-semibold text-[#17382b]">
+          Which properties do you or your family live in, or will once built?{" "}
+          <span className="font-normal text-gray-600">
+            {homeRecords.length
+              ? `${homeRecords.length} home${homeRecords.length === 1 ? "" : "s"} (${fmt(homeValue)}) left out of goals and retirement`
+              : "None ticked yet"}
           </span>
-        )}
+        </summary>
+        <p className="mt-2 text-xs text-gray-600">
+          A home is kept for good, so its value is not counted towards any goal or retirement. Its home loan still counts, as it has to be repaid.
+        </p>
+        <div className="mt-2 grid gap-1 sm:grid-cols-2">
+          {candidates.map((r) => (
+            <label key={r.id} className="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1 hover:bg-white">
+              <input
+                type="checkbox"
+                checked={isPrimaryResidence(r.data)}
+                disabled={!canEditModule("property")}
+                onChange={(event) => setHomeProperty(r, event.target.checked)}
+              />
+              <span className="flex-1">
+                {goalHoldingLabel("property", r.data || {})}
+                {isUnderConstruction(r.data || {}) && <span className="ml-1 text-xs text-gray-500">(being built)</span>}
+              </span>
+              <span className="tabular-nums text-gray-600">{fmt(computeLiveRecord("property", r.data).latest)}</span>
+            </label>
+          ))}
+        </div>
+      </details>
+    );
+  }
+  /** Yearly growth for goal projections: 10-year trends for shares, gold and silver, unless the user typed their own. */
+  function goalGrowthRates(): GrowthRates {
+    const typed = (key: keyof GrowthRates, fallback: number) => {
+      const raw = goalGrowthInput[key];
+      return raw === undefined || raw === "" || !Number.isFinite(Number(raw)) ? fallback : Math.max(-20, Math.min(40, Number(raw)));
+    };
+    return {
+      ...DEFAULT_GROWTH,
+      shares: typed("shares", projectionHistoryRates.shares),
+      gold: typed("gold", projectionHistoryRates.gold),
+      silver: typed("silver", projectionHistoryRates.silver),
+      property: typed("property", DEFAULT_GROWTH.property),
+    };
+  }
+  /** Where a goal is heading by its target date if its holdings keep growing and deposits continue. */
+  function goalProjectionBlock(g: GoalFunding, holdings: (Holding & { gross: number })[], unclaimedIds: string[]) {
+    if (!g.target || g.monthsLeft === null) return null;
+    const rates = goalGrowthRates();
+    const itemFor = (h: Holding & { gross: number }): ProjectionItem => {
+      const data = records.find((r) => r.id === h.id)?.data || {}, growth = holdingGrowth(h.moduleKey, data, rates);
+      return { id: h.id, label: h.label, today: h.gross, deduct: h.gross - h.value, monthly: holdingMonthly(h.moduleKey, data), rate: growth.rate, basis: growth.basis };
+    };
+    let items: ProjectionItem[];
+    if (g.funding === "selected") {
+      // Lines with nothing in them and nothing going in (such as a salary record) would only add noise.
+      items = holdings.filter((h) => g.holdingIds.includes(h.id)).map(itemFor).filter((i) => i.today - (i.deduct || 0) > 0 || i.monthly > 0);
+    } else {
+      // A sharing goal grows at the average rate of the holdings no goal has picked, weighted by value.
+      const pool = holdings.filter((h) => unclaimedIds.includes(h.id) && h.value > 0).map(itemFor);
+      const weight = pool.reduce((t, i) => t + i.today - (i.deduct || 0), 0);
+      const rate = weight > 0 ? pool.reduce((t, i) => t + i.rate * (i.today - (i.deduct || 0)), 0) / weight : 0;
+      items = g.allocated > 0 ? [{ id: "shared", label: "Its share of your net worth", today: g.allocated, monthly: 0, rate, basis: "Average of your unpicked holdings" }] : [];
+    }
+    if (!items.length) return null;
+    const p = projectGoal({ target: g.target, months: g.monthsLeft, items });
+    const shareOfTarget = g.target ? Math.min(999, (p.projected / g.target) * 100) : 0;
+    return (
+      <div className="mt-2 rounded-lg border border-[#e3dccc] bg-[#fbfaf6] p-2 text-xs">
+        <div className="flex flex-wrap items-baseline justify-between gap-2">
+          <span>
+            If these keep growing and deposits continue, by <b>{formatDate(g.targetDate)}</b> they should be about{" "}
+            <b className="tabular-nums">{fmt(p.projected)}</b> ({shareOfTarget.toFixed(0)}% of {fmt(g.target)}).
+          </span>
+          {p.onTrack ? (
+            <span className="font-semibold text-emerald-700">On track, ahead by about {fmt(p.surplus)}</span>
+          ) : (
+            <span className="font-semibold text-red-700">
+              Short by about {fmt(p.gap)}: invest {fmt(p.monthlyNeeded)} a month more{p.blendedRate ? ` (growing at ${p.blendedRate.toFixed(1)}% a year)` : ""}
+            </span>
+          )}
+        </div>
+        <div className="mt-1 h-1.5 w-full overflow-hidden rounded bg-[#eef1ec]">
+          <div className={`h-full ${p.onTrack ? "bg-emerald-600" : "bg-amber-500"}`} style={{ width: `${Math.min(100, shareOfTarget)}%` }} />
+        </div>
+        <div className="mt-2 grid gap-1">
+          {p.items.map((i) => (
+            <div key={i.id} className="flex flex-wrap items-baseline justify-between gap-x-3 border-t border-[#efe9dc] pt-1">
+              <span className="min-w-0 flex-1">{i.label}</span>
+              <span className="tabular-nums text-gray-600">
+                {fmt(Math.max(0, i.today - (i.deduct || 0)))} today · {i.rate.toFixed(1)}% a year ({i.basis})
+                {i.monthly > 0 && <> · adding {fmt(i.monthly)}/month</>}
+              </span>
+              <span className="tabular-nums font-semibold">{fmt(i.atTarget)}</span>
+            </div>
+          ))}
+        </div>
       </div>
     );
   }
   function goalsFundingPanel() {
     const { f, holdings, goalRecords, homeRecords, homeValue, protection } = goalFundingNow();
+    const growthRates = goalGrowthRates();
     if (!f.target) {
       return (
         <>
@@ -15090,6 +15173,34 @@ export default function AssetManagerApp() {
             Pick a whole type (such as All Fixed Income) or single holdings for a goal, and its value is worked out live from them.
             A goal with nothing picked shares whatever net worth is left after loans and after the picked holdings, high priority first, then the nearest date.
           </p>
+          <div className="mb-3 rounded-xl border border-[#e3dccc] bg-[#f7fbf5] p-3">
+            <div className="mb-2 text-xs font-semibold text-[#17382b]">
+              Growth a year used to project each goal to its target date. Shares, gold and silver start at their actual averages over the last 10 years; change any figure to try your own.
+            </div>
+            <div className="grid grid-cols-4 gap-2 max-md:grid-cols-2">
+              {([
+                ["shares", "Shares & funds", `NIFTY 50, last 10 years: ${projectionHistoryRates.shares.toFixed(1)}%`],
+                ["gold", "Gold", `Gold, last 10 years: ${projectionHistoryRates.gold.toFixed(1)}%`],
+                ["silver", "Silver", `Silver, last 10 years: ${projectionHistoryRates.silver.toFixed(1)}%`],
+                ["property", "Property", "Typical 4% to 5% a year"],
+              ] as const).map(([key, label, note]) => (
+                <label key={key} className="text-xs">
+                  <span className="font-semibold text-gray-700">{label} (% a year)</span>
+                  <input
+                    className="field-input mt-1"
+                    type="number"
+                    step="0.1"
+                    value={goalGrowthInput[key] ?? String(Math.round(growthRates[key] * 10) / 10)}
+                    onChange={(event) => setGoalGrowthInput((prev) => ({ ...prev, [key]: event.target.value }))}
+                  />
+                  <span className="text-[10px] text-gray-500">{note}</span>
+                </label>
+              ))}
+            </div>
+            <div className="mt-2 text-[10px] text-gray-500">
+              Fixed income grows at its own saved interest rate. Regular deposits (SIPs, PPF, Sukanya) are assumed to continue until each target date. Property loans are taken off as they stand today, which is cautious. Past trends are not a guarantee.
+            </div>
+          </div>
           <div className="space-y-2">
             {f.goals.map((g) => {
               const record = goalRecords.find((r) => r.id === g.id);
@@ -15104,7 +15215,13 @@ export default function AssetManagerApp() {
                   return `All ${goalTypeLabel(k)} (${fmt(holdings.filter((h) => h.moduleKey === k).reduce((t, h) => t + h.value, 0))})`;
                 }
                 const h = holdings.find((x) => x.id === src.slice(4));
-                return h ? `${h.label} (${fmt(h.value)})` : "Removed holding";
+                if (h) return `${h.label} (${fmt(h.value)})`;
+                // Picked earlier, but since marked as a home or found to be family protection.
+                const gone = records.find((r) => r.id === src.slice(4));
+                if (gone?.module_key === "property" && isPrimaryResidence(gone.data))
+                  return `${goalHoldingLabel("property", gone.data || {})}: a home you live in, not counted`;
+                if (gone?.module_key === "insurance") return `${gone.data?.security_name || "Policy"}: family protection, not counted`;
+                return "Removed holding";
               };
               return (
                 <div key={g.id} className="rounded-xl border border-[#e3dccc] px-3 py-2 text-sm">
@@ -15112,14 +15229,13 @@ export default function AssetManagerApp() {
                     <span className="font-semibold">
                       {g.name}
                       {g.priority && <span className="ml-2 text-xs font-normal text-gray-500">{g.priority}</span>}
+                      <span className="ml-2 text-xs font-normal text-gray-600">
+                        {g.targetDate ? `by ${formatDate(g.targetDate)}${g.monthsLeft !== null ? ` (${g.monthsLeft} months)` : ""}` : "no target date"}
+                      </span>
                     </span>
                     <span className="tabular-nums">
-                      {fmt(g.allocated)} of {fmt(g.target)}
-                      {g.gap > 0 ? (
-                        <span className="ml-2 text-red-700">short {fmt(g.gap)}{g.monthsLeft ? ` · ${fmt(g.monthlyRequired)}/month for ${g.monthsLeft} months` : ""}</span>
-                      ) : (
-                        <span className="ml-2 text-emerald-700">covered</span>
-                      )}
+                      Today {fmt(g.allocated)} of {fmt(g.target)}
+                      {g.gap > 0 ? <span className="ml-2 text-red-700">short {fmt(g.gap)} today</span> : <span className="ml-2 text-emerald-700">covered today</span>}
                     </span>
                   </div>
                   <div className="mt-1 h-2 w-full overflow-hidden rounded bg-[#eef1ec]">
@@ -15185,6 +15301,7 @@ export default function AssetManagerApp() {
                       </select>
                     )}
                   </div>
+                  {goalProjectionBlock(g, holdings, f.unclaimedIds)}
                 </div>
               );
             })}
