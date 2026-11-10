@@ -1,5 +1,6 @@
 import { expect, test, type CDPSession, type Locator, type Page } from '@playwright/test';
 import { expectHealthy, fixtureRecords, openApp, type MockedApp } from './helpers';
+import { APP_VERSION } from '../lib/appVersion';
 
 const isPhone = (page: Page) => (page.viewportSize()?.width ?? 1440) <= 1024;
 
@@ -598,5 +599,38 @@ test.describe('logged-in app', () => {
     await signOut.scrollIntoViewIfNeeded();
     await expect(signOut).toBeInViewport({ ratio: 1 });
     await expectHealthy(page, app, 'phone menu options');
+  });
+
+  test('goals compare net worth after loans with the target', async ({ page }) => {
+    test.skip(isPhone(page), 'Covered on desktop');
+    const app = await signedIn(page);
+    await open(page, app, 'Goals');
+    await expect(page.getByText('Total target')).toBeVisible();
+    await expect(page.getByText('₹10,00,000').first()).toBeVisible();
+    await expect(page.getByText('Net worth as cash', { exact: true })).toBeVisible();
+    // The fixture owns far more than its one goal, even after its loans.
+    await expect(page.getByText('Ahead of target by')).toBeVisible();
+    await expect(page.getByText('Loans and borrowings', { exact: true })).toBeVisible();
+    for (const name of ['Fixed Income', 'Property']) await expect(page.locator('section').getByText(name, { exact: true }).first()).toBeVisible();
+    await expectHealthy(page, app, 'goals funding');
+  });
+
+  test('admin console hides and shows menu tabs; header shows only the name and version', async ({ page }) => {
+    test.skip(isPhone(page), 'Covered on desktop');
+    const app = await signedIn(page);
+    const sidebar = page.locator('.desktop-sidebar');
+    await expect(sidebar.getByRole('heading', { name: `Asset Manager v${APP_VERSION}` })).toBeVisible();
+    await expect(page.getByText(/Admin portfolio|Active household/)).toHaveCount(0);
+
+    await open(page, app, 'Admin Console');
+    const ulips = page.getByRole('checkbox', { name: 'ULIPs' });
+    await expect(ulips).toBeChecked();
+    await expect(page.getByRole('checkbox', { name: 'Dashboard' })).toHaveCount(0);
+    await ulips.uncheck();
+    await expect(sidebar.getByRole('button', { name: 'ULIPs' })).toHaveCount(0);
+    expect(app.unexpected).toEqual([]);
+    await page.getByRole('button', { name: 'Show all tabs' }).click();
+    await expect(sidebar.getByRole('button', { name: 'ULIPs' })).toBeVisible();
+    await expectHealthy(page, app, 'menu tabs');
   });
 });

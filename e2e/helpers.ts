@@ -6,7 +6,7 @@ const SUPABASE = 'https://e2e-test.supabase.co';
 
 // The day the tests run as. Every date in the data below is set relative to this day.
 export const TODAY = new Date('2026-11-05T12:00:00+05:30');
-const user = { id: USER_ID, aud: 'authenticated', role: 'authenticated', email: 'test.user@example.com', app_metadata: {}, user_metadata: {}, created_at: '2026-01-01T00:00:00Z' };
+const user = { id: USER_ID, aud: 'authenticated', role: 'authenticated', email: 'test.user@example.com', app_metadata: {}, user_metadata: {} as Record<string, unknown>, created_at: '2026-01-01T00:00:00Z' };
 const access = { member_role: 'owner', status: 'active', all_modules: true, modules: [], can_edit: true, can_delete: true, can_manage_members: true, can_view_documents: true, can_upload_documents: true };
 const row = (id: string, module_key: string, data: Record<string, any>) => ({ id, module_key, data, user_id: USER_ID, workspace_id: WORKSPACE_ID, created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z' });
 const uuid = (n: number) => `33333333-3333-4333-8333-${String(n).padStart(12, '0')}`;
@@ -37,6 +37,8 @@ export type MockedApp = { errors: string[]; writes: { method: string; table: str
 /** Signs in as a fictional user and answers every Supabase and API call inside the test. */
 export async function openApp(page: Page, records = fixtureRecords()): Promise<MockedApp> {
   const app: MockedApp = { errors: [], writes: [], unexpected: [] };
+  // Each test starts with a clean profile, even when tests share a worker.
+  for (const key of Object.keys(user.user_metadata)) delete user.user_metadata[key];
   const rows = [...records];
   // A fixed day keeps date rules, such as monthly documents falling overdue after the 7th, from
   // changing what the tests see as the calendar moves on. Timers still run normally.
@@ -50,7 +52,11 @@ export async function openApp(page: Page, records = fixtureRecords()): Promise<M
   await page.route(`${SUPABASE}/**`, async route => {
     const request = route.request(), url = new URL(request.url()), json = (body: unknown, status = 200) => route.fulfill({ status, contentType: 'application/json', headers: { 'Access-Control-Allow-Origin': '*' }, body: JSON.stringify(body) });
     if (request.method() === 'OPTIONS') return route.fulfill({ status: 200, headers: { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': '*', 'Access-Control-Allow-Methods': '*' } });
-    if (url.pathname.startsWith('/auth/v1/user')) return json(user);
+    if (url.pathname.startsWith('/auth/v1/user')) {
+      // Saving profile settings (such as hidden menu tabs) keeps them for the rest of the test.
+      if (request.method() === 'PUT') Object.assign(user.user_metadata, request.postDataJSON?.()?.data || {});
+      return json(user);
+    }
     if (url.pathname.startsWith('/auth/v1/')) return json({});
     if (!url.pathname.startsWith('/rest/v1/')) return json([]);
     const table = url.pathname.replace('/rest/v1/', ''), single = (request.headers().accept || '').includes('vnd.pgrst.object');
@@ -69,7 +75,7 @@ export async function openApp(page: Page, records = fixtureRecords()): Promise<M
     if (table === 'records') return json(rows);
     if (table === 'accounts') return json(['Asha', 'Ravi'].map((name, index) => ({ id: uuid(100 + index), name, relation: 'Self', type: 'Family', user_id: USER_ID, workspace_id: WORKSPACE_ID })));
     if (table === 'profiles') return json(single ? { id: USER_ID, email: user.email, full_name: 'Test User' } : []);
-    if (table === 'user_roles') return json(single ? { user_id: USER_ID, access_role: 'admin' } : []);
+    if (table === 'user_roles') { const role = { user_id: USER_ID, access_role: 'admin' }; return json(single ? role : [role]); }
     return json(single ? null : []);
   });
   await page.route('**/api/**', route => {

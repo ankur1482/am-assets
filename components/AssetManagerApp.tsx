@@ -39,6 +39,8 @@ import {
 import { supabase } from "@/lib/supabase";
 import { startForegroundRefresh } from "@/lib/foregroundRefresh";
 import { APP_VERSION } from "@/lib/appVersion";
+import { goalFunding } from "@/lib/goals";
+import { LOCKED_TABS, normalizeHiddenTabs, toggleHiddenTab } from "@/lib/hiddenTabs";
 import MonthlyUploads from "@/components/MonthlyUploads";
 import BackupCenter, { type BackupTarget } from "@/components/BackupCenter";
 import { backupFileName, backupFingerprint } from "@/lib/backups";
@@ -1018,6 +1020,7 @@ export default function AssetManagerApp() {
     [householdSetupRequired, setHouseholdSetupRequired] = useState(false);
   const [adminUsers, setAdminUsers] = useState<AdminUser[]>([]),
     [adminBusy, setAdminBusy] = useState(false),
+    [hiddenTabsPending, setHiddenTabsPending] = useState<string[] | null>(null),
     [sourcePrefs, setSourcePrefs] = useState<Record<string, string>>(() => {
       if (typeof window === "undefined") return DEFAULT_SOURCE_PREFS;
       try {
@@ -1983,6 +1986,17 @@ export default function AssetManagerApp() {
     workspaceAccess.modules.includes(moduleKey);
   const canEditModule = (moduleKey: string) =>
     workspaceAccess.can_edit && canViewModule(moduleKey);
+  // Hidden tabs live on the login profile, so the choice follows the user to
+  // every device. A just-made change shows at once while it saves.
+  const hiddenTabs = hiddenTabsPending ?? normalizeHiddenTabs(user?.user_metadata?.hidden_tabs);
+  const isTabShown = (id: string) => !hiddenTabs.includes(id);
+  async function saveHiddenTabs(next: string[]) {
+    setHiddenTabsPending(next);
+    const { data, error } = await supabase.auth.updateUser({ data: { hidden_tabs: next } });
+    if (error) setToast(error.message || "Could not save menu tabs");
+    // Once saved, the profile is the source again; on failure this undoes the change.
+    if (error || data?.user) setHiddenTabsPending(null);
+  }
   useEffect(() => {
     captureMonthlyValuation();
   }, [user?.id, activeWorkspaceId, records, totals.assets, totals.liabilities, loading]);
@@ -4734,7 +4748,8 @@ export default function AssetManagerApp() {
       ids.filter(
         (id: string) =>
           (id !== "admin" || isAdmin) &&
-          (id === "admin" || canViewModule(id)),
+          (id === "admin" || canViewModule(id)) &&
+          isTabShown(id),
       ),
     ])
     .filter(([, ids]: any) => ids.length);
@@ -7910,10 +7925,10 @@ export default function AssetManagerApp() {
             <PieChart size={24} aria-hidden="true" />
           </div>
           <div className="min-w-0 flex-1">
-            <h1 className="font-semibold leading-none">asset manager</h1>
-            <p className="mt-1 text-xs font-semibold text-gray-500">
-              {isAdmin ? "Admin portfolio" : "Your portfolio"}
-            </p>
+            <h1 className="font-semibold leading-none">
+              Asset Manager{" "}
+              <span className="text-xs font-semibold text-gray-500">v{APP_VERSION}</span>
+            </h1>
           </div>
           <button
             type="button"
@@ -7925,26 +7940,6 @@ export default function AssetManagerApp() {
             <ChevronLeft size={18} />
           </button>
         </div>
-        {workspaces.length > 0 && (
-          <div className="mb-5">
-            <label className="field-label">Active household</label>
-            <select
-              className="field-input"
-              value={activeWorkspaceId}
-              onChange={(event) => {
-                setActiveWorkspaceId(event.target.value);
-                setWorkspaceMembers([]);
-                loadHousehold(event.target.value);
-              }}
-            >
-              {workspaces.map((workspace) => (
-                <option key={workspace.id} value={workspace.id}>
-                  {workspace.name} ({workspace.access.member_role})
-                </option>
-              ))}
-            </select>
-          </div>
-        )}
         <nav className="space-y-4">
           {visibleGroups.map(([g, ids]: any) => (
             <div key={g}>
@@ -7964,7 +7959,6 @@ export default function AssetManagerApp() {
         >
           <LogOut size={16} className="inline" /> Sign out
         </button>
-        <div className="mt-2 text-center text-[11px] text-gray-500">Version {APP_VERSION}</div>
         <div
           className="sidebar-resizer"
           role="separator"
@@ -8069,7 +8063,7 @@ export default function AssetManagerApp() {
               ? [{ id: "__back", label: "← Back", fullName: "Back to summary navigation", pinned: true, onSelect: () => selectMobileTab("__back") }]
               : []),
             ...(mobileNavMode === "investments" ? mobileInvestmentTabsByValue : mobileMainTabs)
-              .filter(([id]) => id !== "futureWealth" || canViewModule("futureWealth"))
+              .filter(([id]) => (id !== "futureWealth" || canViewModule("futureWealth")) && (id === "investments" || isTabShown(id)))
               .map(([id, label]) => ({
                 id,
                 label,
@@ -13869,6 +13863,42 @@ export default function AssetManagerApp() {
         <section className="rounded-[26px] border border-[#ded6c4] bg-white/90 p-5 shadow-[0_14px_34px_rgba(15,23,42,0.05)]">
           <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
             <div>
+              <h3 className="text-xl font-semibold tracking-tight">Menu Tabs</h3>
+              <p className="text-sm text-gray-600">
+                Untick a tab to hide it from the menu on the computer and the phone. Hidden tabs still count in
+                net worth, goals and every total. Dashboard, Settings and Admin Console always stay.
+              </p>
+            </div>
+            <button className="btn" disabled={!hiddenTabs.length} onClick={() => saveHiddenTabs([])}>
+              Show all tabs
+            </button>
+          </div>
+          <div className="grid grid-cols-3 gap-4 max-xl:grid-cols-2 max-md:grid-cols-1">
+            {groups
+              .map(([g, ids]: any) => [g, (ids as string[]).filter((id) => !LOCKED_TABS.includes(id))] as const)
+              .filter(([, ids]) => ids.length)
+              .map(([g, ids]) => (
+                <div key={g} className="rounded-2xl border border-[#e3dccc] p-3">
+                  <div className="mb-2 text-[10px] font-semibold uppercase tracking-[.18em] text-gray-500">{g}</div>
+                  <div className="space-y-1">
+                    {ids.map((id) => (
+                      <label key={id} className="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-sm hover:bg-[#f7fbf5]">
+                        <input
+                          type="checkbox"
+                          checked={isTabShown(id)}
+                          onChange={() => saveHiddenTabs(toggleHiddenTab(hiddenTabs, id))}
+                        />
+                        {allViews.find((v) => v[0] === id)?.[2] || id}
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              ))}
+          </div>
+        </section>
+        <section className="rounded-[26px] border border-[#ded6c4] bg-white/90 p-5 shadow-[0_14px_34px_rgba(15,23,42,0.05)]">
+          <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+            <div>
               <h3 className="text-xl font-semibold tracking-tight">Investment Data Sources</h3>
               <p className="text-sm text-gray-600">
                 Choose where each investment module fetches live or default data.
@@ -14799,6 +14829,165 @@ export default function AssetManagerApp() {
     }
     return formatCell(col, c[col]);
   }
+  // Goals page: every asset at today's value (as if cashed in), minus every
+  // loan, measured against the goal targets. Uses the same figures as the
+  // Overall Dashboard's My Networth line.
+  function goalsFundingPanel() {
+    const assetKeys = ["fixedIncome", "stocks", "mutualFunds", "bullion", "property", "ulips", "nsel", "otherAssets", "insurance"];
+    const assetClasses = assetKeys
+      .filter((k) => MODULES[k])
+      .map((k) => ({
+        key: k,
+        label: k === "bullion" ? "Gold & Silver" : MODULES[k].title,
+        value: records
+          .filter((r) => r.module_key === k)
+          .reduce((s, r) => s + num(computeLiveRecord(k, r.data).latest), 0),
+      }));
+    const sumBalance = (k: string) =>
+      records.filter((r) => r.module_key === k).reduce((s, r) => s + num(computeRecord(k, r.data).balance), 0);
+    const propertyLoans = records
+      .filter((r) => r.module_key === "property")
+      .map((r) => computeRecord("property", r.data))
+      .filter((r) => num(r.loan_balance) > 0)
+      .reduce((s, r) => s + num(r.net_loan_balance), 0);
+    const liabilityClasses = [
+      { key: "loans", label: "Loans", value: MODULES.loans ? sumBalance("loans") : 0 },
+      { key: "propertyLoans", label: "Property loans", value: propertyLoans },
+      { key: "borrowings", label: "Borrowings", value: MODULES.borrowings ? sumBalance("borrowings") : 0 },
+    ];
+    const goalInputs = records
+      .filter((r) => r.module_key === "goals")
+      .map((r) => ({
+        id: r.id,
+        name: String(r.data?.security_name || r.data?.category || "Goal"),
+        target: num(r.data?.target_amount),
+        targetDate: r.data?.target_date ? String(r.data.target_date) : undefined,
+        priority: r.data?.priority ? String(r.data.priority) : undefined,
+      }));
+    const f = goalFunding(assetClasses, liabilityClasses, goalInputs);
+    if (!f.target) {
+      return (
+        <div className="mb-4 rounded-2xl border border-[#ded6c4] bg-[#f7fbf5] p-4 text-sm text-[#37534a]">
+          Add a goal with a <b>Target Amount</b> to see how far your current net worth (all assets minus all loans) is from it.
+        </div>
+      );
+    }
+    const colors = ["#2f7d5b", "#3b6fb6", "#7a5bb5", "#c9962b", "#a0522d", "#2a9d8f", "#6b7f2a", "#8c6d62", "#4f6d7a"];
+    const scale = Math.max(f.target, f.totalAssets, 1);
+    const w = (v: number) => `${Math.max(0, Math.min(100, (v / scale) * 100))}%`;
+    const targetLeft = w(f.target);
+    const bar = (children: React.ReactNode) => (
+      <div className="relative h-7 w-full overflow-hidden rounded-lg bg-[#eef1ec]">{children}</div>
+    );
+    return (
+      <div className="mb-4 rounded-3xl border border-[#ded6c4] bg-white p-4 shadow-sm">
+        <div className="mb-3 grid grid-cols-4 gap-3 max-lg:grid-cols-2">
+          {[
+            ["Total target", fmt(f.target), "text-[#17382b]"],
+            ["Net worth as cash", fmt(f.netAvailable), f.netAvailable >= 0 ? "text-emerald-700" : "text-red-700"],
+            f.gap > 0 ? ["Still needed", fmt(f.gap), "text-red-700"] : ["Ahead of target by", fmt(f.surplus), "text-emerald-700"],
+            ["Goal funded", `${f.fundedPct.toFixed(1)}%`, "text-[#17382b]"],
+          ].map(([label, value, color]) => (
+            <div key={label} className="rounded-2xl border border-[#ded6c4] bg-white px-4 py-3">
+              <div className="text-[10px] font-semibold uppercase tracking-widest text-gray-500">{label}</div>
+              <div className={`mt-1 text-lg font-semibold tabular-nums ${color}`}>{value}</div>
+            </div>
+          ))}
+        </div>
+        <p className="mb-3 text-xs font-semibold text-[#40584c]">
+          Net worth as cash = everything you own at today&apos;s value ({fmt(f.totalAssets)}) − all loans and borrowings ({fmt(f.totalLiabilities)}).
+        </p>
+        <div className="space-y-2">
+          <div>
+            <div className="mb-1 flex justify-between text-xs font-semibold text-gray-600">
+              <span>What you own</span><span className="tabular-nums">{fmt(f.totalAssets)}</span>
+            </div>
+            {bar(
+              <>
+                <div className="flex h-full">
+                  {f.assets.map((a, i) => (
+                    <div key={a.key} title={`${a.label}: ${fmt(a.value)}`} style={{ width: w(a.value), background: colors[i % colors.length] }} />
+                  ))}
+                </div>
+                <div className="absolute inset-y-0 w-0.5 bg-black" style={{ left: targetLeft }} title={`Target ${fmt(f.target)}`} />
+              </>,
+            )}
+          </div>
+          {f.totalLiabilities > 0 && (
+            <div>
+              <div className="mb-1 flex justify-between text-xs font-semibold text-gray-600">
+                <span>Loans and borrowings</span><span className="tabular-nums text-red-700">−{fmt(f.totalLiabilities)}</span>
+              </div>
+              {bar(<div className="h-full bg-red-400" style={{ width: w(f.totalLiabilities) }} />)}
+            </div>
+          )}
+          <div>
+            <div className="mb-1 flex justify-between text-xs font-semibold text-gray-600">
+              <span>Net worth as cash vs target</span><span className="tabular-nums">{fmt(f.netAvailable)} of {fmt(f.target)}</span>
+            </div>
+            {bar(
+              <>
+                <div className="h-full bg-emerald-600" style={{ width: w(f.netAvailable) }} />
+                <div className="absolute inset-y-0 w-0.5 bg-black" style={{ left: targetLeft }} />
+              </>,
+            )}
+            <div className="mt-1 text-right text-[10px] font-semibold uppercase tracking-wide text-gray-500">Black line = target</div>
+          </div>
+        </div>
+        <div className="mt-4 grid grid-cols-3 gap-2 max-lg:grid-cols-2 max-sm:grid-cols-1">
+          {f.assets.map((a, i) => (
+            <div key={a.key} className="flex items-center justify-between gap-2 rounded-xl border border-[#e3dccc] px-3 py-2 text-sm">
+              <span className="flex items-center gap-2">
+                <span className="inline-block h-3 w-3 shrink-0 rounded-sm" style={{ background: colors[i % colors.length] }} />
+                {a.label}
+              </span>
+              <span className="text-right tabular-nums">
+                <span className="font-semibold">{fmt(a.value)}</span>{" "}
+                <span className="text-xs text-gray-500">({a.shareOfTarget.toFixed(1)}% of target)</span>
+              </span>
+            </div>
+          ))}
+          {f.liabilities.map((l) => (
+            <div key={l.key} className="flex items-center justify-between gap-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm">
+              <span className="flex items-center gap-2">
+                <span className="inline-block h-3 w-3 shrink-0 rounded-sm bg-red-400" />
+                {l.label}
+              </span>
+              <span className="font-semibold tabular-nums text-red-700">−{fmt(l.value)}</span>
+            </div>
+          ))}
+        </div>
+        {f.goals.length > 1 && (
+          <div className="mt-4">
+            <div className="mb-2 text-sm font-semibold text-[#17382b]">Each goal, funded in order of priority, then nearest date</div>
+            <div className="space-y-2">
+              {f.goals.map((g) => (
+                <div key={g.id} className="rounded-xl border border-[#e3dccc] px-3 py-2 text-sm">
+                  <div className="flex flex-wrap items-baseline justify-between gap-2">
+                    <span className="font-semibold">
+                      {g.name}
+                      {g.priority && <span className="ml-2 text-xs font-normal text-gray-500">{g.priority}</span>}
+                    </span>
+                    <span className="tabular-nums">
+                      {fmt(g.allocated)} of {fmt(g.target)}
+                      {g.gap > 0 ? (
+                        <span className="ml-2 text-red-700">short {fmt(g.gap)}{g.monthsLeft ? ` · ${fmt(g.monthlyRequired)}/month for ${g.monthsLeft} months` : ""}</span>
+                      ) : (
+                        <span className="ml-2 text-emerald-700">covered</span>
+                      )}
+                    </span>
+                  </div>
+                  <div className="mt-1 h-2 w-full overflow-hidden rounded bg-[#eef1ec]">
+                    <div className="h-full bg-emerald-600" style={{ width: `${Math.min(100, g.fundedPct)}%` }} />
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
   function moduleView(k: string) {
     const def = MODULES[k],
       moduleRecords =
@@ -15142,6 +15331,7 @@ export default function AssetManagerApp() {
           </div>
         )}
         {k === "bullion" && bullionRatePanel()}
+        {k === "goals" && goalsFundingPanel()}
         {k === "stocks" && <div className="mb-4">{marketTodayHeader()}</div>}
         {isInvestment && (
           <div className="investment-summary-float" aria-label={`${def.title} investment summary`}>

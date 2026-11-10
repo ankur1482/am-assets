@@ -15,6 +15,16 @@ These backups cover the app itself, not your financial data. Your data is covere
 
 ---
 
+## Version 10.12 (10 Nov 2026, 11:58): How far you are from your goals, and choose your menu tabs
+
+Backup taken before this release: `backup-2026-11-10-1158-IST`
+
+- **Goals now measure against everything you own.** The top of the Goals page adds up all your goal targets and compares them with your net worth as if it were cash today: Fixed Income, Stocks, Mutual Funds, Gold & Silver, Property, ULIPs, NSEL, Other Assets and Insurance value, minus all Loans, property-linked loans and Borrowings. It shows the total target, your net worth as cash, how much is still needed (or how far ahead you are) and the percentage funded. The same figures as the Overall Dashboard's My Networth line are used.
+- **A picture of it.** Three bars: what you own (one colour per type), your loans, and what is left against the target, with a black line marking the target. Under them, each type shows its value and how much of the target it covers on its own.
+- **Several goals.** When you have more than one, your net worth is handed out to them in order: High priority first, then the nearest target date. Each goal shows how much is covered, how much is short, and how much a month would close the gap by its date.
+- **Choose which tabs appear in the menu.** Admin Console has a new **Menu Tabs** section. Untick any tab, such as Transactions or NSEL, to hide it from the menu on the computer and the phone. Hidden tabs still count in every total. Dashboard, Settings and Admin Console always stay, so you cannot lock yourself out. The choice is saved to your login, so it follows you to every device. **Show all tabs** brings everything back.
+- **Simpler side panel heading.** It now reads just "Asset Manager" with the version number next to it. "Admin portfolio" and the **Active household** chooser are gone. The household you belong to is still picked automatically.
+
 ## Version 10.11 (10 Nov 2026, 11:35): Mutual fund prices refresh again
 
 Backup taken before this release: `backup-2026-11-10-1132-IST`
