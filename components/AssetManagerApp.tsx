@@ -14858,7 +14858,7 @@ export default function AssetManagerApp() {
   function goalHoldingLabel(k: string, d: Record<string, any>) {
     const name =
       k === "bullion" ? [bullionDisplayName(d), bullionWeightLabel(d)].filter(Boolean).join(" · ")
-      : k === "property" ? [d.security_name, d.location || d.broker].filter(Boolean).join(" · ")
+      : k === "property" ? [d.security_name, d.location, d.broker].filter(Boolean).join(" · ")
       : k === "fixedIncome" ? [d.category, d.broker || d.security_name].filter(Boolean).join(" · ")
       : d.security_name || d.policy_name || d.category;
     return [name || "Holding", d.account_name].filter(Boolean).join(" — ");
@@ -14867,16 +14867,24 @@ export default function AssetManagerApp() {
     // The home you live in for good is never counted towards goals or retirement.
     const homeRecords = records.filter((r) => r.module_key === "property" && isPrimaryResidence(r.data));
     const homeValue = homeRecords.reduce((s, r) => s + num(computeLiveRecord("property", r.data).latest), 0);
-    const holdings: Holding[] = GOAL_ASSET_KEYS.filter((k) => MODULES[k]).flatMap((k) =>
+    const holdings: (Holding & { gross: number })[] = GOAL_ASSET_KEYS.filter((k) => MODULES[k]).flatMap((k) =>
       records
         // Term, health and other protection cover only pays out if something happens, so it never funds a goal.
         .filter((r) => r.module_key === k && !(k === "property" && isPrimaryResidence(r.data)) && !(k === "insurance" && insuranceKind(r.data) === "protection"))
-        .map((r) => ({ id: r.id, moduleKey: k, label: goalHoldingLabel(k, r.data || {}), value: num(computeLiveRecord(k, r.data).latest) })),
+        .map((r) => {
+          const gross = num(computeLiveRecord(k, r.data).latest);
+          if (k !== "property") return { id: r.id, moduleKey: k, label: goalHoldingLabel(k, r.data || {}), value: gross, gross };
+          // A property funds a goal only with what is left after its own home loan (net of money parked in an OD).
+          const c = computeRecord("property", r.data), loan = num(c.loan_balance) > 0 ? Math.max(0, num(c.net_loan_balance)) : 0;
+          const label = goalHoldingLabel(k, r.data || {}) + (loan ? ` — worth ${fmt(gross)} less loan ${fmt(loan)}` : "");
+          return { id: r.id, moduleKey: k, label, value: Math.max(0, gross - loan), gross };
+        }),
     );
+    // Totals use full values; loans are subtracted once, as liabilities.
     const assetClasses = GOAL_ASSET_KEYS.filter((k) => MODULES[k]).map((k) => ({
       key: k,
       label: goalTypeLabel(k),
-      value: holdings.filter((h) => h.moduleKey === k).reduce((s, h) => s + h.value, 0),
+      value: holdings.filter((h) => h.moduleKey === k).reduce((s, h) => s + h.gross, 0),
     }));
     const sumBalance = (k: string) =>
       records.filter((r) => r.module_key === k).reduce((s, r) => s + num(computeRecord(k, r.data).balance), 0);

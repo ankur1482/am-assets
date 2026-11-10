@@ -615,6 +615,8 @@ test.describe('logged-in app', () => {
 
     // Pick what pays for the goal: its value then comes from those holdings, and the choice is saved.
     const picker = page.getByRole('combobox', { name: 'Add what pays for Example Goal' });
+    // A property counts at its value less its own loan (net of money parked in its OD): 70L - (25L - 10L).
+    await expect(picker.locator('option', { hasText: 'worth ₹70,00,000 less loan ₹15,00,000 (₹55,00,000)' })).toHaveCount(1);
     await picker.selectOption({ value: 'type:fixedIncome' });
     await expect(page.getByRole('button', { name: /Stop using All Fixed Income \(₹/ })).toBeVisible();
     await expect.poll(() => app.writes.some(w => w.table === 'records' && JSON.stringify(w.body).includes('type:fixedIncome'))).toBe(true);

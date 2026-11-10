@@ -15,6 +15,14 @@ These backups cover the app itself, not your financial data. Your data is covere
 
 ---
 
+## Version 10.15 (10 Nov 2026, 12:44): Property counts after its home loan
+
+Backup taken before this release: `backup-2026-11-10-1244-IST`
+
+- **A property picked for a goal now counts at what it is really worth to you:** its latest value less its own home loan. If part of the loan is covered by money parked in its OD account, only the uncovered part is taken off. The Goals dropdown shows the working, for example "Residential · Hyderabad — worth ₹1,70,00,000 less loan ₹60,00,000 (₹1,10,00,000)".
+- **No loan counted twice.** The overall net worth on the Goals page already takes off every loan once, so a property picked for a goal sets aside only its value after its loan.
+- **Easier to tell properties apart.** Each property in the dropdown now shows its location and community, not just one of them.
+
 ## Version 10.14 (10 Nov 2026, 12:36): Your home, family protection, and record dropdowns in the Planner
 
 Backup taken before this release: `backup-2026-11-10-1236-IST`
