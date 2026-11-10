@@ -15,6 +15,26 @@ These backups cover the app itself, not your financial data. Your data is covere
 
 ---
 
+## Version 10.31 (10 Nov 2026, 20:40): Homes being built counted the way you value them, a clearer property table, totals under tables
+
+Backup taken before this release: `backup-2026-11-10-2011-IST`
+
+- **No more double counting for homes being built.** If you enter a home's value as what you have paid so far (not the full price), the amount still to pay the builder is no longer also taken off your net worth. It is only taken off when the value you entered includes it, for example when you enter the full price. This replaces the rule from 10.26.
+- **No false loss on homes being built.** **Invested** for such a home is now what has been paid so far (your own money plus loan payments), not the full price. A home valued at what you have paid shows no gain or loss, instead of a large red minus.
+- **The property table reads in order.** Left to right:
+  - **Buying price**
+  - **Loan taken**
+  - **Loan type** (standard or OD)
+  - **Parked in OD**
+  - **Loan in use** (what you actually pay interest on)
+  - **Current value**
+  - For homes being built: **Paid so far (own + loan)** and **Still to pay builder**
+  - **To clear (bank + builder)**
+  - **Realised value**: the current value less what is to clear, which is what is yours. The realised values add up to the property part of your net worth.
+  - Then the rate, EMI and the rest.
+- **A total row under each table.** Property, Fixed Income, Insurance, Loans and the other holdings tables now end with a **Total** row that adds up each money column. Rates, dates and counts are left blank in it.
+- **Opening the app on the phone loads the newest version.** When you come back to the app and a newer version is live, it now reloads by itself, as long as no form or record is open. Otherwise the banner from 10.30 offers a reload.
+
 ## Version 10.30 (10 Nov 2026, 20:02): Net worth added up, and a prompt when a newer version is out
 
 Backup taken before this release: `backup-2026-11-10-2002-IST`

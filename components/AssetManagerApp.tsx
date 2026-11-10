@@ -649,13 +649,25 @@ const GOAL_LABELS: Record<string, string> = {
   extra_monthly: "Extra a month needed",
   projection_status: "Status",
 };
+// The property table reads left to right: the price, the loan and how it is used, today's value, what has
+// been paid while it is built, what is left to clear and what is then yours.
+const PROPERTY_TABLE_LABELS: Record<string, string> = {
+  purchase_price: "Buying price",
+  loan_amount: "Loan taken",
+  loan_structure: "Loan type",
+  od_parked_balance: "Parked in OD",
+  net_loan_balance: "Loan in use",
+  latest: "Current value",
+  construction_paid: "Paid so far (own + loan)",
+  construction_pending: "Still to pay builder",
+  to_clear: "To clear (bank + builder)",
+  realised_value: "Realised value",
+};
 const fieldLabel = (moduleKey: string, field: string) =>
   moduleKey === "goals" && GOAL_LABELS[field]
     ? GOAL_LABELS[field]
-    : moduleKey === "property" && field === "construction_paid"
-    ? "Paid to builder"
-    : moduleKey === "property" && field === "construction_pending"
-    ? "Still to pay"
+    : moduleKey === "property" && PROPERTY_TABLE_LABELS[field]
+    ? PROPERTY_TABLE_LABELS[field]
     : moduleKey === "property" && field === "broker"
     ? "Community"
     : moduleKey === "bullion" && field === "current_price"
@@ -710,6 +722,8 @@ const fieldLabel = (moduleKey: string, field: string) =>
         ? "Property Type"
       : OD_LOAN_LABELS[field] || pretty(field);
 const moneyCols = [
+  "to_clear",
+  "realised_value",
   "construction_paid",
   "construction_pending",
   "invested",
@@ -948,6 +962,8 @@ const numericFieldNames = new Set(
 const requiredReferenceDocModules = new Set<string>();
 const requiresReferenceDoc = (moduleKey: string) =>
   requiredReferenceDocModules.has(moduleKey);
+// Money columns that can be added across rows (rates, dates and counts are left blank in a total).
+const ADDABLE_COLS = new Set(["purchase_price", "to_clear", "realised_value", "invested", "latest", "gain", "construction_paid", "construction_pending", "loan_amount", "loan_balance", "od_parked_balance", "net_loan_balance", "od_monthly_interest", "monthly_emi", "emiFuture", "monthly_rent", "principal_paid", "interest_paid", "balance", "current_value_today", "interest_incurred_fy", "latest_value", "maturity_value", "year_end_maturity_value", "yearly_total_value", "employee_contribution", "company_contribution", "yearly_investment", "annual_premium", "death_cover", "premium_amount", "bonus_accrued_till_date", "money_back_received"]);
 const Modal = memo(function Modal({
   title,
   onClose,
@@ -1277,14 +1293,24 @@ export default function AssetManagerApp() {
         can_upload_documents: true,
       };
   useEffect(() => {
-    const check = async () => {
+    const check = async (returning = false) => {
       try {
         const res = await fetch("/api/version", { cache: "no-store" });
         const live = String((await res.json())?.version || "");
-        if (live && live !== APP_VERSION) setNewerVersion(live);
+        if (!live || live === APP_VERSION) return;
+        setNewerVersion(live);
+        // Coming back to the app with nothing open: load the new version straight away (once per version,
+        // so a slow rollout can never cause a reload loop). Otherwise the banner offers a reload.
+        const key = `asset-manager-reloaded-for:${live}`;
+        let done = false;
+        try { done = sessionStorage.getItem(key) === "1"; } catch {}
+        if (returning && !done && !document.querySelector(".app-modal, .expense-sheet, [role=dialog], form")) {
+          try { sessionStorage.setItem(key, "1"); } catch {}
+          window.location.reload();
+        }
       } catch {}
     };
-    const onShow = () => { if (document.visibilityState === "visible") check(); };
+    const onShow = () => { if (document.visibilityState === "visible") check(true); };
     check();
     const timer = setInterval(check, 5 * 60_000);
     document.addEventListener("visibilitychange", onShow);
@@ -15389,6 +15415,27 @@ Salary will stop counting as income, Company PF contributions will stop (interes
     );
   }
   /** A totals line under the goals table: amounts added up, and how many goals are in each status. */
+  /** A total row under a holdings table, adding up each money column across the rows shown. */
+  function moduleTotalsRow(k: string, computed: any[], cols: string[]) {
+    const sum = (col: string) => computed.reduce((t, c) => t + num(c[col]), 0);
+    return (
+      <tfoot>
+        <tr className="module-total-row border-t-2 border-[#d9cfbb] bg-[#f5efe3] font-bold">
+          {cols.map((col, i) => {
+            const v = ADDABLE_COLS.has(col) ? sum(col) : null;
+            return (
+              <td key={col} className={`p-3 ${stockCellClass(k, col)}`}>
+                {i === 0 ? `Total (${computed.length})` : v === null ? "" : (
+                  <span className={`tabular-nums ${col === "gain" ? (v < 0 ? "text-red-700" : "text-emerald-700") : ""}`}>{fmt(v)}</span>
+                )}
+              </td>
+            );
+          })}
+          <td />
+        </tr>
+      </tfoot>
+    );
+  }
   function goalsTotalsRow(goals: any[], cols: string[]) {
     const sum = (col: string) => goals.reduce((t, c) => t + num(c[col]), 0);
     const count = (label: string) => goals.filter((c) => c.projection_status === label).length;
@@ -16885,6 +16932,7 @@ Salary will stop counting as income, Company PF contributions will stop (interes
                 })}
               </tbody>
               {k === "goals" && rows.length > 1 && goalsTotalsRow(rows.map((x) => x.c), visibleCols)}
+              {!["goals", "stocks", "bullion"].includes(k) && rows.length > 1 && moduleTotalsRow(k, rows.map((x) => x.c), visibleCols)}
             </table>
           </div>
         ) : (

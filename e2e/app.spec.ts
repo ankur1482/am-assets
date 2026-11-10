@@ -483,6 +483,23 @@ test.describe('logged-in app', () => {
     await expectHealthy(page, app, 'net worth breakdown');
   });
 
+  test('holdings tables end with a total row that adds up the money columns', async ({ page }) => {
+    test.skip(isPhone(page), 'Desktop table');
+    const app = await signedIn(page);
+    await open(page, app, /^Fixed Income/);
+    const table = page.locator('.investment-table').filter({ has: page.locator('.module-total-row') }).first();
+    await expect(table.locator('.module-total-row')).toContainText(/Total \(\d+\)/);
+    const rupees = (t: string) => Number(t.replace(/[^\d-]/g, ''));
+    // Each money column's total equals the rows above it; check the first one filled in.
+    const col = await table.locator('.module-total-row > td').allTextContents().then((t) => t.findIndex((x, i) => i > 0 && /₹/.test(x)));
+    expect(col).toBeGreaterThan(0);
+    const nth = 'td:nth-child(' + (col + 1) + ')';
+    const cells = await table.locator('tbody > tr > ' + nth).allTextContents();
+    const total = await table.locator('.module-total-row > ' + nth).textContent();
+    expect(cells.map(rupees).reduce((a, b) => a + b, 0)).toBe(rupees(total!));
+    await expectHealthy(page, app, 'module totals row');
+  });
+
   test('an app left open offers to reload when a newer version is live', async ({ page }) => {
     await signedIn(page);
     await expect(page.locator('.update-banner')).toHaveCount(0);
