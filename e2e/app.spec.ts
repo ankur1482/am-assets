@@ -26,22 +26,23 @@ async function open(page: Page, app: MockedApp, name: string | RegExp) {
   await expectHealthy(page, app, String(name));
 }
 
-// On the phone, investments are picked from a drawer that slides in from the left.
+// On the phone, everything is picked from a side menu that slides in from the left.
 async function openInvestDrawer(page: Page) {
-  const drawer = page.getByRole('dialog', { name: 'Investments menu' });
-  if (!(await drawer.isVisible())) {
-    const menu = page.getByRole('button', { name: 'Open investments menu' });
-    if (await menu.isVisible()) await menu.click();
-    else await page.getByRole('navigation', { name: 'Mobile section navigation' }).getByRole('button', { name: 'Investments' }).click();
-  }
-  await expect(drawer).toBeVisible();
-  return drawer;
+  const menu = page.getByRole('dialog', { name: 'Menu' });
+  if (!(await menu.isVisible())) await page.getByRole('button', { name: 'Open menu', exact: true }).click();
+  await expect(menu).toBeVisible();
+  return menu;
 }
 async function pickInvestment(page: Page, type?: string | RegExp, account?: string | RegExp) {
   if (type) await (await openInvestDrawer(page)).getByRole('button', { name: type }).first().click();
   if (account) await (await openInvestDrawer(page)).getByRole('button', { name: account }).first().click();
-  await expect(page.getByRole('dialog', { name: 'Investments menu' })).toHaveCount(0);
+  await expect(page.getByRole('dialog', { name: 'Menu' })).toHaveCount(0);
 }
+async function phoneGo(page: Page, name: string) {
+  await (await openInvestDrawer(page)).getByRole('button', { name: new RegExp(`^${name}`) }).first().click();
+  await expect(page.getByRole('dialog', { name: 'Menu' })).toHaveCount(0);
+}
+const phoneTitle = (page: Page) => page.locator('.mobile-appbar .mobile-brand-copy');
 
 test.describe('logged-in app', () => {
   test('opens the dashboard without crashing', async ({ page }) => {
@@ -184,7 +185,7 @@ test.describe('logged-in app', () => {
     await expect(sheet).toHaveCount(0);
     const saved = app.writes.find(write => write.table === 'records' && write.body?.module_key === 'expense');
     expect(saved?.body?.data).toMatchObject({ amount: 450, label: 'Groceries', tag_id: 'google-pay', tag_label: 'Google Pay' });
-    await page.locator('nav').getByRole('button', { name: 'Home' }).locator('visible=true').first().click();
+    await phoneGo(page, 'Home');
     await page.getByRole('button', { name: 'Expenses', exact: true }).click();
     await expect(page.getByRole('region', { name: 'Expenses this month' }).getByText('Groceries')).toBeVisible();
     await expectHealthy(page, app, 'quick expense');
@@ -193,9 +194,8 @@ test.describe('logged-in app', () => {
   test('phone screens open without crashing', async ({ page }) => {
     test.skip(!isPhone(page), 'Phone layout only');
     const app = await signedIn(page);
-    const strip = page.getByRole('navigation', { name: 'Mobile section navigation' });
-    for (const name of ['Goals', 'Forecast', 'Settings', 'Home']) {
-      await tapTab(strip, new RegExp(name));
+    for (const name of ['Goals', 'Predictive Planner', 'Settings', 'Home']) {
+      await phoneGo(page, name);
       await expectHealthy(page, app, `phone ${name}`);
     }
     for (const name of [/^Property/, /^Fixed Income/, /^Insurance/, /^Stocks/]) {
@@ -266,24 +266,23 @@ test.describe('logged-in app', () => {
   test('stocks shows its dividend tabs on a phone, however the screen was reached', async ({ page }) => {
     test.skip(!isPhone(page), 'Phone layout only');
     const app = await signedIn(page);
-    await page.getByRole('button', { name: 'Open menu' }).click();
-    await page.locator('.mobile-menu-panel').getByRole('button', { name: 'Stocks' }).click();
-    // However Stocks is reached, the slim bar and drawer are used, with the dividend views in the drawer.
-    await expect(page.getByRole('navigation', { name: 'Investments navigation' })).toContainText(/Stocks.* · All/);
+    await phoneGo(page, 'Stocks');
+    // The dividend views are listed in the side menu, and the header says which one is showing.
+    await expect(phoneTitle(page)).toContainText(/All.*Stocks/);
     await pickInvestment(page, undefined, /^Dividend Buy Radar/);
     await expect(page.getByText('This shows a date, not a recommendation.')).toBeVisible();
-    await expect(page.getByRole('navigation', { name: 'Investments navigation' })).toContainText('Dividend Buy Radar');
+    await expect(phoneTitle(page)).toContainText('Dividend Buy Radar');
     await pickInvestment(page, undefined, /^Dividends Earned/);
     await expect(page.getByLabel('Dividends earned list').getByText('Sold Example')).toBeVisible();
     // A dividend view belongs to Stocks, so another type opens on All.
     await pickInvestment(page, /^Property/);
     await expect(page.getByText('Consolidated Holdings')).toBeVisible();
-    await expect(page.getByRole('navigation', { name: 'Investments navigation' })).toContainText('Property · All');
+    await expect(phoneTitle(page)).toContainText(/All.*Property/);
     await expectHealthy(page, app, 'phone dividend tabs');
   });
 
   // Real touch gestures: a swipe or pinch has to work wherever the finger happens to land.
-  const touchTargets = ['.home-tile', '.phone-market-strip', '.phone-row-main', '.mobile-top-nav', '.phone-overall-sections table'];
+  const touchTargets = ['.home-tile', '.phone-market-strip', '.phone-row-main', '.phone-overall-sections table'];
   async function touchPoint(page: Page, selector: string) {
     // The screen is rebuilt once as the app starts, so keep looking until the target is there.
     const find = () => page.evaluate((css) => {
@@ -375,29 +374,34 @@ test.describe('logged-in app', () => {
     await expectHealthy(page, app, 'phone pinch');
   });
 
-  test('the phone main menu sits on one line, even on a small phone', async ({ page }) => {
+  test('the phone menu slides in from the left and hides when the page is tapped', async ({ page }) => {
     test.skip(!isPhone(page), 'Phone layout only');
-    const app = await signedIn(page), strip = page.getByRole('navigation', { name: 'Mobile section navigation' });
-    for (const width of [320, 360, 412, 480]) {
+    const app = await signedIn(page);
+    for (const width of [320, 412]) {
       await page.setViewportSize({ width, height: 800 });
-      const tops = new Set<number>();
-      for (const name of ['Home', 'Investments', 'Goals', 'Forecast', 'Settings']) {
-        const button = strip.getByRole('button', { name });
-        await expect(button).toBeInViewport({ ratio: 1 });
-        tops.add(Math.round((await button.boundingBox())!.y));
-        expect(await button.evaluate((el) => el.scrollWidth <= el.clientWidth), `${name} fits at ${width}px`).toBe(true);
-      }
-      expect(tops.size, `one line at ${width}px`).toBe(1);
+      // No rows of tabs above the content any more.
+      await expect(page.getByRole('navigation', { name: 'Mobile section navigation' })).toHaveCount(0);
+      const menu = await openInvestDrawer(page), panel = menu.getByRole('navigation', { name: 'Main menu' });
+      // It slides in, so wait for it to settle against the left edge.
+      await expect.poll(async () => Math.round((await panel.boundingBox())!.x)).toBe(0);
+      const box = (await panel.boundingBox())!;
+      expect(box.width, 'leaves some page showing to tap').toBeLessThan(width - 40);
+      for (const name of ['Home', 'Goals', 'Predictive Planner', 'Loans', 'Settings']) await expect(panel.getByRole('button', { name: new RegExp(`^${name}`) }).first()).toBeVisible();
+      const signOut = panel.getByRole('button', { name: 'Sign out' });
+      await signOut.scrollIntoViewIfNeeded();
+      await expect(signOut).toBeInViewport({ ratio: 1 });
+      // Tap the page beside the menu.
+      await page.mouse.click(width - 15, 400);
+      await expect(page.getByRole('dialog', { name: 'Menu' })).toHaveCount(0);
     }
-    await expectHealthy(page, app, 'phone menu line');
+    await expectHealthy(page, app, 'phone side menu');
   });
 
-  test('every row of phone tabs is a single line, at any phone width', async ({ page }) => {
+  test('the phone header and dashboard tabs fit on one line, at any phone width', async ({ page }) => {
     test.skip(!isPhone(page), 'Phone layout only');
-    const app = await signedIn(page), strip = page.getByRole('navigation', { name: 'Mobile section navigation' });
+    const app = await signedIn(page);
     const onOneLine = async (row: Locator, where: string) => {
       const tops = await row.evaluate((el) => [...el.querySelectorAll(':scope > button, :scope > .one-row-more > button')].map((b) => Math.round(b.getBoundingClientRect().top)));
-      // A second line would be a whole button lower; allow for sub-pixel rounding.
       expect(Math.max(...tops) - Math.min(...tops), `${where}: ${tops}`).toBeLessThanOrEqual(2);
       const box = (await row.boundingBox())!;
       expect(box.x + box.width, `${where} fits the screen`).toBeLessThanOrEqual(page.viewportSize()!.width + 1);
@@ -405,18 +409,19 @@ test.describe('logged-in app', () => {
     };
     for (const width of [320, 360, 412, 480]) {
       await page.setViewportSize({ width, height: 800 });
-      await onOneLine(strip, `main menu at ${width}`);
       await onOneLine(page.getByRole('group', { name: 'Dashboard sections' }), `dashboard tabs at ${width}`);
       await pickInvestment(page, /^Stocks/);
-      await onOneLine(page.getByRole('navigation', { name: 'Investments navigation' }), `investments bar at ${width}`);
-      await page.getByRole('navigation', { name: 'Investments navigation' }).getByRole('button', { name: 'Home' }).click();
+      const header = (await page.locator('.mobile-appbar').boundingBox())!;
+      expect(header.height, `header at ${width}`).toBeLessThan(96);
+      expect(header.x + header.width).toBeLessThanOrEqual(width + 1);
+      await phoneGo(page, 'Home');
     }
     await expectHealthy(page, app, 'phone single rows');
   });
 
   test('forecast and dividend radar use the same single row', async ({ page }) => {
     test.skip(!isPhone(page), 'Phone layout only');
-    const app = await signedIn(page), strip = page.getByRole('navigation', { name: 'Mobile section navigation' });
+    const app = await signedIn(page);
     const check = async (name: string, width: number) => {
       const row = page.getByRole('group', { name });
       await expect(row, `${name} uses the shared row`).toHaveClass(/mobile-main-nav/);
@@ -427,14 +432,14 @@ test.describe('logged-in app', () => {
     };
     for (const width of [320, 412]) {
       await page.setViewportSize({ width, height: 800 });
-      await strip.getByRole('button', { name: 'Forecast' }).click();
+      await phoneGo(page, 'Predictive Planner');
       await check('Forecast type', width);
       const goals = page.getByRole('group', { name: 'Forecast type' }).getByRole('button', { name: 'Goal readiness' });
       await tapTab(page.getByRole('group', { name: 'Forecast type' }), 'Goal readiness');
       await expect(goals).toHaveAttribute('aria-pressed', 'true');
       await pickInvestment(page, /^Stocks/, /^Dividend Buy Radar/);
       await check('Which stocks', width);
-      await page.getByRole('navigation', { name: 'Investments navigation' }).getByRole('button', { name: 'Home' }).click();
+      await phoneGo(page, 'Home');
     }
     await expectHealthy(page, app, 'phone screen rows');
   });
@@ -483,28 +488,28 @@ test.describe('logged-in app', () => {
 
   test('the phone header and menu stay on screen while scrolling', async ({ page }) => {
     test.skip(!isPhone(page), 'Phone layout only');
-    const app = await signedIn(page), strip = page.getByRole('navigation', { name: 'Mobile section navigation' });
+    const app = await signedIn(page);
     await expect(page.getByRole('group', { name: 'Dashboard sections' })).toBeVisible();
     // The page grows as the app finishes loading, so keep trying until there is room to scroll.
     await expect.poll(() => page.evaluate(() => { scrollTo({ top: 2500, behavior: 'instant' }); return scrollY; })).toBeGreaterThan(2000);
     await expect(page.locator('.mobile-appbar')).toBeInViewport({ ratio: 1 });
-    await expect(strip).toBeInViewport({ ratio: 1 });
-    await strip.getByRole('button', { name: 'Goals' }).click();
+    await expect(page.getByRole('button', { name: 'Open menu', exact: true })).toBeInViewport({ ratio: 1 });
+    await phoneGo(page, 'Goals');
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     await expectHealthy(page, app, 'phone sticky menu');
   });
 
-  test('an investment screen starts right below one slim bar, and Add stays on one line', async ({ page }) => {
+  test('an investment screen starts right below the header, and Add stays on one line', async ({ page }) => {
     test.skip(!isPhone(page), 'Phone layout only');
     await signedIn(page);
     await page.setViewportSize({ width: 320, height: 700 });
     await pickInvestment(page, /^Stocks/);
-    const bar = page.getByRole('navigation', { name: 'Investments navigation' });
+    const bar = page.locator('.mobile-appbar');
     await expect(bar).toBeVisible();
-    // People and views moved into the drawer, so no rows of tabs sit above the content.
+    // People and views are in the side menu, so no rows of tabs sit above the content.
     await expect(page.getByRole('group', { name: 'Accounts' })).toHaveCount(0);
     await expect(page.getByRole('navigation', { name: 'Mobile section navigation' })).toHaveCount(0);
-    expect((await bar.boundingBox())!.height).toBeLessThan(64);
+    expect((await bar.boundingBox())!.height).toBeLessThan(96);
     const add = page.locator('.phone-add-btn');
     const lines = await add.evaluate((el) => el.getBoundingClientRect().height);
     expect(lines).toBeLessThan(50);
@@ -522,14 +527,14 @@ test.describe('logged-in app', () => {
     await expect(page.getByText(/^\d{2}-[A-Z][a-z]{2}-\d{4}$/).locator('visible=true').first()).toBeVisible();
   });
 
-  test('the investments drawer closes when you tap outside it', async ({ page }) => {
+  test('the side menu closes when you tap outside it', async ({ page }) => {
     test.skip(!isPhone(page), 'Phone layout only');
     await signedIn(page);
     const drawer = await openInvestDrawer(page);
     const box = (await drawer.locator('nav').boundingBox())!;
     // Tap the dimmed area to the right of the drawer.
-    await drawer.getByRole('button', { name: 'Close investments menu' }).first().click({ position: { x: Math.round(box.x + box.width + 20), y: 300 } });
-    await expect(page.getByRole('dialog', { name: 'Investments menu' })).toHaveCount(0);
+    await drawer.getByRole('button', { name: 'Close menu' }).first().click({ position: { x: Math.round(box.x + box.width + 20), y: 300 } });
+    await expect(page.getByRole('dialog', { name: 'Menu' })).toHaveCount(0);
   });
 
   test('the phone add button sits on the left', async ({ page }) => {
@@ -543,7 +548,7 @@ test.describe('logged-in app', () => {
     test.skip(!isPhone(page), 'Phone layout only');
     await signedIn(page);
     // Figures scrolling under the header or the sticky tab row must not show through them.
-    for (const css of ['.mobile-appbar', '.mobile-tabbar.mobile-top-nav'])
+    for (const css of ['.mobile-appbar'])
       // The screen is rebuilt once as the app starts, so wait for the colour to settle.
       await expect.poll(() => page.evaluate((sel) => { const el = document.querySelector(sel); return el && getComputedStyle(el).backgroundColor; }, css), { message: css }).toBe('rgb(255, 255, 255)');
     // Scroll to the end on every check, as the page grows while it loads.
@@ -560,22 +565,13 @@ test.describe('logged-in app', () => {
   test('every phone menu option can be seen without sideways scrolling', async ({ page }) => {
     test.skip(!isPhone(page), 'Phone layout only');
     const app = await signedIn(page);
-    const strip = page.getByRole('navigation', { name: 'Mobile section navigation' });
-    for (const name of ['Home', 'Investments', 'Goals', 'Forecast', 'Settings']) await expect(strip.getByRole('button', { name })).toBeInViewport({ ratio: 1 });
-    // The drawer lists every type: the ones held with their value, the others as "None yet".
+    // The menu lists the types held with their value; the rest are one tap away, as "None yet".
     const drawer = await openInvestDrawer(page);
     for (const name of [/^Stocks/, /^Property/, /^Fixed Income/, /^Insurance/, /^Mutual Funds/]) await expect(drawer.getByRole('button', { name })).toBeVisible();
+    await drawer.getByRole('button', { name: /^Show all types/ }).click();
     await expect(drawer.getByRole('button', { name: /^Gold\/Silver/ })).toContainText('None yet');
     await drawer.getByRole('button', { name: /^Gold\/Silver/ }).click();
-    await expect(page.getByRole('navigation', { name: 'Investments navigation' })).toContainText('Gold/Silver');
-
-    // The menu sits clear of the header, and its last option can be scrolled to.
-    await page.getByRole('button', { name: 'Open menu' }).click();
-    const panel = page.locator('.mobile-menu-panel'), header = await page.locator('.mobile-appbar').boundingBox();
-    expect((await panel.boundingBox())!.y).toBeGreaterThanOrEqual(header!.y + header!.height);
-    const signOut = panel.getByRole('button', { name: 'Sign out' });
-    await signOut.scrollIntoViewIfNeeded();
-    await expect(signOut).toBeInViewport({ ratio: 1 });
+    await expect(phoneTitle(page)).toContainText('Gold/Silver');
     await expectHealthy(page, app, 'phone menu options');
   });
 
@@ -734,10 +730,7 @@ test.describe('logged-in app', () => {
   test('goal, property, planner and admin screens fit a phone and stay readable', async ({ page }) => {
     test.skip(!isPhone(page), 'Phone layout only');
     const app = await signedIn(page);
-    const go = async (name: string) => {
-      await page.getByRole('button', { name: 'Open menu' }).click();
-      await page.locator('.mobile-menu-panel').getByRole('button', { name, exact: true }).click();
-    };
+    const go = (name: string) => phoneGo(page, name);
     const fits = async (where: string) => {
       const widths = await page.evaluate(() => { const el = document.querySelector('.phone-content .phone-screen') as HTMLElement; return [el.scrollWidth, el.clientWidth]; });
       expect(widths[0], `${where} is wider than the phone`).toBeLessThanOrEqual(widths[1] + 1);

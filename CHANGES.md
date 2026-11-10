@@ -15,6 +15,16 @@ These backups cover the app itself, not your financial data. Your data is covere
 
 ---
 
+## Version 10.27 (10 Nov 2026, 17:39): A side menu on the phone
+
+Backup taken before this release: `backup-2026-11-10-1739-IST`
+
+- **The phone menu now slides in from the left**, like the side panel on a computer. Tap **☰** (top left) or the screen name next to it to open it. It lists everything in the same five areas as on a computer: Home, Investments (with the value of each type you hold, and **Show all types** for the rest), Plan, Loans and More, with **Sign out** at the bottom.
+- **It hides again** when you tap the page beside it, swipe it to the left, tap ✕, or pick something.
+- **More room for your figures.** The row of tabs across the top of the phone screen and the separate investments bar are gone, so the content starts right under the header.
+- **On an investment, the people and views are at the top of the menu**, for example All, each person, Watchlist, ETFs, Dividends Earned and Dividend Buy Radar on Stocks. The header shows which one you are looking at, above the screen name.
+- Nothing changes on a computer.
+
 ## Version 10.26 (10 Nov 2026, 16:18): What you still owe builders, insurance as yearly on the dashboard
 
 Backup taken before this release: `backup-2026-11-10-1618-IST`

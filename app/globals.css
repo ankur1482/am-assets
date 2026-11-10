@@ -3904,3 +3904,13 @@ thead th {
   .phone-invest-item.active span:last-child { color: #d9efe2; }
   .phone-invest-item.empty { opacity: .6; }
 }
+
+/* Phone menu: a side panel from the left (like the desktop column) instead of rows of tabs at the top. */
+@media (max-width: 1024px) {
+  .mobile-appbar { justify-content: flex-start !important; gap: 10px !important; }
+  .mobile-appbar .phone-menu-btn { flex: none; }
+  .mobile-appbar .mobile-brand-copy { flex: 1; min-width: 0; text-align: left; background: none; border: 0; padding: 0; }
+  .mobile-appbar .mobile-brand-copy > * { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .phone-side-menu .phone-side-group + .phone-side-group { border-top: 1px solid #efe8da; margin-top: 6px; }
+  .phone-side-menu .phone-side-toggle { font-size: 13px; color: #5b6b63; }
+}

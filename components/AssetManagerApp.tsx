@@ -18,7 +18,6 @@ import {
   FileUp,
   FolderOpen,
   GitBranch,
-  Home,
   KeyRound,
   Layers,
   LogOut,
@@ -34,7 +33,6 @@ import {
   UploadCloud,
   UserX,
   Users,
-  X,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { startForegroundRefresh } from "@/lib/foregroundRefresh";
@@ -996,10 +994,8 @@ export default function AssetManagerApp() {
     [password, setPassword] = useState(""),
     [authMode, setAuthMode] = useState<"signin" | "signup">("signin"),
     [authMsg, setAuthMsg] = useState("");
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false),
-    [globalRefreshing, setGlobalRefreshing] = useState(false),
-    [phoneMode, setPhoneMode] = useState(false),
-    [mobileNavMode, setMobileNavMode] = useState<"main" | "investments">("main");
+  const [globalRefreshing, setGlobalRefreshing] = useState(false),
+    [phoneMode, setPhoneMode] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
       if (typeof window === "undefined") return false;
       return localStorage.getItem("asset-manager-sidebar-collapsed") === "true";
@@ -1601,7 +1597,7 @@ export default function AssetManagerApp() {
     } catch {}
   }, [sidebarCollapsed, sidebarWidth]);
   useEffect(() => {
-    setMobileMenuOpen(false);
+    setInvestDrawerOpen(false);
   }, [view]);
   useEffect(() => {
     try {
@@ -4807,10 +4803,9 @@ export default function AssetManagerApp() {
     }
   }
   const heldTypes = new Set(records.map((r) => r.module_key));
-  // On the phone, investment screens use the slim bar and drawer however they were reached.
+  // On the phone, an investment's people and views are listed in the side menu.
   const PHONE_INVEST_KEYS = ["stocks", "property", "bullion", "fixedIncome", "insurance", "mutualFunds", "ulips", "otherAssets", "nsel"];
-  // Only investment screens (or Investments just tapped from Home) use it; Goals, Loans and the rest keep the main tabs.
-  const phoneInvestMode = phoneMode && (PHONE_INVEST_KEYS.includes(view) || (mobileNavMode === "investments" && view === "dashboard"));
+  const phoneInvestMode = phoneMode && PHONE_INVEST_KEYS.includes(view);
   const visibleGroups = groups
     .map(([g, ids]: any) => [
       g,
@@ -4881,43 +4876,7 @@ export default function AssetManagerApp() {
       </button>
     );
   };
-  const mobileMainTabs = [
-    ["dashboard", "Home", Home],
-    ["investments", "Investments", BriefcaseBusiness],
-    ["goals", "Goals", CheckCircle2],
-    ["futureWealth", "Forecast", Sparkles],
-    ["settings", "Settings", KeyRound],
-  ] as const;
-  const mobileInvestmentTabs = [
-      ["stocks", "Stocks", BarChart3],
-      ["property", "Property", Home],
-      ["bullion", "Gold/Silver", BriefcaseBusiness],
-      ["fixedIncome", "Fixed", FolderOpen],
-      ["insurance", "Insurance", Shield],
-      ["mutualFunds", "MF", BriefcaseBusiness],
-      ["ulips", "ULIP", Shield],
-      ["otherAssets", "Other", FolderOpen],
-      ["nsel", "NSEL", BriefcaseBusiness],
-    ] as const,
-    mobileInvestmentTabsByValue = mobileInvestmentTabs
-      .map((tab, preferredOrder) => {
-        const [id] = tab;
-        return {
-          tab,
-          preferredOrder,
-          hasEntries: records.some((r) => r.module_key === id),
-        };
-      })
-      .sort(
-        (a, b) =>
-          Number(b.hasEntries) - Number(a.hasEntries) ||
-          a.preferredOrder - b.preferredOrder,
-      )
-      // The phone row skips types with nothing in them. They stay in the menu and on desktop, and a
-      // new account with no holdings sees them all so it has somewhere to start.
-      .filter((x, _index, all) => x.hasEntries || x.tab[0] === view || !all.some((y) => y.hasEntries))
-      .map((x) => x.tab),
-    mobileTabAccounts =
+  const mobileTabAccounts =
       view !== "dashboard" && MODULES[view]
         ? [
             "All",
@@ -4940,21 +4899,11 @@ export default function AssetManagerApp() {
       return;
     }
     if (id === "investments") {
-      setMobileNavMode("investments");
       setInvestDrawerOpen(true);
       return;
     }
-    if (id === "__back") {
-      setMobileNavMode("main");
-      return;
-    }
     setView(id);
-    if (id === "dashboard") {
-      setMobileNavMode("main");
-      setAccountTabs((p) => ({ ...p, __phone: "All" }));
-      return;
-    }
-    setMobileNavMode(["stocks", "property", "bullion", "fixedIncome", "insurance", "mutualFunds", "ulips", "otherAssets", "nsel"].includes(id) ? "investments" : "main");
+    if (id === "dashboard") setAccountTabs((p) => ({ ...p, __phone: "All" }));
   }
   async function adminFetch(body?: any) {
     if (!session?.access_token) throw new Error("Missing session");
@@ -5027,59 +4976,44 @@ export default function AssetManagerApp() {
     );
   }
   /**
-   * Phone investments: one slim bar (☰, where you are, Home) instead of rows of tabs, and a drawer
-   * from the left with the investment types and the people or views for the current one.
+   * Phone menu: a side panel from the left, like the desktop column, opened with the menu button and
+   * closed by tapping the page, swiping it left or picking an option. On an investment screen it
+   * also lists the people and views for that investment.
    */
-  function phoneInvestBar() {
-    const typeTitle = view === "bullion" ? "Gold/Silver" : MODULES[view]?.title || "Investments";
-    const onInvestment = mobileInvestmentTabs.some(([id]) => id === view);
-    return (
-      <div className="phone-invest-bar" role="navigation" aria-label="Investments navigation">
-        <button type="button" className="phone-invest-menu" aria-label="Open investments menu" aria-expanded={investDrawerOpen} onClick={() => setInvestDrawerOpen(true)}>
-          <span aria-hidden="true">☰</span>
-        </button>
-        <button type="button" className="phone-invest-title" onClick={() => setInvestDrawerOpen(true)}>
-          {onInvestment ? <>{typeTitle}<span> · {phoneAccountTab()}</span></> : "Choose an investment"}
-        </button>
-        <button type="button" className="phone-invest-home" onClick={() => { setInvestDrawerOpen(false); selectMobileTab("dashboard"); }}>
-          Home
-        </button>
-      </div>
-    );
-  }
-  function phoneInvestDrawer() {
+  function phoneSideMenu() {
     if (!investDrawerOpen) return null;
-    const value = (k: string) => records.filter((r) => r.module_key === k && !r.data?.sold_out).reduce((s, r) => s + num(computeLiveRecord(k, r.data).latest), 0);
-    const types = mobileInvestmentTabs
-      .map(([id, label]) => ({ id, label: id === "fixedIncome" ? "Fixed Income" : id === "mutualFunds" ? "Mutual Funds" : id === "ulips" ? "ULIPs" : id === "otherAssets" ? "Other Assets" : id === "nsel" ? "NSEL e-Series" : label, held: records.some((r) => r.module_key === id), value: value(id) }))
-      .filter((t) => isTabShown(t.id) && canViewModule(t.id))
-      .sort((a, b) => Number(b.held) - Number(a.held) || b.value - a.value);
     const close = () => setInvestDrawerOpen(false);
-    const onInvestment = mobileInvestmentTabs.some(([id]) => id === view);
+    const investLabel = (id: string) => ({ bullion: "Gold/Silver", fixedIncome: "Fixed Income", mutualFunds: "Mutual Funds", ulips: "ULIPs", otherAssets: "Other Assets", nsel: "NSEL e-Series" } as Record<string, string>)[id] || allViews.find((v) => v[0] === id)?.[2] || id;
+    const value = (k: string) => records.filter((r) => r.module_key === k && !r.data?.sold_out).reduce((s, r) => s + num(computeLiveRecord(k, r.data).latest), 0);
+    const onInvestment = PHONE_INVEST_KEYS.includes(view);
+    const go = (id: string) => {
+      if (PHONE_INVEST_KEYS.includes(id)) {
+        setView(id);
+        setAccountTabs((p) => ({ ...p, __phone: "All" }));
+      } else selectMobileTab(id);
+      close();
+    };
+    let touchX: number | null = null;
     return (
-      <div className="phone-invest-drawer-wrap" role="dialog" aria-modal="true" aria-label="Investments menu">
-        <button type="button" className="phone-invest-backdrop" aria-label="Close investments menu" onClick={close} />
-        <nav className="phone-invest-drawer phone-light-card">
+      <div className="phone-invest-drawer-wrap" role="dialog" aria-modal="true" aria-label="Menu">
+        <button type="button" className="phone-invest-backdrop" aria-label="Close menu" onClick={close} />
+        <nav
+          className="phone-invest-drawer phone-side-menu phone-light-card"
+          aria-label="Main menu"
+          onTouchStart={(e) => { touchX = e.touches[0]?.clientX ?? null; }}
+          onTouchEnd={(e) => {
+            const endX = e.changedTouches[0]?.clientX;
+            if (touchX !== null && endX !== undefined && touchX - endX > 60) close();
+            touchX = null;
+          }}
+        >
           <div className="phone-invest-drawer-head">
-            <b>Investments</b>
-            <button type="button" aria-label="Close investments menu" onClick={close}>✕</button>
+            <b>Asset Manager <span className="text-xs font-semibold text-gray-500">v{APP_VERSION}</span></b>
+            <button type="button" aria-label="Close menu" onClick={close}>✕</button>
           </div>
-          <div className="phone-invest-section">Types</div>
-          {types.map((t) => (
-            <button
-              key={t.id}
-              type="button"
-              className={`phone-invest-item ${view === t.id ? "active" : ""} ${t.held ? "" : "empty"}`}
-              aria-current={view === t.id ? "page" : undefined}
-              onClick={() => { setView(t.id); setMobileNavMode("investments"); setAccountTabs((p) => ({ ...p, __phone: "All" })); close(); }}
-            >
-              <span>{t.label}</span>
-              <span className="tabular-nums">{t.held ? fmt(t.value) : "None yet"}</span>
-            </button>
-          ))}
           {onInvestment && mobileTabAccounts.length > 0 && (
             <>
-              <div className="phone-invest-section">{view === "stocks" ? "People and views" : "People"}</div>
+              <div className="phone-invest-section">{investLabel(view)}: {view === "stocks" ? "people and views" : "people"}</div>
               {mobileTabAccounts.map((account) => (
                 <button
                   key={account}
@@ -5096,6 +5030,35 @@ export default function AssetManagerApp() {
               ))}
             </>
           )}
+          {visibleGroups.map(([g, ids]: any) => (
+            <div key={g} className="phone-side-group">
+              <div className="phone-invest-section">{g}</div>
+              {ids.map((id: string) => {
+                const isType = PHONE_INVEST_KEYS.includes(id), held = records.some((r) => r.module_key === id);
+                return (
+                  <button
+                    key={id}
+                    type="button"
+                    className={`phone-invest-item ${view === id ? "active" : ""} ${isType && !held ? "empty" : ""}`}
+                    aria-current={view === id ? "page" : undefined}
+                    onClick={() => go(id)}
+                  >
+                    <span>{isType ? investLabel(id) : allViews.find((v) => v[0] === id)?.[2]}</span>
+                    <span className="tabular-nums">{isType ? (held ? fmt(value(id)) : "None yet") : ""}</span>
+                  </button>
+                );
+              })}
+              {g === "Investments" && hiddenInvestmentTypes > 0 && heldTypes.size > 0 && (
+                <button type="button" className="phone-invest-item phone-side-toggle" onClick={() => setShowAllInvestmentTypes((v) => !v)}>
+                  <span>{showAllInvestmentTypes ? "Show only what I hold" : `Show all types (+${hiddenInvestmentTypes})`}</span>
+                  <span />
+                </button>
+              )}
+            </div>
+          ))}
+          <button type="button" className="btn mt-4 w-full justify-center" onClick={signOutSafely}>
+            <LogOut size={16} className="inline" /> Sign out
+          </button>
         </nav>
       </div>
     );
@@ -8144,12 +8107,21 @@ export default function AssetManagerApp() {
       </aside>
       <main className="desktop-main min-w-0 max-w-full overflow-x-hidden p-6 max-lg:p-0">
         <div className="mobile-appbar">
-          <div className="mobile-brand-copy">
+          <button
+            type="button"
+            className="mobile-icon-btn phone-menu-btn"
+            onClick={() => setInvestDrawerOpen(true)}
+            aria-label="Open menu"
+            aria-expanded={investDrawerOpen}
+          >
+            <Menu size={20} />
+          </button>
+          <button type="button" className="mobile-brand-copy" onClick={() => setInvestDrawerOpen(true)}>
             <div className="text-[11px] font-semibold uppercase tracking-widest text-[#4f675b]">
-              asset manager
+              {phoneInvestMode ? phoneAccountTab() : "asset manager"}
             </div>
-            <h2>{allViews.find((v) => v[0] === view)?.[2]}</h2>
-          </div>
+            <h2>{view === "bullion" ? "Gold/Silver" : allViews.find((v) => v[0] === view)?.[2]}</h2>
+          </button>
           <div className="flex gap-2">
             <button
               type="button"
@@ -8170,53 +8142,9 @@ export default function AssetManagerApp() {
                 <Plus size={14} /> Add
               </button>
             )}
-            <button
-              className="mobile-icon-btn"
-              onClick={() => setMobileMenuOpen((v) => !v)}
-              aria-label="Open menu"
-            >
-              {mobileMenuOpen ? <X size={20} /> : <Menu size={20} />}
-            </button>
           </div>
         </div>
-        {mobileMenuOpen && (
-          <div className="mobile-menu-panel">
-            {visibleGroups.map(([g, ids]: any) => (
-              <section key={g}>
-                <div className="mobile-menu-title">{g}</div>
-                <div className="mobile-menu-grid">
-                  {ids.map((id: string) => navButton(id, true))}
-                  {g === "Investments" && investmentTypesToggle(true)}
-                </div>
-              </section>
-            ))}
-            <div className="mobile-menu-actions">
-              <button className="btn" onClick={signOutSafely}>
-                <LogOut size={16} /> Sign out
-              </button>
-              <div className="mt-2 text-center text-[11px] text-gray-500">Version {APP_VERSION}</div>
-            </div>
-          </div>
-        )}
-        {phoneInvestMode ? phoneInvestBar() : <OneRowTabs
-          navigation
-          sticky
-          label="Mobile section navigation"
-          tabs={[
-            ...(mobileNavMode === "investments"
-              ? [{ id: "__back", label: "← Back", fullName: "Back to summary navigation", pinned: true, onSelect: () => selectMobileTab("__back") }]
-              : []),
-            ...(mobileNavMode === "investments" ? mobileInvestmentTabsByValue : mobileMainTabs)
-              .filter(([id]) => (id !== "futureWealth" || canViewModule("futureWealth")) && (id === "investments" || isTabShown(id)))
-              .map(([id, label]) => ({
-                id,
-                label,
-                active: id === "investments" ? mobileNavMode === "investments" : view === id,
-                onSelect: () => selectMobileTab(id),
-              })),
-          ]}
-        />}
-        {phoneMode && phoneInvestDrawer()}
+        {phoneMode && phoneSideMenu()}
         {canSubmitUploads && uploadStatus.missing.length > 0 && view !== MONTHLY_UPLOAD_MODULE && (
           <button type="button" className="monthly-banner" onClick={() => setView(MONTHLY_UPLOAD_MODULE)}>
             <Paperclip size={15} />
@@ -10438,7 +10366,6 @@ export default function AssetManagerApp() {
       return;
     }
     setPlannerTab(tab);
-    setMobileNavMode("main");
     setView("futureWealth");
   }
   function plannerShortcut(moduleKey: string) {
