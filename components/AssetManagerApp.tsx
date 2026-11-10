@@ -243,8 +243,6 @@ const groups = [
   [
     "Investments",
     [
-      "allInvestments",
-      TRANSACTION_MODULE,
       "stocks",
       "property",
       "bullion",
@@ -256,9 +254,12 @@ const groups = [
       "nsel",
     ],
   ],
-  ["Liabilities", ["loans", "borrowings"]],
-  ["Planning", ["goals", "futureWealth", MONTHLY_VALUATION_MODULE, "earnings", MONTHLY_UPLOAD_MODULE]],
-  ["Utility", ["watchlist", "purchaseCalculator", "alerts", "backups", "household", "settings"]],
+  // Removed from the menus on 10 Nov 2026 at the user's request (the screens and their data remain):
+  // All Investments, Transactions, Borrowings, Month on Month, Earnings by Person, Monthly Uploads,
+  // Watchlist (still a tab on Stocks), Alerts and Household Access.
+  ["Liabilities", ["loans"]],
+  ["Planning", ["goals", "futureWealth"]],
+  ["Utility", ["purchaseCalculator", "backups", "settings"]],
   ["Admin", ["admin"]],
 ];
 const allViews = [...views, ["admin", "Admin", "Admin Console"]];
@@ -10357,8 +10358,7 @@ export default function AssetManagerApp() {
   }
   function predictivePlannerView() {
     return <div className="space-y-5">
-      {phoneMode && canViewModule(MONTHLY_VALUATION_MODULE) && <button type="button" className="btn" onClick={() => setView(MONTHLY_VALUATION_MODULE)}><BarChart3 size={15} /> Month on Month</button>}
-      {phoneMode && workspaceAccess.all_modules && <button type="button" className="btn" onClick={() => setView("earnings")}><Users size={15} /> Earnings by Person</button>}      <PredictivePlanner key={`${user?.id}:${activeWorkspaceId}:${plannerTab}`} records={records} netWorth={totals.net} accessToken={session?.access_token || ""} initialTab={plannerTab} goalCurrent={goalCurrentValues()} homeValue={goalFundingNow().homeValue} protectionValue={goalFundingNow().protectionValue} picks={plannerPicks} onPicksChange={savePlannerPicks} />
+      <PredictivePlanner key={`${user?.id}:${activeWorkspaceId}:${plannerTab}`} records={records} netWorth={totals.net} accessToken={session?.access_token || ""} initialTab={plannerTab} goalCurrent={goalCurrentValues()} homeValue={goalFundingNow().homeValue} protectionValue={goalFundingNow().protectionValue} picks={plannerPicks} onPicksChange={savePlannerPicks} />
       <details className="forecast-legacy">
         <summary>Advanced contribution combinations and AI commentary</summary>
         <p className="forecast-note">This separate calculator keeps its own assumptions. Its outputs may differ from the Predictive Planner above.</p>
@@ -12894,29 +12894,7 @@ export default function AssetManagerApp() {
             count: rows.length,
           };
         })
-        .filter((r) => r.latest || r.invested),
-      assetRecords = records.filter(
-        (r) => MODULES[r.module_key]?.kind === "asset",
-      ),
-      todayGain = assetRecords.reduce(
-        (s, r) =>
-          showsDailyChange(r.module_key) ? s + todayGainFor(r.module_key, r) : s,
-        0,
-      ),
-      calendar = istCalendar(),
-      monthKey = `${calendar.year}-${String(calendar.month).padStart(2, "0")}`,
-      monthStartSnapshot = records.find(
-        (record) =>
-          record.module_key === INVESTMENT_PERIOD_SNAPSHOT_MODULE &&
-          record.data?.snapshot_type === "month_start" &&
-          record.data?.period_key === monthKey,
-      ),
-      monthStartNet = monthStartSnapshot
-        ? num(monthStartSnapshot.data?.net)
-        : totals.net,
-      monthMove = totals.net - monthStartNet,
-      monthMovePct = monthStartNet ? (monthMove / monthStartNet) * 100 : 0,
-      overallGain = totals.gain;
+        .filter((r) => r.latest || r.invested);
     if (!onPhone && ["payments", "dividends", "expenses"].includes(detailTabs.dashboard))
       return (
         <div className="space-y-5">
@@ -12927,79 +12905,9 @@ export default function AssetManagerApp() {
     return (
       <div className="space-y-5">
         {!onPhone && dashboardTabs()}
-        <section className="overflow-hidden rounded-2xl border border-[#ded6c4] bg-white/90 shadow-[0_8px_22px_rgba(15,23,42,0.04)]">
-          <div className="grid grid-cols-5 divide-x divide-[#e7ebdf] max-lg:grid-cols-2 max-lg:divide-x-0 max-md:grid-cols-1">
-            {[
-              ["Invested", totals.invested, "text-[#17382b]"],
-              [
-                "Today's Gain",
-                todayGain,
-                todayGain >= 0 ? "text-emerald-700" : "text-red-700",
-              ],
-              [
-                "Month Start Value",
-                monthStartNet,
-                "text-[#17382b]",
-              ],
-              [
-                "Overall Gain",
-                overallGain,
-                overallGain >= 0 ? "text-emerald-700" : "text-red-700",
-              ],
-              [
-                "Current Net Worth",
-                totals.net,
-                totals.net >= 0 ? "text-emerald-700" : "text-red-700",
-              ],
-            // The phone's summary above this already shows the others.
-            ].filter(([label]) => !onPhone || label === "Month Start Value").map(([label, value, color]) => (
-              <div
-                key={String(label)}
-                className="min-w-0 px-4 py-3 max-lg:border-b max-lg:border-[#e7ebdf]"
-              >
-                <div className="text-[10px] font-semibold uppercase tracking-[.14em] text-gray-500">
-                  {label}
-                </div>
-                <div
-                  className={`mt-1 truncate text-lg font-semibold tabular-nums ${color}`}
-                  title={fmt(value)}
-                >
-                  {fmt(value)}
-                </div>
-              </div>
-            ))}
-          </div>
-        </section>
+        {/* Removed 10 Nov 2026 at the user's request: the Invested / Today / Month start / Overall gain / Net worth strip. */}
         {monthlyCashFlowPanel()}
-        <section className="rounded-2xl border border-[#ded6c4] bg-white/90 p-4 shadow-[0_8px_22px_rgba(15,23,42,0.04)]">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <h3 className="font-semibold text-[#17382b]">
-                Monthly Portfolio Analysis
-              </h3>
-              <p className="mt-1 text-xs text-gray-600">
-                Overall portfolio excluding Watchlist. Baseline captured{" "}
-                {monthStartSnapshot?.data?.snapshot_date
-                  ? formatDate(monthStartSnapshot.data.snapshot_date)
-                  : "when this dashboard loaded"}
-                .
-              </p>
-            </div>
-            <div
-              className={`text-right max-md:text-left ${monthMove >= 0 ? "text-emerald-700" : "text-red-700"}`}
-            >
-              <div className="text-xl font-semibold tabular-nums">
-                {monthMove >= 0 ? "+" : ""}
-                {fmt(monthMove)}
-              </div>
-              <div className="text-xs font-semibold tabular-nums">
-                {monthMovePct >= 0 ? "+" : ""}
-                {pct(monthMovePct)} since baseline
-              </div>
-            </div>
-          </div>
-        </section>
-        {executiveAnalyticsPanel()}
+        {/* Also removed: Monthly Portfolio Analysis and the Portfolio health panel. */}
         {!onPhone && <section
           className="flex cursor-pointer flex-wrap items-center justify-between gap-3 overflow-hidden rounded-[26px] border border-[#cddfd4] bg-[linear-gradient(135deg,#f4fbf7_0%,#ffffff_50%,#f7f2ff_100%)] p-5 shadow-[0_18px_46px_rgba(23,56,43,0.09)] transition hover:shadow-[0_22px_54px_rgba(23,56,43,0.14)]"
           onClick={() => openPredictivePlanner("wealth")}
@@ -13015,8 +12923,7 @@ export default function AssetManagerApp() {
         </section>}
         {portfolioPerformancePanel()}
         {portfolioSummaryTable()}
-        {dashboardFeaturePanels()}
-        {riskOpportunityPanel()}
+        {/* Also removed: Data Freshness, Asset Allocation and Risk & Performers. */}
       </div>
     );
   }

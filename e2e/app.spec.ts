@@ -62,8 +62,11 @@ test.describe('logged-in app', () => {
   test('every sidebar screen opens', async ({ page }) => {
     test.skip(isPhone(page), 'The phone layout has no sidebar');
     const app = await signedIn(page);
-    for (const name of ['All Investments', 'Transactions', 'Stocks', 'Property', 'Gold/Silver', 'Fixed Income', 'Insurance', 'Mutual Funds', 'ULIPs', 'Other Assets', 'NSEL e-Series', 'Loans', 'Borrowings', 'Goals', 'Predictive Planner', 'Month on Month', 'Earnings by Person', 'Monthly Uploads', 'Watchlist', 'Purchase Calculator', 'Alerts', 'Automatic Backups', 'Household Access', 'Settings', 'Dashboard'])
+    for (const name of ['Stocks', 'Property', 'Gold/Silver', 'Fixed Income', 'Insurance', 'Mutual Funds', 'ULIPs', 'Other Assets', 'NSEL e-Series', 'Loans', 'Goals', 'Predictive Planner', 'Purchase Calculator', 'Automatic Backups', 'Settings', 'Dashboard'])
       await open(page, app, new RegExp(`^(${name})`));
+    // Removed from the menu on 10 Nov 2026.
+    for (const name of ['All Investments', 'Transactions', 'Borrowings', 'Month on Month', 'Earnings by Person', 'Monthly Uploads', 'Watchlist', 'Alerts', 'Household Access'])
+      await expect(page.locator('.desktop-sidebar').getByRole('button', { name, exact: true })).toHaveCount(0);
   });
 
   test('dashboard tabs show payments and dividends', async ({ page }) => {
@@ -128,20 +131,12 @@ test.describe('logged-in app', () => {
     await expectHealthy(page, app, 'property form');
   });
 
-  test('month on month switches between monthly and yearly items', async ({ page }) => {
-    test.skip(isPhone(page), 'Covered on desktop');
-    const app = await signedIn(page);
-    await open(page, app, /^Month on Month/);
-    await page.getByRole('button', { name: 'Yearly items' }).click();
-    await expectHealthy(page, app, 'yearly items');
-  });
-
   test('dates use dd-MMM-yyyy in tables', async ({ page }) => {
     test.skip(isPhone(page), 'Covered on desktop');
     const app = await signedIn(page);
-    await open(page, app, /^Transactions/);
-    await expect(page.getByRole('cell', { name: '01-Sep-2026' })).toBeVisible();
-    await expect(page.getByText('2026-09-01')).toHaveCount(0);
+    await open(page, app, /^Goals/);
+    await expect(page.locator('.investment-table').getByText('01-Jan-2032').first()).toBeVisible();
+    await expect(page.getByText('2032-01-01')).toHaveCount(0);
     await expectHealthy(page, app, 'date format');
   });
 
@@ -214,7 +209,7 @@ test.describe('logged-in app', () => {
   test('the phone overall dashboard has the desktop sections, none cut off', async ({ page }) => {
     test.skip(!isPhone(page), 'Phone layout only');
     const app = await signedIn(page);
-    for (const text of ['Month Start Value', 'Monthly Portfolio Analysis']) {
+    for (const text of ['My Networth']) {
       const section = page.getByText(text, { exact: true }).locator('visible=true');
       // The screen is rebuilt once as the app starts, so retry until it has settled.
       await expect(async () => {
@@ -417,7 +412,7 @@ test.describe('logged-in app', () => {
     await expectHealthy(page, app, 'phone single rows');
   });
 
-  test('forecast, month on month and dividend radar use the same single row', async ({ page }) => {
+  test('forecast and dividend radar use the same single row', async ({ page }) => {
     test.skip(!isPhone(page), 'Phone layout only');
     const app = await signedIn(page), strip = page.getByRole('navigation', { name: 'Mobile section navigation' });
     const check = async (name: string, width: number) => {
@@ -435,9 +430,6 @@ test.describe('logged-in app', () => {
       const goals = page.getByRole('group', { name: 'Forecast type' }).getByRole('button', { name: 'Goal readiness' });
       await tapTab(page.getByRole('group', { name: 'Forecast type' }), 'Goal readiness');
       await expect(goals).toHaveAttribute('aria-pressed', 'true');
-      await page.getByRole('button', { name: 'Month on Month' }).click();
-      await check('Monthly or yearly items', width);
-      await check('What to show', width);
       await strip.getByRole('button', { name: 'Investments' }).click().catch(() => undefined);
       await tapTab(strip, 'Stocks');
       await tapTab(page.getByRole('group', { name: 'Accounts' }), /^Dividend Buy Radar \(/);
@@ -455,17 +447,11 @@ test.describe('logged-in app', () => {
     await expect(page.getByRole('tab', { name: 'Wealth & retirement' })).toBeVisible();
   });
 
-  test('every panel quotes the same share for the largest asset class', async ({ page }) => {
+  test('the removed dashboard panels stay removed', async ({ page }) => {
     const app = await signedIn(page);
-    const alert = page.getByText(/concentration is high at/).locator('visible=true');
-    await expect(alert).toBeVisible();
-    const [, title, share] = (await alert.textContent())!.match(/^(.+) concentration is high at ([\d.]+%)/)!;
-    const tile = page.getByText('Largest allocation', { exact: true }).locator('visible=true').locator('..');
-    await expect(tile).toContainText(share);
-    await expect(tile).toContainText(title);
-    const allocation = page.locator('section').filter({ has: page.getByRole('heading', { name: 'Asset Allocation' }) }).locator('visible=true');
-    await expect(allocation.getByRole('button', { name: new RegExp(title) })).toContainText(share);
-    await expectHealthy(page, app, 'matching shares');
+    for (const text of ['Month Start Value', 'Monthly Portfolio Analysis', 'Portfolio health at a glance', 'Data Freshness', 'Asset Allocation', 'Risk & Performers'])
+      await expect(page.getByText(text, { exact: true }).locator('visible=true')).toHaveCount(0);
+    await expectHealthy(page, app, 'dashboard without removed panels');
   });
 
   test('payments, dividends and expenses read clearly on a phone', async ({ page }) => {

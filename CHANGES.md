@@ -15,6 +15,14 @@ These backups cover the app itself, not your financial data. Your data is covere
 
 ---
 
+## Version 10.22 (10 Nov 2026, 14:59): A simpler dashboard and menu
+
+Backup taken before this release: `backup-2026-11-10-1459-IST`
+
+- **Dashboard.** Removed: the strip of Invested / Today's Gain / Month Start Value / Overall Gain / Current Net Worth; Monthly Portfolio Analysis; Portfolio health at a glance (return on cost, debt to assets, largest allocation, priority actions, return contributors); Data Freshness; Asset Allocation; and Risk & Performers. The rest of the dashboard is unchanged: the cash-flow figures, the Predictive Planner card, the performance chart and the Overall Dashboard table with My Networth.
+- **Menu.** Removed from the side panel, the phone menu and the Menu Tabs list: All Investments and Transactions (Investments), Borrowings (Liabilities), Month on Month, Earnings by Person and Monthly Uploads (Planning), and Watchlist, Alerts and Household Access (Utility). The Predictive Planner on the phone no longer shows its Month on Month and Earnings by Person buttons.
+- **Nothing is deleted.** Your records in these areas are kept and still count in every total, including any borrowings in net worth. Sales are still recorded as transactions, the Stocks page keeps its own Watchlist tab, and the "Upload now" banner still opens Monthly Uploads. Any of these can be put back. The code is kept, and this backup has the earlier version.
+
 ## Version 10.21 (10 Nov 2026, 14:34): Builder payments kept on edit, interest only on what the bank has paid, and scheme rates for planned investments
 
 Backup taken before this release: `backup-2026-11-10-1434-IST`
