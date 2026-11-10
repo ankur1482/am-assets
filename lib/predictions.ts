@@ -1,5 +1,5 @@
 import { isCashAtHome, isDividendIncome, isEarningRent, isOverdraftLoan, isRentedProperty, isSavingsAccount, LOAN_FIELDS, occupiedShareOfMonth, loanPosition, num, parkedAgainstLoan, PROPERTY_LOAN_FIELDS } from './calculations';
-import { calculateInsurance } from './insurance';
+import { calculateInsurance, normalizeInsurancePolicy } from './insurance';
 import { dividendsReceivedIn } from './dividends';
 import { monthlyDirectExpenses } from './expenses';
 import { monthlyRegularTotal, recurringPayments } from './monthlyPayments';
@@ -12,6 +12,18 @@ export const indiaDate = (date = new Date()) => {
 };
 const validDate = (s: string) => /^\d{4}-\d{2}-\d{2}$/.test(s) && !Number.isNaN(Date.parse(s)) && new Date(s).toISOString().slice(0, 10) === s;
 export type PlanningRecord = { id: string; module_key: string; data: Record<string, any> };
+/** One policy's premiums: `amount` every `everyMonths` months, first due in calendar month `dueMonth` (1-12), or spread evenly when the due date is unknown. */
+export type PremiumDue = { name: string; amount: number; everyMonths: number; dueMonth: number | null };
+const PAYMENTS_PER_YEAR: Record<string, number> = { Monthly: 12, Quarterly: 4, 'Half-yearly': 2, Yearly: 1, Single: 1 };
+
+/** Premium falling due in a calendar month ('YYYY-MM'). Policies with no due date are spread over the year. */
+export function premiumsDueIn(schedule: PremiumDue[], month: string) {
+  const m = Number(month.slice(5, 7));
+  return schedule.reduce((sum, p) => {
+    if (p.dueMonth === null) return sum + p.amount * (12 / p.everyMonths) / 12;
+    return sum + ((((m - p.dueMonth) % p.everyMonths) + p.everyMonths) % p.everyMonths === 0 ? p.amount : 0);
+  }, 0);
+}
 export type DebtInput = { id: string; name: string; balance: number; annualRate: number; payment: number; parked?: number; isOd?: boolean };
 
 export function monthlyPayment(balance: number, annualRate: number, months: number) {
@@ -22,7 +34,7 @@ export function monthlyPayment(balance: number, annualRate: number, months: numb
 
 export function planningSnapshot(records: PlanningRecord[], asOf = indiaDate()) {
   let monthlySalary = 0, monthlyRent = 0, monthlyDividend = 0, savingsBalance = 0, cashAtHome = 0, odParked = 0, monthlyInvestment = 0, monthlyPremium = 0;
-  const debts: DebtInput[] = [], warnings: string[] = [], rentals: Record<string, any>[] = [];
+  const debts: DebtInput[] = [], warnings: string[] = [], rentals: Record<string, any>[] = [], premiumSchedule: PremiumDue[] = [];
   const propertyIds = new Set(records.filter(r => r.module_key === 'property').map(r => r.id));
   for (const record of records) {
     const d = record.data || {}, category = String(d.category || '').toLowerCase();
@@ -45,7 +57,11 @@ export function planningSnapshot(records: PlanningRecord[], asOf = indiaDate()) 
     }
     if (record.module_key === 'insurance') {
       const policy = calculateInsurance(d, new Date(`${asOf}T12:00:00`));
-      if (policy.premiumStatus === 'PAYING' && !/^(closed|lapsed|paid-up|matured)$/i.test(String(d.status || ''))) monthlyPremium += policy.annualPremium / 12;
+      if (policy.premiumStatus === 'PAYING' && !/^(closed|lapsed|paid-up|matured)$/i.test(String(d.status || ''))) {
+        monthlyPremium += policy.annualPremium / 12;
+        const perYear = PAYMENTS_PER_YEAR[normalizeInsurancePolicy(d).premium_frequency] || 1, due = String(policy.nextPremiumDueDate || '');
+        if (policy.annualPremium > 0) premiumSchedule.push({ name: String(d.security_name || d.policy_name || 'Policy'), amount: policy.annualPremium / perYear, everyMonths: 12 / perYear, dueMonth: validDate(due) ? Number(due.slice(5, 7)) : null });
+      }
     }
     if (['loans', 'property'].includes(record.module_key) && isOverdraftLoan(d)) odParked += Math.max(0, num(d.od_parked_balance));
     if (['loans', 'borrowings', 'property'].includes(record.module_key)) {
@@ -67,7 +83,7 @@ export function planningSnapshot(records: PlanningRecord[], asOf = indiaDate()) 
   const monthlyRegular = monthlyRegularTotal(recurringPayments(records));
   const directExpenses = monthlyDirectExpenses(records, asOf.slice(0, 7));
   const availableCashFlow = monthlyIncome - monthlyEmi - monthlyPremium - monthlyInvestment - monthlyRegular - directExpenses;
-  return { monthlyDirectExpenses: directExpenses, monthlyRegular, rentals, monthlySalary, monthlyRent, monthlyDividend, savingsBalance, cashAtHome, odParked, liquidity: savingsBalance + cashAtHome + odParked, monthlyIncome, monthlyEmi, availableCashFlow, monthlyInvestment, monthlyPremium, debts, warnings };
+  return { monthlyDirectExpenses: directExpenses, monthlyRegular, rentals, monthlySalary, monthlyRent, monthlyDividend, savingsBalance, cashAtHome, odParked, liquidity: savingsBalance + cashAtHome + odParked, monthlyIncome, monthlyEmi, availableCashFlow, monthlyInvestment, monthlyPremium, annualPremium: monthlyPremium * 12, premiumSchedule, debts, warnings };
 }
 
 export function projectWealth(input: { starting: number; years: number; annualReturn: number; inflation: number; monthly: number; annualStepUp: number; contributionYears: number; retirementMonthly: number }) {
@@ -117,7 +133,7 @@ export function amortizeDebt(debt: DebtInput, extra = 0) {
   return { months: null, interest, paidOff: false };
 }
 
-export function projectCashFlow(input: { opening: number; income: number; expenses: number; investment: number; premiums: number; debts: DebtInput[]; extraDebtId?: string; extraPayment?: number; sweepToOd?: boolean; rentals?: Record<string, any>[]; asOf?: string }) {
+export function projectCashFlow(input: { opening: number; income: number; expenses: number; investment: number; premiums: number; premiumSchedule?: PremiumDue[]; debts: DebtInput[]; extraDebtId?: string; extraPayment?: number; sweepToOd?: boolean; rentals?: Record<string, any>[]; asOf?: string }) {
   const date = input.asOf || indiaDate(), [year, month] = date.split('-').map(Number);
   let cash = num(input.opening);
   const balances = input.debts.map(d => Math.max(0, d.balance)), parked = input.debts.map(d => Math.max(0, num(d.parked)));
@@ -134,7 +150,10 @@ export function projectCashFlow(input: { opening: number; income: number; expens
     // Income reflects today's lettings, so adjust it for vacancies that start or end during the forecast.
     const rentChange = (input.rentals || []).reduce((sum, rental) => sum + Math.max(0, num(rental.monthly_rent)) * (occupiedShareOfMonth(rental, label) - (isEarningRent(rental, date) ? 1 : 0)), 0);
     const income = Math.max(0, Math.max(0, input.income) + rentChange);
-    const surplus = income - Math.max(0, input.expenses) - Math.max(0, input.investment) - Math.max(0, input.premiums) - debtPayment;
+    // With a schedule, `premiums` is the yearly total and each policy is paid in its due month; otherwise it is a monthly amount.
+    const schedule = input.premiumSchedule, scheduledYear = schedule ? schedule.reduce((sum, p) => sum + p.amount * (12 / p.everyMonths), 0) : 0;
+    const premiums = !schedule ? Math.max(0, input.premiums) : scheduledYear > 0 ? premiumsDueIn(schedule, label) * Math.max(0, input.premiums) / scheduledYear : Math.max(0, input.premiums) / 12;
+    const surplus = income - Math.max(0, input.expenses) - Math.max(0, input.investment) - premiums - debtPayment;
     if (sweepIndex >= 0 && surplus > 0) parked[sweepIndex] += surplus;
     else cash += surplus;
     // Parked OD money is available cash: a shortfall draws on it once other cash runs out.
@@ -143,7 +162,7 @@ export function projectCashFlow(input: { opening: number; income: number; expens
       parked[i] -= drawn; cash += drawn;
     }
     const parkedTotal = parked.reduce((sum, value) => sum + value, 0);
-    return { month: label, income, debtPayment, interest, surplus, closing: cash, parked: parkedTotal, liquidity: cash + parkedTotal };
+    return { month: label, income, premiums, debtPayment, interest, surplus, closing: cash, parked: parkedTotal, liquidity: cash + parkedTotal };
   });
 }
 

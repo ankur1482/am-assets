@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { amortizeDebt, goalForecast, marketProjection, monthlyPayment, planningSnapshot, projectCashFlow, projectWealth } from './predictions';
+import { amortizeDebt, goalForecast, marketProjection, monthlyPayment, planningSnapshot, premiumsDueIn, projectCashFlow, projectWealth } from './predictions';
 
 describe('predictive planning calculations', () => {
   it('stops contributions at retirement and applies inflation-adjusted withdrawals', () => {
@@ -145,5 +145,34 @@ describe('predictive planning calculations', () => {
     expect(result.annualVolatility).toBe(0);
     expect(result.horizons[0]).toMatchObject({ central: 100, low: 100, high: 100 });
     expect(result.ma50).toBeNull();
+  });
+});
+
+describe('insurance as a yearly expense', () => {
+  it('builds a schedule from each policy, paid in the month it falls due', () => {
+    const p = planningSnapshot([
+      { id: 't', module_key: 'insurance', data: { security_name: 'Term', category: 'Term Plan', status: 'Active', premium_amount: 24000, premium_frequency: 'Yearly', premium_due_date: '2027-01-15', policy_start_date: '2020-01-15', policy_end_date: '2050-01-15' } },
+      { id: 'h', module_key: 'insurance', data: { security_name: 'Health', category: 'Health Insurance', status: 'Active', premium_amount: 3000, premium_frequency: 'Quarterly', premium_due_date: '2026-12-01', policy_start_date: '2024-12-01', policy_end_date: '2040-12-01' } },
+    ], '2026-11-10');
+    expect(p.annualPremium).toBe(36000);
+    expect(p.premiumSchedule).toEqual([
+      { name: 'Term', amount: 24000, everyMonths: 12, dueMonth: 1 },
+      { name: 'Health', amount: 3000, everyMonths: 3, dueMonth: 12 },
+    ]);
+    expect(premiumsDueIn(p.premiumSchedule, '2027-01')).toBe(24000);
+    expect(premiumsDueIn(p.premiumSchedule, '2027-03')).toBe(3000);
+    expect(premiumsDueIn(p.premiumSchedule, '2026-12')).toBe(3000);
+    expect(premiumsDueIn(p.premiumSchedule, '2027-02')).toBe(0);
+  });
+
+  it('charges the yearly total in due months, scaled when the total is edited', () => {
+    const premiumSchedule = [{ name: 'Term', amount: 24000, everyMonths: 12, dueMonth: 1 }];
+    const flow = { asOf: '2026-11-10', opening: 0, income: 50000, expenses: 0, investment: 0, debts: [], premiumSchedule };
+    const points = projectCashFlow({ ...flow, premiums: 24000 });
+    expect(points.map(p => p.premiums)).toEqual([0, 24000, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+    expect(points[1]).toMatchObject({ month: '2027-01', surplus: 26000 });
+    expect(projectCashFlow({ ...flow, premiums: 12000 })[1].premiums).toBe(12000);
+    // No policies saved: a yearly amount typed in is spread evenly.
+    expect(projectCashFlow({ ...flow, premiumSchedule: [], premiums: 12000 })[0].premiums).toBe(1000);
   });
 });

@@ -49,6 +49,45 @@ describe("goalFunding", () => {
   });
 });
 
+describe("goals with chosen funding sources", () => {
+  const assets = [
+    { key: "stocks", label: "Stocks", value: 500_000 },
+    { key: "fixedIncome", label: "Fixed Income", value: 1_000_000 },
+  ];
+  const holdings = [
+    { id: "s1", moduleKey: "stocks", label: "A", value: 300_000 },
+    { id: "s2", moduleKey: "stocks", label: "B", value: 200_000 },
+    { id: "ppf", moduleKey: "fixedIncome", label: "PPF", value: 600_000 },
+    { id: "fd", moduleKey: "fixedIncome", label: "FD", value: 400_000 },
+  ];
+
+  it("values a goal from its chosen holdings and shares the rest with other goals", () => {
+    const r = goalFunding(assets, [{ key: "loans", label: "Loans", value: 100_000 }], [
+      { id: "edu", name: "Education", target: 1_000_000, priority: "High", sources: ["rec:ppf", "type:stocks"] },
+      { id: "car", name: "Car", target: 800_000, priority: "Low" },
+    ], asOf, holdings);
+    const edu = r.goals.find((g) => g.id === "edu")!, car = r.goals.find((g) => g.id === "car")!;
+    expect(edu).toMatchObject({ funding: "selected", allocated: 1_000_000, gap: 0 });
+    // Net 1,400,000 minus the 1,100,000 set aside for Education leaves 300,000.
+    expect(r.setAside).toBe(1_100_000);
+    expect(car).toMatchObject({ funding: "shared", allocated: 300_000, gap: 500_000 });
+  });
+
+  it("gives a holding chosen by two goals to the higher priority one only", () => {
+    const r = goalFunding(assets, [], [
+      { id: "low", name: "Low", target: 900_000, priority: "Low", sources: ["rec:ppf"] },
+      { id: "high", name: "High", target: 900_000, priority: "High", sources: ["type:fixedIncome"] },
+    ], asOf, holdings);
+    expect(r.goals.map((g) => [g.id, g.allocated])).toEqual([["high", 900_000], ["low", 0]]);
+    expect(r.setAside).toBe(1_000_000);
+  });
+
+  it("ignores malformed sources", () => {
+    const r = goalFunding(assets, [], [{ id: "x", name: "X", target: 100, sources: ["", "nope", 5 as any] }], asOf, holdings);
+    expect(r.goals[0].funding).toBe("shared");
+  });
+});
+
 describe("monthsUntil", () => {
   it("counts whole months and handles blanks and past dates", () => {
     expect(monthsUntil("2027-11-10", asOf)).toBe(12);

@@ -39,7 +39,7 @@ import {
 import { supabase } from "@/lib/supabase";
 import { startForegroundRefresh } from "@/lib/foregroundRefresh";
 import { APP_VERSION } from "@/lib/appVersion";
-import { goalFunding } from "@/lib/goals";
+import { cleanSources, goalFunding, holdingSource, holdingsFor, typeSource, type Holding } from "@/lib/goals";
 import { LOCKED_TABS, normalizeHiddenTabs, toggleHiddenTab } from "@/lib/hiddenTabs";
 import MonthlyUploads from "@/components/MonthlyUploads";
 import BackupCenter, { type BackupTarget } from "@/components/BackupCenter";
@@ -255,6 +255,9 @@ const groups = [
   ["Admin", ["admin"]],
 ];
 const allViews = [...views, ["admin", "Admin", "Admin Console"]];
+// Asset types a goal can be paid from, in the order the Goals page lists them.
+const GOAL_ASSET_KEYS = ["fixedIncome", "stocks", "mutualFunds", "bullion", "property", "ulips", "nsel", "otherAssets", "insurance"];
+const goalTypeLabel = (k: string) => (k === "bullion" ? "Gold & Silver" : MODULES[k]?.title || k);
 const INVESTMENT_SOURCE_OPTIONS: Record<string, { label: string; value: string; note: string }[]> = {
   stocks: [
     { label: "Auto fallback", value: "auto", note: "Configured order, then Yahoo" },
@@ -10288,7 +10291,7 @@ export default function AssetManagerApp() {
   function predictivePlannerView() {
     return <div className="space-y-5">
       {phoneMode && canViewModule(MONTHLY_VALUATION_MODULE) && <button type="button" className="btn" onClick={() => setView(MONTHLY_VALUATION_MODULE)}><BarChart3 size={15} /> Month on Month</button>}
-      {phoneMode && workspaceAccess.all_modules && <button type="button" className="btn" onClick={() => setView("earnings")}><Users size={15} /> Earnings by Person</button>}      <PredictivePlanner key={`${user?.id}:${activeWorkspaceId}:${plannerTab}`} records={records} netWorth={totals.net} accessToken={session?.access_token || ""} initialTab={plannerTab} />
+      {phoneMode && workspaceAccess.all_modules && <button type="button" className="btn" onClick={() => setView("earnings")}><Users size={15} /> Earnings by Person</button>}      <PredictivePlanner key={`${user?.id}:${activeWorkspaceId}:${plannerTab}`} records={records} netWorth={totals.net} accessToken={session?.access_token || ""} initialTab={plannerTab} goalCurrent={goalCurrentValues()} />
       <details className="forecast-legacy">
         <summary>Advanced contribution combinations and AI commentary</summary>
         <p className="forecast-note">This separate calculator keeps its own assumptions. Its outputs may differ from the Predictive Planner above.</p>
@@ -14829,20 +14832,29 @@ export default function AssetManagerApp() {
     }
     return formatCell(col, c[col]);
   }
-  // Goals page: every asset at today's value (as if cashed in), minus every
-  // loan, measured against the goal targets. Uses the same figures as the
-  // Overall Dashboard's My Networth line.
-  function goalsFundingPanel() {
-    const assetKeys = ["fixedIncome", "stocks", "mutualFunds", "bullion", "property", "ulips", "nsel", "otherAssets", "insurance"];
-    const assetClasses = assetKeys
-      .filter((k) => MODULES[k])
-      .map((k) => ({
-        key: k,
-        label: k === "bullion" ? "Gold & Silver" : MODULES[k].title,
-        value: records
-          .filter((r) => r.module_key === k)
-          .reduce((s, r) => s + num(computeLiveRecord(k, r.data).latest), 0),
-      }));
+  // Goals: every asset at today's value (as if cashed in), minus every loan,
+  // measured against the goal targets. Uses the same figures as the Overall
+  // Dashboard's My Networth line. Shared by the Goals page, the goals table
+  // and the Predictive Planner so all three agree.
+  function goalHoldingLabel(k: string, d: Record<string, any>) {
+    const name =
+      k === "bullion" ? bullionDisplayName(d)
+      : k === "property" ? [d.security_name, d.location || d.broker].filter(Boolean).join(" · ")
+      : k === "fixedIncome" ? [d.category, d.broker || d.security_name].filter(Boolean).join(" · ")
+      : d.security_name || d.policy_name || d.category;
+    return [name || "Holding", d.account_name].filter(Boolean).join(" — ");
+  }
+  function goalFundingNow() {
+    const holdings: Holding[] = GOAL_ASSET_KEYS.filter((k) => MODULES[k]).flatMap((k) =>
+      records
+        .filter((r) => r.module_key === k)
+        .map((r) => ({ id: r.id, moduleKey: k, label: goalHoldingLabel(k, r.data || {}), value: num(computeLiveRecord(k, r.data).latest) })),
+    );
+    const assetClasses = GOAL_ASSET_KEYS.filter((k) => MODULES[k]).map((k) => ({
+      key: k,
+      label: goalTypeLabel(k),
+      value: holdings.filter((h) => h.moduleKey === k).reduce((s, h) => s + h.value, 0),
+    }));
     const sumBalance = (k: string) =>
       records.filter((r) => r.module_key === k).reduce((s, r) => s + num(computeRecord(k, r.data).balance), 0);
     const propertyLoans = records
@@ -14855,16 +14867,34 @@ export default function AssetManagerApp() {
       { key: "propertyLoans", label: "Property loans", value: propertyLoans },
       { key: "borrowings", label: "Borrowings", value: MODULES.borrowings ? sumBalance("borrowings") : 0 },
     ];
-    const goalInputs = records
-      .filter((r) => r.module_key === "goals")
-      .map((r) => ({
-        id: r.id,
-        name: String(r.data?.security_name || r.data?.category || "Goal"),
-        target: num(r.data?.target_amount),
-        targetDate: r.data?.target_date ? String(r.data.target_date) : undefined,
-        priority: r.data?.priority ? String(r.data.priority) : undefined,
-      }));
-    const f = goalFunding(assetClasses, liabilityClasses, goalInputs);
+    const goalRecords = records.filter((r) => r.module_key === "goals");
+    const goalInputs = goalRecords.map((r) => ({
+      id: r.id,
+      name: String(r.data?.security_name || r.data?.category || "Goal"),
+      target: num(r.data?.target_amount),
+      targetDate: r.data?.target_date ? String(r.data.target_date) : undefined,
+      priority: r.data?.priority ? String(r.data.priority) : undefined,
+      sources: cleanSources(r.data?.funding_sources),
+    }));
+    return { f: goalFunding(assetClasses, liabilityClasses, goalInputs, new Date(), holdings), holdings, goalRecords };
+  }
+  /** Each goal's value today, by goal id, for the goals table and the Predictive Planner. */
+  function goalCurrentValues() {
+    return Object.fromEntries(goalFundingNow().f.goals.map((g) => [g.id, { value: g.allocated, funding: g.funding }]));
+  }
+  async function setGoalSources(goal: Rec, sources: string[]) {
+    if (!canEditModule("goals")) {
+      setToast("This household access is read-only for Goals");
+      return;
+    }
+    try {
+      await saveRecordData(goal.id, withSystemDates({ ...goal.data, funding_sources: cleanSources(sources) }, goal));
+    } catch (e: any) {
+      setToast(e?.message || "Could not save what pays for this goal");
+    }
+  }
+  function goalsFundingPanel() {
+    const { f, holdings, goalRecords } = goalFundingNow();
     if (!f.target) {
       return (
         <div className="mb-4 rounded-2xl border border-[#ded6c4] bg-[#f7fbf5] p-4 text-sm text-[#37534a]">
@@ -14957,11 +14987,29 @@ export default function AssetManagerApp() {
             </div>
           ))}
         </div>
-        {f.goals.length > 1 && (
-          <div className="mt-4">
-            <div className="mb-2 text-sm font-semibold text-[#17382b]">Each goal, funded in order of priority, then nearest date</div>
-            <div className="space-y-2">
-              {f.goals.map((g) => (
+        <div className="mt-4">
+          <div className="mb-1 text-sm font-semibold text-[#17382b]">What pays for each goal</div>
+          <p className="mb-2 text-xs text-gray-600">
+            Pick a whole type (such as All Fixed Income) or single holdings for a goal, and its value is worked out live from them.
+            A goal with nothing picked shares whatever net worth is left after loans and after the picked holdings, high priority first, then the nearest date.
+          </p>
+          <div className="space-y-2">
+            {f.goals.map((g) => {
+              const record = goalRecords.find((r) => r.id === g.id);
+              const sources = cleanSources(g.sources);
+              // Holdings already picked by another goal are greyed out so nothing is counted twice.
+              const takenElsewhere = new Set(
+                f.goals.filter((o) => o.id !== g.id).flatMap((o) => holdingsFor(o.sources, holdings).map((h) => h.id)),
+              );
+              const sourceLabel = (src: string) => {
+                if (src.startsWith("type:")) {
+                  const k = src.slice(5);
+                  return `All ${goalTypeLabel(k)} (${fmt(holdings.filter((h) => h.moduleKey === k).reduce((t, h) => t + h.value, 0))})`;
+                }
+                const h = holdings.find((x) => x.id === src.slice(4));
+                return h ? `${h.label} (${fmt(h.value)})` : "Removed holding";
+              };
+              return (
                 <div key={g.id} className="rounded-xl border border-[#e3dccc] px-3 py-2 text-sm">
                   <div className="flex flex-wrap items-baseline justify-between gap-2">
                     <span className="font-semibold">
@@ -14980,11 +15028,71 @@ export default function AssetManagerApp() {
                   <div className="mt-1 h-2 w-full overflow-hidden rounded bg-[#eef1ec]">
                     <div className="h-full bg-emerald-600" style={{ width: `${Math.min(100, g.fundedPct)}%` }} />
                   </div>
+                  <div className="mt-2 flex flex-wrap items-center gap-2">
+                    {sources.length ? (
+                      sources.map((src) => (
+                        <span key={src} className="inline-flex items-center gap-1 rounded-full border border-[#cfe3d6] bg-[#f3faf5] px-2.5 py-1 text-xs font-semibold text-[#17382b]">
+                          {sourceLabel(src)}
+                          {record && (
+                            <button
+                              type="button"
+                              className="ml-1 text-gray-500 hover:text-red-700"
+                              aria-label={`Stop using ${sourceLabel(src)} for ${g.name}`}
+                              onClick={() => setGoalSources(record, sources.filter((x) => x !== src))}
+                            >
+                              ×
+                            </button>
+                          )}
+                        </span>
+                      ))
+                    ) : (
+                      <span className="text-xs text-gray-500">Sharing your net worth</span>
+                    )}
+                    {record && (
+                      <select
+                        className="field-input !w-auto max-w-full text-xs"
+                        aria-label={`Add what pays for ${g.name}`}
+                        value=""
+                        disabled={!canEditModule("goals")}
+                        onChange={(event) => {
+                          const value = event.target.value;
+                          if (!value) return;
+                          // A whole type replaces single holdings of that type it already covers.
+                          const next = value.startsWith("type:")
+                            ? [...sources.filter((x) => !(x.startsWith("rec:") && holdings.find((h) => h.id === x.slice(4))?.moduleKey === value.slice(5))), value]
+                            : [...sources, value];
+                          setGoalSources(record, next);
+                        }}
+                      >
+                        <option value="">+ Add what pays for this goal…</option>
+                        {GOAL_ASSET_KEYS.filter((k) => holdings.some((h) => h.moduleKey === k && h.value > 0)).map((k) => {
+                          const own = holdings.filter((h) => h.moduleKey === k && h.value > 0);
+                          const wholeType = typeSource(k), hasWhole = sources.includes(wholeType);
+                          return (
+                            <optgroup key={k} label={goalTypeLabel(k)}>
+                              <option value={wholeType} disabled={hasWhole || own.some((h) => takenElsewhere.has(h.id))}>
+                                All {goalTypeLabel(k)} ({fmt(own.reduce((t, h) => t + h.value, 0))})
+                              </option>
+                              {own.map((h) => (
+                                <option
+                                  key={h.id}
+                                  value={holdingSource(h.id)}
+                                  disabled={hasWhole || sources.includes(holdingSource(h.id)) || takenElsewhere.has(h.id)}
+                                >
+                                  {h.label} ({fmt(h.value)}){takenElsewhere.has(h.id) ? " — used by another goal" : ""}
+                                </option>
+                              ))}
+                            </optgroup>
+                          );
+                        })}
+                      </select>
+                    )}
+                  </div>
                 </div>
-              ))}
-            </div>
+              );
+            })}
           </div>
-        )}
+        </div>
       </div>
     );
   }
@@ -14996,6 +15104,14 @@ export default function AssetManagerApp() {
               ...records.filter((r) => r.module_key === k),
               ...propertyLoanLiabilityRecords(),
             ]
+          : k === "goals"
+            ? (() => {
+                // The table shows each goal's live value, the same one the panel above and the Planner use.
+                const current = goalCurrentValues();
+                return records
+                  .filter((r) => r.module_key === k)
+                  .map((r) => (current[r.id] ? { ...r, data: { ...r.data, current_value: Math.round(current[r.id].value) } } : r));
+              })()
           : records.filter((r) => r.module_key === k && !r.data?.sold_out),
       stockWatchlistCount =
         k === "stocks"
@@ -15772,7 +15888,8 @@ export default function AssetManagerApp() {
                               e.stopPropagation();
                               setDetail({
                                 moduleKey: k,
-                                record: r,
+                                // Goals rows carry their live value; editing must start from what is saved.
+                                record: k === "goals" ? records.find((x) => x.id === r.id) || r : r,
                                 computed: c,
                                 cols: detailCols,
                                 linkedProperty:

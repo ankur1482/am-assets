@@ -612,6 +612,14 @@ test.describe('logged-in app', () => {
     await expect(page.getByText('Ahead of target by')).toBeVisible();
     await expect(page.getByText('Loans and borrowings', { exact: true })).toBeVisible();
     for (const name of ['Fixed Income', 'Property']) await expect(page.locator('section').getByText(name, { exact: true }).first()).toBeVisible();
+
+    // Pick what pays for the goal: its value then comes from those holdings, and the choice is saved.
+    const picker = page.getByRole('combobox', { name: 'Add what pays for Example Goal' });
+    await picker.selectOption({ value: 'type:fixedIncome' });
+    await expect(page.getByRole('button', { name: /Stop using All Fixed Income \(₹/ })).toBeVisible();
+    await expect.poll(() => app.writes.some(w => w.table === 'records' && JSON.stringify(w.body).includes('type:fixedIncome'))).toBe(true);
+    await page.getByRole('button', { name: /Stop using All Fixed Income/ }).click();
+    await expect(page.getByText('Sharing your net worth')).toBeVisible();
     await expectHealthy(page, app, 'goals funding');
   });
 

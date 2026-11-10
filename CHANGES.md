@@ -15,6 +15,15 @@ These backups cover the app itself, not your financial data. Your data is covere
 
 ---
 
+## Version 10.13 (10 Nov 2026, 12:12): Choose what pays for each goal; insurance as a yearly cost
+
+Backup taken before this release: `backup-2026-11-10-1212-IST`
+
+- **Pick what pays for a goal.** Under **What pays for each goal** on the Goals page, every goal has a dropdown listing your holdings by type: Fixed Income, Stocks, Mutual Funds, Gold & Silver, Property and the rest. Choose a whole type (for example **All Fixed Income**) or single items (one PPF, one stock). The goal's value is then worked out live from them, and its bar, shortfall and monthly amount update at once. Remove a choice with the × on its label.
+- **Nothing counted twice.** Something already chosen for one goal is greyed out for the others. Goals with nothing chosen share whatever net worth is left after loans and after the chosen holdings, high priority first, then the nearest date.
+- **One set of figures everywhere.** The Current Value column in the goals table and the Predictive Planner's **Goal readiness** tab now use these same live values, instead of a number typed in by hand. The **Current Value** box has been removed from the goal form for that reason.
+- **Insurance is a yearly cost in the Planner.** On **Cash flow & loans**, the box is now **Insurance premiums / year**, filled in from your active policies. Each premium comes out of the forecast in the month it falls due, not as a small amount every month. A new **Insurance this year** card shows the total and when the next premium is due. **Available cash flow / month** no longer subtracts insurance.
+
 ## Version 10.12 (10 Nov 2026, 11:58): How far you are from your goals, and choose your menu tabs
 
 Backup taken before this release: `backup-2026-11-10-1158-IST`
