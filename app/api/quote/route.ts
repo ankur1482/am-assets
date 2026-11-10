@@ -457,12 +457,14 @@ async function yahooQuote(symbol: string, exchange: string) {
   const exchangeTz = meta.exchangeTimezoneName || "Asia/Kolkata";
   const dateKey = (epochSeconds: number) =>
     new Date(epochSeconds * 1000).toLocaleDateString("en-CA", { timeZone: exchangeTz });
-  const todayKey = dateKey(Date.now() / 1000);
-  // The daily-bar array may or may not include a partially-formed bar for
-  // today depending on market hours; only drop it if it's actually dated
-  // today, so a genuinely completed last session isn't discarded.
+  // The current price belongs to the session of regularMarketTime. That
+  // session's own bar must be dropped before taking previousClose, or on a
+  // weekend/holiday (price = last session's close) the change shows as 0.
+  // Fall back to "today" when Yahoo gives no market time.
+  const marketTime = number(meta.regularMarketTime);
+  const sessionKey = dateKey(marketTime ?? Date.now() / 1000);
   const completedBars =
-    bars.length && dateKey(bars[bars.length - 1].ts) === todayKey ? bars.slice(0, -1) : bars;
+    bars.length && dateKey(bars[bars.length - 1].ts) === sessionKey ? bars.slice(0, -1) : bars;
   const price = number(meta.regularMarketPrice) ?? bars.at(-1)?.close ?? number(meta.previousClose);
   const previousClose =
     completedBars.at(-1)?.close ?? number(meta.previousClose ?? meta.chartPreviousClose);

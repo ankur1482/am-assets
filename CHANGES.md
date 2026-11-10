@@ -13,6 +13,14 @@ These backups cover the app itself, not your financial data. Your data is covere
 
 ---
 
+## 10 Nov 2026, 11:35: Mutual fund prices refresh again
+
+Backup taken before this release: `backup-2026-11-10-1132-IST`
+
+- **Mutual fund NAVs were not updating.** AMFI, the official source for fund prices, added two columns ("Plan" and "Option") to its daily price file and moved it to a new web address. The app was reading the wrong column, so every fund said "NAV not available". It now finds the price column by its heading. If AMFI moves columns again, the app keeps working.
+- **Today's change on holidays and weekends.** When the market is closed, for example today's Diwali Balipratipada holiday, stocks showed a change of 0 for the day. They now show the change from the last trading day, as most brokers do.
+- **Stock, gold and silver prices staying the same today is expected.** NSE is closed for the holiday, so the latest price is Monday's close.
+
 ## 10 Nov 2026, 00:09: Buttons and headings no longer split words
 
 Backup taken before this release: `backup-2026-11-10-0009-IST`
