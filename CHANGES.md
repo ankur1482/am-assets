@@ -15,6 +15,18 @@ These backups cover the app itself, not your financial data. Your data is covere
 
 ---
 
+## Version 10.32 (10 Nov 2026, 20:52): Goals always use your latest investment figures
+
+Backup taken before this release: `backup-2026-11-10-2052-IST`
+
+- **Always up to date, without reloading.** The app now quietly fetches your latest saved records:
+  - whenever you open a screen
+  - when you come back to the app or the browser window
+  - every two minutes
+
+  Goals, Home and every table therefore match your investments even after a change made on another device or in another tab. It never does this while a form or record is open, so nothing you are typing is lost.
+- **Properties count the same in Goals as in the property table.** A property now funds a goal at its **Realised value**: today's value less what is to clear (the loan in use after money parked in the OD, plus any builder amount already inside the value). A home being built shows how much has been paid so far. Before, a home being built counted only the money paid from your own pocket, which could differ from the property table.
+
 ## Version 10.31 (10 Nov 2026, 20:40): Homes being built counted the way you value them, a clearer property table, totals under tables
 
 Backup taken before this release: `backup-2026-11-10-2011-IST`

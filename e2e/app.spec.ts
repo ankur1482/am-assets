@@ -483,6 +483,24 @@ test.describe('logged-in app', () => {
     await expectHealthy(page, app, 'net worth breakdown');
   });
 
+  test('goals pick up a change to an investment without reloading the page', async ({ page }) => {
+    test.skip(isPhone(page), 'Covered on desktop');
+    test.setTimeout(90_000);
+    const records = fixtureRecords();
+    const app = await openApp(page, records);
+    await open(page, app, 'Goals');
+    const picker = page.getByRole('combobox', { name: 'Add what pays for Example Goal' });
+    // A property counts at its realised value: today's value less what is to clear.
+    await expect(picker.locator('option', { hasText: 'worth ₹70,00,000 less ₹15,00,000 to clear (₹55,00,000)' })).toHaveCount(1);
+    // The property's value changes elsewhere (another device); coming back to the app picks it up.
+    const home = records.find((r) => r.module_key === 'property' && r.data?.broker === 'Example Heights')!;
+    home.data = { ...home.data, latest_value: 8000000 };
+    await page.waitForTimeout(21_000);
+    await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+    await expect(picker.locator('option', { hasText: 'worth ₹80,00,000 less ₹15,00,000 to clear (₹65,00,000)' })).toHaveCount(1, { timeout: 15_000 });
+    await expectHealthy(page, app, 'goals refresh');
+  });
+
   test('holdings tables end with a total row that adds up the money columns', async ({ page }) => {
     test.skip(isPhone(page), 'Desktop table');
     const app = await signedIn(page);
@@ -684,7 +702,7 @@ test.describe('logged-in app', () => {
     // Pick what pays for the goal: its value then comes from those holdings, and the choice is saved.
     const picker = page.getByRole('combobox', { name: 'Add what pays for Example Goal' });
     // A property counts at its value less its own loan (net of money parked in its OD): 70L - (25L - 10L).
-    await expect(picker.locator('option', { hasText: 'worth ₹70,00,000 less loan ₹15,00,000 (₹55,00,000)' })).toHaveCount(1);
+    await expect(picker.locator('option', { hasText: 'worth ₹70,00,000 less ₹15,00,000 to clear (₹55,00,000)' })).toHaveCount(1);
     await picker.selectOption({ value: 'type:fixedIncome' });
     await expect(page.getByRole('button', { name: /Stop using All Fixed Income \(₹/ })).toBeVisible();
     await expect.poll(() => app.writes.some(w => w.table === 'records' && JSON.stringify(w.body).includes('type:fixedIncome'))).toBe(true);

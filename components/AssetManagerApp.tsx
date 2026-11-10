@@ -2044,6 +2044,25 @@ export default function AssetManagerApp() {
     }
     if (changed) await loadAll(true);
   }
+  // Keep every screen on the latest saved records, so Goals, Home and the tables always match the
+  // investments, even after a change on another device or tab. Reloads quietly on opening a screen, on
+  // coming back to the app and every two minutes, at most every 20 seconds, and never while a form is open.
+  const lastRecordsSync = useRef(0);
+  useEffect(() => {
+    if (!user?.id || editing || detail) return;
+    const sync = () => {
+      if (Date.now() - lastRecordsSync.current < 20_000) return;
+      lastRecordsSync.current = Date.now();
+      loadAll(true);
+    };
+    const onShow = () => { if (document.visibilityState === "visible") sync(); };
+    sync();
+    const timer = setInterval(sync, 2 * 60_000);
+    document.addEventListener("visibilitychange", onShow);
+    window.addEventListener("focus", sync);
+    return () => { clearInterval(timer); document.removeEventListener("visibilitychange", onShow); window.removeEventListener("focus", sync); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id, activeWorkspaceId, view, editing, detail]);
   const totals = useMemo(
     () => computeLiveTotals(records),
     [records, bullionMarket],
@@ -15236,15 +15255,14 @@ Salary will stop counting as income, Company PF contributions will stop (interes
         .map((r) => {
           const gross = num(computeLiveRecord(k, r.data).latest);
           if (k !== "property") return { id: r.id, moduleKey: k, label: goalHoldingLabel(k, r.data || {}), value: gross, gross };
-          // A property funds a goal only with what is left after its own home loan (net of money parked in an OD).
-          // A home being built counts at what you have paid into it from your own money, when entered.
-          // Own-money stage payments recorded under Homes being built, or the single amount typed on the property.
-          const selfFunded = isUnderConstruction(r.data || {}) ? constructionSummary(r.data).own : 0;
-          if (selfFunded > 0)
-            return { id: r.id, moduleKey: k, label: `${goalHoldingLabel(k, r.data || {})} — being built, paid ${fmt(selfFunded)} from own money`, value: selfFunded, gross };
-          const c = computeRecord("property", r.data), loan = num(c.loan_balance) > 0 ? Math.max(0, num(c.net_loan_balance)) : 0;
-          const label = goalHoldingLabel(k, r.data || {}) + (loan ? ` — worth ${fmt(gross)} less loan ${fmt(loan)}` : "");
-          return { id: r.id, moduleKey: k, label, value: Math.max(0, gross - loan), gross };
+          // A property funds a goal with its realised value, the same figure as in the property table: today's value
+          // less the loan in use (after money parked in an OD) and any builder amount inside that value.
+          const c = computeLiveRecord("property", r.data), realised = Math.max(0, num(c.realised_value)), toClear = num(c.to_clear);
+          const building = isUnderConstruction(r.data || {}) ? constructionSummary(r.data) : null;
+          const label = goalHoldingLabel(k, r.data || {}) +
+            (building && building.paid > 0 ? ` — being built, paid ${fmt(building.paid)} so far` : "") +
+            (toClear > 0 ? ` — worth ${fmt(gross)} less ${fmt(toClear)} to clear` : "");
+          return { id: r.id, moduleKey: k, label, value: realised, gross };
         }),
     );
     // Totals use full values; loans are subtracted once, as liabilities.
