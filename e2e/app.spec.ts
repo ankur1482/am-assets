@@ -746,4 +746,35 @@ test.describe('logged-in app', () => {
     await expect(page.locator('.investment-table').getByText('₹30,00,000').first()).toBeVisible();
     await expectHealthy(page, app, 'homes being built');
   });
+
+  test('goal, property, planner and admin screens fit a phone and stay readable', async ({ page }) => {
+    test.skip(!isPhone(page), 'Phone layout only');
+    const app = await signedIn(page);
+    const go = async (name: string) => {
+      await page.getByRole('button', { name: 'Open menu' }).click();
+      await page.locator('.mobile-menu-panel').getByRole('button', { name, exact: true }).click();
+    };
+    const fits = async (where: string) => {
+      const widths = await page.evaluate(() => { const el = document.querySelector('.phone-content .phone-screen') as HTMLElement; return [el.scrollWidth, el.clientWidth]; });
+      expect(widths[0], `${where} is wider than the phone`).toBeLessThanOrEqual(widths[1] + 1);
+    };
+    await go('Goals');
+    const card = page.locator('.phone-goal-card').first();
+    await expect(card).toBeVisible();
+    // Dark text on the light card, not the phone screen's pale default.
+    expect(await card.locator('b').first().evaluate(e => getComputedStyle(e).color)).toBe('rgb(23, 56, 43)');
+    await expect(page.locator('.phone-content').getByText('What pays for each goal')).toBeVisible();
+    await fits('Goals');
+    await go('Property');
+    await expect(page.locator('.phone-content').getByRole('heading', { name: 'Homes being built' })).toBeVisible();
+    await fits('Property');
+    await go('Admin Console');
+    await expect(page.locator('.phone-content').getByRole('heading', { name: 'Growth Rates' })).toBeVisible();
+    await fits('Admin Console');
+    await go('Predictive Planner');
+    await page.locator('.phone-content').getByText('Cash & loans', { exact: true }).first().click();
+    await expect(page.locator('.phone-content').getByText(/Choose from your records/).first()).toBeVisible();
+    await fits('Planner cash flow');
+    await expectHealthy(page, app, 'phone screens from today');
+  });
 });

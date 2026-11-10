@@ -5492,6 +5492,16 @@ export default function AssetManagerApp() {
         </div>
       );
     if (view === "earnings") return <div className="phone-screen p-3">{earningsPanel()}</div>;
+    // Phone-only screens for today's goal and admin tools; desktop shows its own versions.
+    if (phoneMode && view === "goals")
+      return (
+        <div className="phone-screen space-y-3 p-3">
+          {plannerShortcut("goals")}
+          {phoneGoalsList()}
+          {goalsFundingPanel()}
+        </div>
+      );
+    if (phoneMode && view === "admin") return isAdmin ? <div className="phone-screen p-3">{adminConsole()}</div> : null;
     if (view === "settings")
       return <div className="phone-screen">{settings()}</div>;
     if (view === "purchaseCalculator")
@@ -5748,6 +5758,7 @@ export default function AssetManagerApp() {
                   : "phone-red",
               )}
           </section>
+          {phoneMode && view === "property" && <div className="mt-3">{constructionPanel(phoneRecords.filter((r) => r.module_key === "property"))}</div>}
           <h3 className="phone-section-title">Consolidated Holdings</h3>
           <div className={`phone-list ${view === "property" ? "phone-property-list" : ""}`}>
             {moduleRows.length ? (
@@ -13890,7 +13901,7 @@ export default function AssetManagerApp() {
       active = adminUsers.filter((u) => !u.banned_until).length,
       admins = adminUsers.filter((u) => u.role === "admin").length;
     return (
-      <div className="space-y-5">
+      <div className="phone-light-card space-y-5">
         <div className="grid grid-cols-4 gap-4 max-xl:grid-cols-2 max-md:grid-cols-1">
           {kpi(
             "Users",
@@ -13981,7 +13992,7 @@ export default function AssetManagerApp() {
               Show all tabs
             </button>
           </div>
-          <div className="grid grid-cols-3 gap-4 max-xl:grid-cols-2 max-md:grid-cols-1">
+          <div className="phone-one-col grid grid-cols-3 gap-4 max-xl:grid-cols-2 max-md:grid-cols-1">
             {groups
               .map(([g, ids]: any) => [g, (ids as string[]).filter((id) => !LOCKED_TABS.includes(id))] as const)
               .filter(([, ids]) => ids.length)
@@ -14109,8 +14120,8 @@ export default function AssetManagerApp() {
               Explore embedded themes and tune the app typography.
             </p>
           </div>
-          <div className="grid gap-4 xl:grid-cols-[1.4fr_.9fr]">
-            <div className="grid gap-3 md:grid-cols-2">
+          <div className="phone-one-col grid gap-4 xl:grid-cols-[1.4fr_.9fr]">
+            <div className="phone-one-col grid gap-3 md:grid-cols-2">
               {APP_THEMES.map((theme) => (
                 <button
                   key={theme.id}
@@ -15094,7 +15105,7 @@ export default function AssetManagerApp() {
         <p className="mt-2 text-xs text-gray-600">
           A home is kept for good, so its value is not counted towards any goal or retirement. Its home loan still counts, as it has to be repaid.
         </p>
-        <div className="mt-2 grid gap-1 sm:grid-cols-2">
+        <div className="phone-one-col mt-2 grid gap-1 sm:grid-cols-2">
           {candidates.map((r) => (
             <label key={r.id} className="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1 hover:bg-white">
               <input
@@ -15126,6 +15137,55 @@ export default function AssetManagerApp() {
     }
   }
   /** Properties being built: full price, stage payments made so far, and what is still to pay the builder. */
+  /** Goals on the phone: one card each, coloured by where it is heading, with the same figures as the desktop table. */
+  function phoneGoalsList() {
+    const goals = records.filter((r) => r.module_key === "goals");
+    if (!goals.length) return <Empty text="No goals yet. Tap + to add one." />;
+    const current = goalCurrentValues(), ahead = goalProjectionsById();
+    const rows = goals
+      .map((r) => ({ r, now: current[r.id]?.value ?? 0, next: ahead[r.id] }))
+      .sort((a, b) => (a.next?.status.rank ?? 3) - (b.next?.status.rank ?? 3));
+    const tone = (key?: string) =>
+      key === "on" ? ["border-l-emerald-500 bg-emerald-50/60", "bg-emerald-100 text-emerald-800", "text-emerald-700"]
+      : key === "close" ? ["border-l-amber-400 bg-amber-50/70", "bg-amber-100 text-amber-900", "text-amber-700"]
+      : key === "off" ? ["border-l-red-500 bg-red-50/60", "bg-red-100 text-red-800", "text-red-700"]
+      : ["border-l-gray-300 bg-white", "bg-gray-100 text-gray-600", "text-gray-700"];
+    const totals = rows.reduce((t, x) => ({ target: t.target + num(x.r.data?.target_amount), now: t.now + x.now, projected: t.projected + (x.next?.p?.projected || 0) }), { target: 0, now: 0, projected: 0 });
+    return (
+      <section className="phone-light-card space-y-2" aria-label="Goals">
+        <div className="rounded-2xl border border-[#ded6c4] bg-white p-3 text-sm">
+          <div className="flex justify-between"><span className="text-gray-600">All targets</span><b className="tabular-nums">{fmt(totals.target)}</b></div>
+          <div className="flex justify-between"><span className="text-gray-600">Today</span><b className="tabular-nums">{fmt(totals.now)}</b></div>
+          <div className="flex justify-between"><span className="text-gray-600">Expected by target dates</span><b className="tabular-nums">{fmt(totals.projected)}</b></div>
+        </div>
+        {rows.map(({ r, now, next }) => {
+          const [card, badge, text] = tone(next?.status.key), target = num(r.data?.target_amount), p = next?.p;
+          return (
+            <button
+              key={r.id}
+              type="button"
+              className={`phone-goal-card block w-full rounded-2xl border border-[#e3dccc] border-l-4 p-3 text-left text-sm ${card}`}
+              onClick={() => document.getElementById(`goal-card-${r.id}`)?.scrollIntoView({ behavior: "smooth", block: "start" })}
+            >
+              <div className="flex items-start justify-between gap-2">
+                <span className="min-w-0">
+                  <b className="block">{String(r.data?.security_name || "Goal")}</b>
+                  <span className="text-xs text-gray-600">{r.data?.target_date ? `by ${formatDate(r.data.target_date)}` : "No target date"}</span>
+                </span>
+                <span className={`shrink-0 rounded-[999px] px-2 py-0.5 text-xs font-bold ${badge}`}>{next?.status.label || "—"}</span>
+              </div>
+              <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 text-xs">
+                <span className="text-gray-600">Target</span><span className="text-right font-semibold tabular-nums">{fmt(target)}</span>
+                <span className="text-gray-600">Today</span><span className="text-right font-semibold tabular-nums">{fmt(now)}</span>
+                {p && <><span className="text-gray-600">Expected by target date</span><span className={`text-right font-bold tabular-nums ${text}`}>{fmt(p.projected)} ({target ? Math.round((p.projected / target) * 100) : 0}%)</span></>}
+                {p && p.gap > 0 && <><span className="text-gray-600">Extra a month needed</span><span className="text-right font-semibold tabular-nums">{fmt(p.monthlyNeeded)}</span></>}
+              </div>
+            </button>
+          );
+        })}
+      </section>
+    );
+  }
   /** A totals line under the goals table: amounts added up, and how many goals are in each status. */
   function goalsTotalsRow(goals: any[], cols: string[]) {
     const sum = (col: string) => goals.reduce((t, c) => t + num(c[col]), 0);
@@ -15167,7 +15227,7 @@ export default function AssetManagerApp() {
       .map((r) => constructionSummary(r.data))
       .reduce((t, b) => ({ total: t.total + b.total, paid: t.paid + b.paid, pending: t.pending + b.pending }), { total: 0, paid: 0, pending: 0 });
     return (
-      <div className="mb-4 rounded-3xl border border-[#ded6c4] bg-white p-4 shadow-sm">
+      <div className="phone-light-card mb-4 rounded-3xl border border-[#ded6c4] bg-white p-4 shadow-sm">
         <div className="mb-2 flex flex-wrap items-baseline justify-between gap-2">
           <h4 className="text-base font-semibold text-[#17382b]">Homes being built</h4>
           <span className="text-sm tabular-nums">
@@ -15473,12 +15533,12 @@ export default function AssetManagerApp() {
     const { f, holdings, goalRecords, homeRecords, homeValue, protection } = goalFundingNow();
     if (!f.target) {
       return (
-        <>
+        <div className="phone-light-card">
           {homeQuestion(homeRecords, homeValue)}
           <div className="mb-4 rounded-2xl border border-[#ded6c4] bg-[#f7fbf5] p-4 text-sm text-[#37534a]">
             Add a goal with a <b>Target Amount</b> to see how far your current net worth (all assets minus all loans) is from it.
           </div>
-        </>
+        </div>
       );
     }
     const colors = ["#2f7d5b", "#3b6fb6", "#7a5bb5", "#c9962b", "#a0522d", "#2a9d8f", "#6b7f2a", "#8c6d62", "#4f6d7a"];
@@ -15489,7 +15549,7 @@ export default function AssetManagerApp() {
       <div className="relative h-7 w-full overflow-hidden rounded-lg bg-[#eef1ec]">{children}</div>
     );
     return (
-      <div className="mb-4 rounded-3xl border border-[#ded6c4] bg-white p-4 shadow-sm">
+      <div className="phone-light-card mb-4 rounded-3xl border border-[#ded6c4] bg-white p-4 shadow-sm">
         {homeQuestion(homeRecords, homeValue)}
         <div className="mb-3 grid grid-cols-4 gap-3 max-lg:grid-cols-2">
           {[
@@ -15552,7 +15612,7 @@ export default function AssetManagerApp() {
             <div className="mt-1 text-right text-[10px] font-semibold uppercase tracking-wide text-gray-500">Black line = target</div>
           </div>
         </div>
-        <div className="mt-4 grid grid-cols-3 gap-2 max-lg:grid-cols-2 max-sm:grid-cols-1">
+        <div className="phone-one-col mt-4 grid grid-cols-3 gap-2 max-lg:grid-cols-2 max-sm:grid-cols-1">
           {f.assets.map((a, i) => (
             <div key={a.key} className="flex items-center justify-between gap-2 rounded-xl border border-[#e3dccc] px-3 py-2 text-sm">
               <span className="flex items-center gap-2">

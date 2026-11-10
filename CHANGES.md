@@ -15,6 +15,15 @@ These backups cover the app itself, not your financial data. Your data is covere
 
 ---
 
+## Version 10.20 (10 Nov 2026, 14:17): Today's changes fitted to the phone
+
+Backup taken before this release: `backup-2026-11-10-1417-IST`
+
+- **Goals on the phone.** The Goals screen now has the same tools as the computer. At the top is a summary (all targets, today, expected by the target dates), then one card per goal, coloured green, amber or red like the computer table. Each card shows the target date, target, today, expected value and extra a month needed. Tap a card to jump to its details. Below are the home question, the funding picture, the growth rates, and for each goal the **Add what pays** and **Plan an investment** dropdowns and the projection.
+- **Homes being built on the phone.** The Property screen shows the **Homes being built** section, where you can record payments to the builder.
+- **Admin Console on the phone.** It now opens on the phone, with Growth Rates and Menu Tabs.
+- **Fixes.** The long goal dropdowns used to push the phone screen sideways; dropdowns now fit the screen width. Text on the new cards was too pale to read and is now dark. Lists that were squeezed into two narrow columns (homes, asset types, menu tabs, Appearance Lab) are now one per line on a phone.
+
 ## Version 10.19 (10 Nov 2026, 14:01): Stage payments for homes being built, and a goals total
 
 Backup taken before this release: `backup-2026-11-10-1401-IST`

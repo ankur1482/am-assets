@@ -3818,3 +3818,38 @@ thead th {
 .investment-table tbody tr.goal-status-off > td:first-child { box-shadow: inset 4px 0 0 #ef4444 !important; }
 .investment-table tbody tr.goal-status-none > td:first-child { box-shadow: inset 4px 0 0 #d1d5db !important; }
 .investment-table tbody tr[class*="goal-status-"]:hover > td { filter: brightness(0.98); }
+
+/*
+ * Phone: today's goal, planner and property tools. Dropdowns with long option names (such as
+ * "+ Add what pays for this goal") fit the screen instead of stretching it sideways, and the
+ * light cards keep dark text, since the phone screen's default text colour is light.
+ */
+@media (max-width: 1024px) {
+  .phone-screen > * { min-width: 0; max-width: 100%; }
+  .phone-screen select.field-input,
+  .phone-screen select {
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+    text-overflow: ellipsis;
+  }
+  .phone-screen .phone-light-card,
+  .phone-screen .phone-light-card :where(b, strong, span, label, summary, p, div, legend, td, th, h3, h4) {
+    color: #17382b;
+  }
+  .phone-screen .phone-light-card .text-gray-500,
+  .phone-screen .phone-light-card .text-gray-600 { color: #5b6b63; }
+  .phone-screen .phone-light-card .text-emerald-700 { color: #047857; }
+  .phone-screen .phone-light-card .text-red-700 { color: #b91c1c; }
+  .phone-screen .phone-light-card .text-amber-700 { color: #b45309; }
+  .phone-screen .phone-light-card .text-amber-900 { color: #78350f; }
+  .phone-screen .phone-light-card .text-emerald-800 { color: #065f46; }
+  .phone-screen .phone-light-card .text-red-800 { color: #991b1b; }
+  .phone-screen .phone-light-card .text-blue-900 { color: #1e3a8a; }
+  .phone-screen .phone-light-card .text-\[\#1f2f6b\] { color: #1f2f6b; }
+  .phone-screen .phone-light-card .btn-primary { color: #fff; }
+}
+@media (max-width: 1024px) {
+  /* Lists that read better one per line on a phone than in the usual two columns. */
+  .phone-screen .grid.phone-one-col { grid-template-columns: minmax(0, 1fr) !important; }
+}
