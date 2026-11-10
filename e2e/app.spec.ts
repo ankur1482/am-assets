@@ -706,4 +706,25 @@ test.describe('logged-in app', () => {
     await expect.poll(() => app.writes.some(w => w.table === 'records' && JSON.stringify(w.body).includes('planned_investments'))).toBe(true);
     await expectHealthy(page, app, 'planned investments');
   });
+
+  test('goals table shows where each goal is heading, colour-coded and sortable, and table rows stay short', async ({ page }) => {
+    test.skip(isPhone(page), 'Phones show cards');
+    const app = await signedIn(page);
+    await open(page, app, 'Goals');
+    const table = page.locator('.investment-table').first();
+    await expect(table.getByRole('button', { name: 'Sort goals by Expected by target date' })).toBeVisible();
+    await expect(table.getByText('On track', { exact: true })).toBeVisible();
+    await expect(table.locator('tbody tr').first()).toHaveClass(/goal-status-on/);
+    await table.getByRole('button', { name: 'Sort goals by Goal' }).click();
+    await expect(table.locator('th[aria-sort="ascending"]')).toHaveCount(1);
+    // The table comes before the funding detail.
+    const tableTop = (await table.boundingBox())!.y, panelTop = (await page.getByText('Total target').boundingBox())!.y;
+    expect(tableTop).toBeLessThan(panelTop);
+
+    // Rows stay one line tall: no money amount or word splits across lines.
+    await open(page, app, 'Loans');
+    const row = page.locator('.investment-table tbody tr').first();
+    expect((await row.boundingBox())!.height).toBeLessThan(60);
+    await expectHealthy(page, app, 'goals table');
+  });
 });

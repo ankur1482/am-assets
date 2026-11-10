@@ -628,8 +628,20 @@ const insuranceColWidth = (col: string) =>
       : ["premium_end_date", "policy_end_date", "next_premium_due_date"].includes(col)
         ? "105px"
         : "92px";
+// Plain names for the goals table, including the figures projected to each target date.
+const GOAL_LABELS: Record<string, string> = {
+  security_name: "Goal",
+  current_value: "Today",
+  gap: "Short today",
+  projected_value: "Expected by target date",
+  projected_gap: "Expected shortfall",
+  extra_monthly: "Extra a month needed",
+  projection_status: "Status",
+};
 const fieldLabel = (moduleKey: string, field: string) =>
-  moduleKey === "property" && field === "broker"
+  moduleKey === "goals" && GOAL_LABELS[field]
+    ? GOAL_LABELS[field]
+    : moduleKey === "property" && field === "broker"
     ? "Community"
     : moduleKey === "bullion" && field === "current_price"
       ? "MCX / Moneycontrol Price"
@@ -1031,6 +1043,8 @@ export default function AssetManagerApp() {
     [hiddenTabsPending, setHiddenTabsPending] = useState<string[] | null>(null),
     [plannerPicksPending, setPlannerPicksPending] = useState<SourcePicks | null>(null),
     [homeListOpen, setHomeListOpen] = useState<boolean | null>(null),
+    // Goals table starts with the goals needing the most work first.
+    [goalsSort, setGoalsSort] = useState<{ key: string; direction: "asc" | "desc" }>({ key: "projection_status", direction: "asc" }),
     [plannedDraft, setPlannedDraft] = useState<{ goalId: string; type: keyof GrowthRates; mode: "monthly" | "once"; amount: string; note: string } | null>(null),
     [goalGrowthInput, setGoalGrowthInput] = useState<Partial<Record<keyof GrowthRates, string>>>({}),
     [sourcePrefs, setSourcePrefs] = useState<Record<string, string>>(() => {
@@ -14623,6 +14637,11 @@ export default function AssetManagerApp() {
     return 0;
   }
   function marketRowClass(k: string, c: any) {
+    // Goals are tinted by where they are heading: green on track, amber close, red needs work.
+    if (k === "goals")
+      return (
+        { "On track": "goal-status-on", Close: "goal-status-close", "Needs work": "goal-status-off" } as Record<string, string>
+      )[String(c.projection_status)] || "goal-status-none";
     if (!["stocks", "mutualFunds", "ulips", "bullion", "nsel", "fixedIncome", "property", "otherAssets"].includes(k))
       return "hover:bg-[#f7faf6]";
     const move = marketMove(k, c);
@@ -14720,6 +14739,27 @@ export default function AssetManagerApp() {
     );
   }
   function formatModuleCell(moduleKey: string, col: string, c: any, record?: Rec) {
+    if (moduleKey === "goals" && ["projection_status", "projected_value", "projected_gap", "extra_monthly"].includes(col)) {
+      const status = String(c.projection_status || "");
+      const tone = status === "On track" ? "emerald" : status === "Close" ? "amber" : status === "Needs work" ? "red" : "gray";
+      if (c.projected_value === "" || c.projected_value === undefined) return <span className="text-gray-400">—</span>;
+      if (col === "projection_status")
+        return (
+          <span className={`goal-status-badge inline-flex whitespace-nowrap rounded-[999px] px-2.5 py-1 text-xs font-bold ${{ emerald: "bg-emerald-100 text-emerald-800", amber: "bg-amber-100 text-amber-900", red: "bg-red-100 text-red-800", gray: "bg-gray-100 text-gray-600" }[tone]}`}>
+            {status}
+          </span>
+        );
+      if (col === "projected_value")
+        return (
+          <span className={`font-bold tabular-nums ${{ emerald: "text-emerald-700", amber: "text-amber-700", red: "text-red-700", gray: "" }[tone]}`}>
+            {fmt(c.projected_value)}
+            <span className="block text-[10px] font-semibold opacity-80">{c.projected_pct}% of target</span>
+          </span>
+        );
+      if (col === "projected_gap")
+        return num(c.projected_gap) > 0 ? <span className="font-semibold tabular-nums text-red-700">{fmt(c.projected_gap)}</span> : <span className="font-semibold text-emerald-700">None</span>;
+      return num(c.extra_monthly) > 0 ? <span className="font-semibold tabular-nums">{fmt(c.extra_monthly)}</span> : <span className="text-emerald-700">₹0</span>;
+    }
     if (moduleKey === "stocks" && col === "security_name") {
       const fullName = String(c[col] || ""),
         shortName = compactName(fullName),
@@ -15184,7 +15224,8 @@ export default function AssetManagerApp() {
     };
   }
   /** Where a goal is heading by its target date if its holdings keep growing and deposits continue. */
-  function goalProjectionBlock(g: GoalFunding, holdings: (Holding & { gross: number })[], unclaimedIds: string[]) {
+  /** Where one goal is heading by its target date, or null without a target amount or date. */
+  function goalProjection(g: GoalFunding, holdings: (Holding & { gross: number })[], unclaimedIds: string[]) {
     if (!g.target || g.monthsLeft === null) return null;
     const rates = goalGrowthRates();
     const itemFor = (h: Holding & { gross: number }): ProjectionItem => {
@@ -15204,8 +15245,29 @@ export default function AssetManagerApp() {
     }
     // Investments the user plans to make for this goal grow alongside what they already hold.
     items = [...items, ...plannedItems(cleanPlanned(records.find((r) => r.id === g.id)?.data?.planned_investments), rates)];
-    if (!items.length) return null;
-    const p = projectGoal({ target: g.target, months: g.monthsLeft, items });
+    return projectGoal({ target: g.target, months: g.monthsLeft, items });
+  }
+  /** On track (100%+), close (80% to 99%), needs work (under 80%), or no date to project to. */
+  function goalStatus(p: ReturnType<typeof projectGoal> | null, target: number) {
+    if (!p) return { key: "none", label: "Add a target date", rank: 3 } as const;
+    const share = target ? p.projected / target : 0;
+    if (share >= 1) return { key: "on", label: "On track", rank: 2 } as const;
+    if (share >= 0.8) return { key: "close", label: "Close", rank: 1 } as const;
+    return { key: "off", label: "Needs work", rank: 0 } as const;
+  }
+  /** Projection figures for every goal, by id, for the goals table. */
+  function goalProjectionsById() {
+    const { f, holdings } = goalFundingNow();
+    return Object.fromEntries(
+      f.goals.map((g) => {
+        const p = goalProjection(g, holdings, f.unclaimedIds), status = goalStatus(p, g.target);
+        return [g.id, { p, status, target: g.target }];
+      }),
+    );
+  }
+  function goalProjectionBlock(g: GoalFunding, holdings: (Holding & { gross: number })[], unclaimedIds: string[]) {
+    const p = goalProjection(g, holdings, unclaimedIds);
+    if (!p || !p.items.length) return null;
     const shareOfTarget = g.target ? Math.min(999, (p.projected / g.target) * 100) : 0;
     return (
       <div className="mt-2 rounded-lg border border-[#e3dccc] bg-[#fbfaf6] p-2 text-xs">
@@ -15389,7 +15451,7 @@ export default function AssetManagerApp() {
                 return "Removed holding";
               };
               return (
-                <div key={g.id} className="rounded-xl border border-[#e3dccc] px-3 py-2 text-sm">
+                <div key={g.id} id={`goal-card-${g.id}`} className="scroll-mt-24 rounded-xl border border-[#e3dccc] px-3 py-2 text-sm transition-shadow">
                   <div className="flex flex-wrap items-baseline justify-between gap-2">
                     <span className="font-semibold">
                       {g.name}
@@ -15487,10 +15549,27 @@ export default function AssetManagerApp() {
           : k === "goals"
             ? (() => {
                 // The table shows each goal's live value, the same one the panel above and the Planner use.
-                const current = goalCurrentValues();
+                // It also carries where each goal is heading by its target date, and a status for its colour.
+                const current = goalCurrentValues(), ahead = goalProjectionsById();
                 return records
                   .filter((r) => r.module_key === k)
-                  .map((r) => (current[r.id] ? { ...r, data: { ...r.data, current_value: Math.round(current[r.id].value) } } : r));
+                  .map((r) => {
+                    const now = current[r.id], next = ahead[r.id];
+                    if (!now) return r;
+                    return {
+                      ...r,
+                      data: {
+                        ...r.data,
+                        current_value: Math.round(now.value),
+                        projected_value: next?.p ? Math.round(next.p.projected) : "",
+                        projected_gap: next?.p ? Math.round(next.p.gap) : "",
+                        extra_monthly: next?.p ? Math.round(next.p.monthlyNeeded) : "",
+                        projection_status: next?.status.label || "",
+                        projection_rank: next?.status.rank ?? 3,
+                        projected_pct: next?.p && next.target ? Math.round((next.p.projected / next.target) * 100) : "",
+                      },
+                    };
+                  });
               })()
           : records.filter((r) => r.module_key === k && !r.data?.sold_out),
       stockWatchlistCount =
@@ -15563,6 +15642,17 @@ export default function AssetManagerApp() {
               return stockHoldingsSort.direction === "asc"
                 ? comparison
                 : -comparison;
+            })
+          : k === "goals"
+          ? [...matchedRows].sort((a, b) => {
+              const value = (c: any) =>
+                goalsSort.key === "projection_status" ? num(c.projection_rank)
+                : ["security_name", "category", "account_name"].includes(goalsSort.key) ? String(c[goalsSort.key] || "").toLowerCase()
+                : goalsSort.key === "target_date" ? String(c.target_date || "9999")
+                : num(c[goalsSort.key]);
+              const left = value(a.c), right = value(b.c),
+                comparison = typeof left === "string" ? left.localeCompare(String(right)) : num(left) - num(right);
+              return goalsSort.direction === "asc" ? comparison : -comparison;
             })
           : matchedRows,
       isInvestment = [
@@ -15827,7 +15917,6 @@ export default function AssetManagerApp() {
           </div>
         )}
         {k === "bullion" && bullionRatePanel()}
-        {k === "goals" && goalsFundingPanel()}
         {k === "stocks" && <div className="mb-4">{marketTodayHeader()}</div>}
         {isInvestment && (
           <div className="investment-summary-float" aria-label={`${def.title} investment summary`}>
@@ -16123,7 +16212,9 @@ export default function AssetManagerApp() {
                             ? stockHoldingsSort.direction === "asc"
                               ? "ascending"
                               : "descending"
-                            : undefined
+                            : k === "goals" && goalsSort.key === c
+                              ? goalsSort.direction === "asc" ? "ascending" : "descending"
+                              : undefined
                         }
                       >
                         {k === "stocks" ? (
@@ -16194,6 +16285,20 @@ export default function AssetManagerApp() {
                               />
                             )}
                           </button>
+                        ) : k === "goals" ? (
+                          <button
+                            type="button"
+                            className={`inline-flex w-full items-center gap-1 text-inherit ${["account_name", "security_name", "category"].includes(c) ? "justify-start text-left" : "justify-end text-right"}`}
+                            onClick={() => setGoalsSort((previous) => ({ key: c, direction: previous.key === c && previous.direction === "asc" ? "desc" : "asc" }))}
+                            aria-label={`Sort goals by ${fieldLabel(k, c)}`}
+                          >
+                            <span>{fieldLabel(k, c)}</span>
+                            {goalsSort.key === c ? (
+                              goalsSort.direction === "asc" ? <ArrowUp size={12} aria-hidden="true" /> : <ArrowDown size={12} aria-hidden="true" />
+                            ) : (
+                              <ArrowUpDown size={12} className="opacity-45" aria-hidden="true" />
+                            )}
+                          </button>
                         ) : k === "property" && c === "security_name" ? (
                           "Community"
                         ) : (
@@ -16230,6 +16335,16 @@ export default function AssetManagerApp() {
                         if (k === "bullion") {
                           openMcxCommodity();
                           return;
+                        }
+                        // A goal row jumps to its card above, where what pays for it can be changed.
+                        if (k === "goals") {
+                          const card = document.getElementById(`goal-card-${r.id}`);
+                          if (card) {
+                            card.scrollIntoView({ behavior: "smooth", block: "center" });
+                            card.classList.add("ring-2", "ring-[#0071e3]");
+                            setTimeout(() => card.classList.remove("ring-2", "ring-[#0071e3]"), 1600);
+                            return;
+                          }
                         }
                         // A community row is a total, so it opens its units rather than one unit's record.
                         if (k === "property" && lots.length > 1) {
@@ -16292,6 +16407,8 @@ export default function AssetManagerApp() {
         ) : (
           <Empty text={`No ${def.title} records yet.`} />
         )}
+        {/* Goals: the table of where each goal stands comes first; the detail and choices follow. */}
+        {k === "goals" && <div className="mt-4">{goalsFundingPanel()}</div>}
       </section>
     );
   }

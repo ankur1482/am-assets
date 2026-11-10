@@ -15,6 +15,25 @@ These backups cover the app itself, not your financial data. Your data is covere
 
 ---
 
+## Version 10.18 (10 Nov 2026, 13:40): A colour-coded goals table at the top, and shorter table rows
+
+Backup taken before this release: `backup-2026-11-10-1340-IST`
+
+- **The goals table now comes first** on the Goals page, above the funding details.
+- **It shows where each goal is heading**, using the same growth rates as the goal cards:
+  - **Expected by target date**: a realistic value at the target date, with the percentage of the target it reaches.
+  - **Expected shortfall**: what will still be missing at the target date.
+  - **Extra a month needed**: the extra monthly amount that closes it, allowing for growth (this replaces the old "monthly required", which ignored growth).
+- **Colour-coded status** for each goal:
+  - **On track** (green): expected to reach the target.
+  - **Close** (amber): 80% to 99% of the target.
+  - **Needs work** (red): under 80%.
+  - Grey means no target date yet.
+
+  Each row is tinted with a coloured stripe, and the table opens with the goals needing the most work first.
+- **Interactive.** Click any column heading to sort by it, and click again to reverse. Click a goal's row to jump to its card below, where you can change what pays for it. **Manage** still opens the goal to edit it.
+- **Shorter rows in every table on a computer** (Stocks, Property, Fixed Income, Loans, Goals and the rest). Amounts and words no longer break across lines (such as "₹85,00, / 000" or "Overdr / aft"), columns size themselves to their contents, and the row buttons are smaller. Rows are now about half as tall. Wide tables still scroll sideways. Phones are unchanged.
+
 ## Version 10.17 (10 Nov 2026, 13:16): Year-by-year growth, planned investments, homes being built
 
 Backup taken before this release: `backup-2026-11-10-1316-IST`
