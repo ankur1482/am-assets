@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from 'react';
-import { Plus, X } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
+import { Plus, Wallet, X } from 'lucide-react';
 import { fmt, formatDate, num } from '@/lib/calculations';
 import { expensesByTag, type CardSpend, type ExpenseTag } from '@/lib/expenses';
 
@@ -36,10 +37,30 @@ function ExpenseForm({ tags, today, lastTag, onSave, onDone }: { tags: ExpenseTa
   </form>;
 }
 
-/** Always-available button on the phone, so an expense can be logged the moment it happens. */
+/** How long the round + button floats over the page before it tucks into the header. */
+export const EXPENSE_BUTTON_FLOAT_MS = 15_000;
+// Once tucked away it stays in the header for the visit, even when the button is shown again after a dialog.
+let tuckedAway = false;
+
+/**
+ * Always-available button on the phone, so an expense can be logged the moment it happens. It floats
+ * at the bottom for 15 seconds, then moves to the top right of the header (into #expense-header-slot)
+ * so it no longer covers the page.
+ */
 export function QuickExpenseButton(props: { tags: ExpenseTag[]; today: string; lastTag: string; onSave: (expense: NewExpense) => Promise<boolean> }) {
-  const [open, setOpen] = useState(false);
-  if (!open) return <button type="button" className="expense-fab" aria-label="Add an expense" onClick={() => setOpen(true)}><Plus size={26} /></button>;
+  const [open, setOpen] = useState(false), [docked, setDocked] = useState(tuckedAway);
+  useEffect(() => {
+    if (docked || open) return;
+    const timer = setTimeout(() => { tuckedAway = true; setDocked(true); }, EXPENSE_BUTTON_FLOAT_MS);
+    return () => clearTimeout(timer);
+  }, [docked, open]);
+  // Docking only happens after the page is on screen, so the header slot is there to look up.
+  const slot = docked && typeof document !== 'undefined' ? document.getElementById('expense-header-slot') : null;
+  if (!open) {
+    if (docked && slot) return createPortal(<button type="button" className="mobile-icon-btn expense-header-btn" aria-label="Add an expense" title="Add an expense" onClick={() => setOpen(true)}><Wallet size={19} aria-hidden="true" /></button>, slot);
+    if (docked) return null;
+    return <button type="button" className="expense-fab" aria-label="Add an expense" onClick={() => setOpen(true)}><Plus size={26} /></button>;
+  }
   return <div className="expense-sheet" role="dialog" aria-modal="true" aria-label="Add an expense" onMouseDown={event => { if (event.target === event.currentTarget) setOpen(false); }}>
     <div>
       <header><h3>Add an expense</h3><button type="button" className="btn" aria-label="Close" onClick={() => setOpen(false)}><X size={16} /></button></header>

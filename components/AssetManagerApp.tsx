@@ -21,7 +21,6 @@ import {
   KeyRound,
   Layers,
   LogOut,
-  Menu,
   MoreHorizontal,
   Paperclip,
   PieChart,
@@ -4803,9 +4802,8 @@ export default function AssetManagerApp() {
     }
   }
   const heldTypes = new Set(records.map((r) => r.module_key));
-  // On the phone, an investment's people and views are listed in the side menu.
+  // Investment screens on the phone, picked from the side menu.
   const PHONE_INVEST_KEYS = ["stocks", "property", "bullion", "fixedIncome", "insurance", "mutualFunds", "ulips", "otherAssets", "nsel"];
-  const phoneInvestMode = phoneMode && PHONE_INVEST_KEYS.includes(view);
   const visibleGroups = groups
     .map(([g, ids]: any) => [
       g,
@@ -4977,15 +4975,14 @@ export default function AssetManagerApp() {
   }
   /**
    * Phone menu: a side panel from the left, like the desktop column, opened with the menu button and
-   * closed by tapping the page, swiping it left or picking an option. On an investment screen it
-   * also lists the people and views for that investment.
+   * closed by tapping the page, swiping it left or picking an option. An investment's people and
+   * views stay as a row on the screen itself.
    */
   function phoneSideMenu() {
     if (!investDrawerOpen) return null;
     const close = () => setInvestDrawerOpen(false);
     const investLabel = (id: string) => ({ bullion: "Gold/Silver", fixedIncome: "Fixed Income", mutualFunds: "Mutual Funds", ulips: "ULIPs", otherAssets: "Other Assets", nsel: "NSEL e-Series" } as Record<string, string>)[id] || allViews.find((v) => v[0] === id)?.[2] || id;
     const value = (k: string) => records.filter((r) => r.module_key === k && !r.data?.sold_out).reduce((s, r) => s + num(computeLiveRecord(k, r.data).latest), 0);
-    const onInvestment = PHONE_INVEST_KEYS.includes(view);
     const go = (id: string) => {
       if (PHONE_INVEST_KEYS.includes(id)) {
         setView(id);
@@ -5011,25 +5008,6 @@ export default function AssetManagerApp() {
             <b>Asset Manager <span className="text-xs font-semibold text-gray-500">v{APP_VERSION}</span></b>
             <button type="button" aria-label="Close menu" onClick={close}>✕</button>
           </div>
-          {onInvestment && mobileTabAccounts.length > 0 && (
-            <>
-              <div className="phone-invest-section">{investLabel(view)}: {view === "stocks" ? "people and views" : "people"}</div>
-              {mobileTabAccounts.map((account) => (
-                <button
-                  key={account}
-                  type="button"
-                  className={`phone-invest-item ${phoneAccountTab() === account ? "active" : ""}`}
-                  aria-current={phoneAccountTab() === account ? "page" : undefined}
-                  onClick={() => { setAccountTabs((p) => ({ ...p, __phone: account })); close(); }}
-                >
-                  <span>{account}</span>
-                  <span className="tabular-nums">
-                    {account === DIVIDENDS_EARNED_TAB ? receivedDividends(records).length : account === DIVIDEND_RADAR_TAB ? currentBuySignals().length : ""}
-                  </span>
-                </button>
-              ))}
-            </>
-          )}
           {visibleGroups.map(([g, ids]: any) => (
             <div key={g} className="phone-side-group">
               <div className="phone-invest-section">{g}</div>
@@ -5064,8 +5042,8 @@ export default function AssetManagerApp() {
     );
   }
   function phoneAccountStrip() {
-    // In the investments drawer on the phone, people and views are listed there instead.
-    if (!mobileTabAccounts.length || phoneInvestMode) return null;
+    // A row of people (and, on Stocks, views) right under the header on each investment screen.
+    if (!mobileTabAccounts.length) return null;
     return (
       <OneRowTabs
         label="Accounts"
@@ -8107,21 +8085,12 @@ export default function AssetManagerApp() {
       </aside>
       <main className="desktop-main min-w-0 max-w-full overflow-x-hidden p-6 max-lg:p-0">
         <div className="mobile-appbar">
-          <button
-            type="button"
-            className="mobile-icon-btn phone-menu-btn"
-            onClick={() => setInvestDrawerOpen(true)}
-            aria-label="Open menu"
-            aria-expanded={investDrawerOpen}
-          >
-            <Menu size={20} />
-          </button>
-          <button type="button" className="mobile-brand-copy" onClick={() => setInvestDrawerOpen(true)}>
+          <div className="mobile-brand-copy">
             <div className="text-[11px] font-semibold uppercase tracking-widest text-[#4f675b]">
-              {phoneInvestMode ? phoneAccountTab() : "asset manager"}
+              asset manager
             </div>
             <h2>{view === "bullion" ? "Gold/Silver" : allViews.find((v) => v[0] === view)?.[2]}</h2>
-          </button>
+          </div>
           <div className="flex gap-2">
             <button
               type="button"
@@ -8142,8 +8111,26 @@ export default function AssetManagerApp() {
                 <Plus size={14} /> Add
               </button>
             )}
+            {/* The quick-expense + button moves here after floating over the page for 15 seconds. */}
+            <span id="expense-header-slot" className="contents" />
           </div>
         </div>
+        {phoneMode && !investDrawerOpen && (
+          <button
+            type="button"
+            className="phone-menu-edge"
+            aria-label="Open menu"
+            aria-expanded={false}
+            onClick={() => setInvestDrawerOpen(true)}
+            onTouchStart={(e) => { (e.currentTarget as any).dataset.x = String(e.touches[0]?.clientX ?? ""); }}
+            onTouchMove={(e) => {
+              const start = Number((e.currentTarget as any).dataset.x);
+              if (Number.isFinite(start) && (e.touches[0]?.clientX ?? start) - start > 24) setInvestDrawerOpen(true);
+            }}
+          >
+            <ChevronRight size={20} aria-hidden="true" />
+          </button>
+        )}
         {phoneMode && phoneSideMenu()}
         {canSubmitUploads && uploadStatus.missing.length > 0 && view !== MONTHLY_UPLOAD_MODULE && (
           <button type="button" className="monthly-banner" onClick={() => setView(MONTHLY_UPLOAD_MODULE)}>

@@ -35,14 +35,17 @@ async function openInvestDrawer(page: Page) {
 }
 async function pickInvestment(page: Page, type?: string | RegExp, account?: string | RegExp) {
   if (type) await (await openInvestDrawer(page)).getByRole('button', { name: type }).first().click();
-  if (account) await (await openInvestDrawer(page)).getByRole('button', { name: account }).first().click();
   await expect(page.getByRole('dialog', { name: 'Menu' })).toHaveCount(0);
+  // People and views are a row on the investment screen itself.
+  if (account) await tapTab(page.getByRole('group', { name: 'Accounts' }), account);
 }
 async function phoneGo(page: Page, name: string) {
   await (await openInvestDrawer(page)).getByRole('button', { name: new RegExp(`^${name}`) }).first().click();
   await expect(page.getByRole('dialog', { name: 'Menu' })).toHaveCount(0);
 }
 const phoneTitle = (page: Page) => page.locator('.mobile-appbar .mobile-brand-copy');
+// The person or view picked in the row of accounts on an investment screen.
+const pickedAccount = (page: Page) => page.getByRole('group', { name: 'Accounts' }).locator('button[aria-pressed="true"]');
 
 test.describe('logged-in app', () => {
   test('opens the dashboard without crashing', async ({ page }) => {
@@ -268,16 +271,18 @@ test.describe('logged-in app', () => {
     const app = await signedIn(page);
     await phoneGo(page, 'Stocks');
     // The dividend views are listed in the side menu, and the header says which one is showing.
-    await expect(phoneTitle(page)).toContainText(/All.*Stocks/);
+    await expect(phoneTitle(page)).toContainText('Stocks');
+    await expect(pickedAccount(page)).toHaveText('All');
     await pickInvestment(page, undefined, /^Dividend Buy Radar/);
     await expect(page.getByText('This shows a date, not a recommendation.')).toBeVisible();
-    await expect(phoneTitle(page)).toContainText('Dividend Buy Radar');
+    await expect(pickedAccount(page)).toContainText('Dividend Buy Radar');
     await pickInvestment(page, undefined, /^Dividends Earned/);
     await expect(page.getByLabel('Dividends earned list').getByText('Sold Example')).toBeVisible();
     // A dividend view belongs to Stocks, so another type opens on All.
     await pickInvestment(page, /^Property/);
     await expect(page.getByText('Consolidated Holdings')).toBeVisible();
-    await expect(phoneTitle(page)).toContainText(/All.*Property/);
+    await expect(phoneTitle(page)).toContainText('Property');
+    await expect(pickedAccount(page)).toHaveText('All');
     await expectHealthy(page, app, 'phone dividend tabs');
   });
 
@@ -381,6 +386,11 @@ test.describe('logged-in app', () => {
       await page.setViewportSize({ width, height: 800 });
       // No rows of tabs above the content any more.
       await expect(page.getByRole('navigation', { name: 'Mobile section navigation' })).toHaveCount(0);
+      // The menu is pulled out from an arrow on the left edge, halfway down the screen.
+      const edge = (await page.getByRole('button', { name: 'Open menu', exact: true }).boundingBox())!;
+      expect(edge.x).toBe(0);
+      expect(Math.abs(edge.y + edge.height / 2 - 400), 'halfway down').toBeLessThan(4);
+      expect(edge.width).toBeLessThan(40);
       const menu = await openInvestDrawer(page), panel = menu.getByRole('navigation', { name: 'Main menu' });
       // It slides in, so wait for it to settle against the left edge.
       await expect.poll(async () => Math.round((await panel.boundingBox())!.x)).toBe(0);
@@ -506,8 +516,11 @@ test.describe('logged-in app', () => {
     await pickInvestment(page, /^Stocks/);
     const bar = page.locator('.mobile-appbar');
     await expect(bar).toBeVisible();
-    // People and views are in the side menu, so no rows of tabs sit above the content.
-    await expect(page.getByRole('group', { name: 'Accounts' })).toHaveCount(0);
+    // One row of people and views sits under the header, on a single line that fits the screen.
+    const accounts = page.getByRole('group', { name: 'Accounts' });
+    await expect(accounts).toBeVisible();
+    expect((await accounts.boundingBox())!.height).toBeLessThan(64);
+    expect(await accounts.evaluate((el) => el.getBoundingClientRect().right)).toBeLessThanOrEqual(321);
     await expect(page.getByRole('navigation', { name: 'Mobile section navigation' })).toHaveCount(0);
     expect((await bar.boundingBox())!.height).toBeLessThan(96);
     const add = page.locator('.phone-add-btn');
@@ -542,6 +555,21 @@ test.describe('logged-in app', () => {
     await signedIn(page);
     const right = () => page.getByRole('button', { name: 'Add an expense' }).evaluate((el) => el.getBoundingClientRect().right);
     await expect.poll(right).toBeLessThan(page.viewportSize()!.width / 2);
+  });
+
+  test('the phone add-expense button moves to the top right after 15 seconds unused', async ({ page }) => {
+    test.skip(!isPhone(page), 'Phone layout only');
+    test.setTimeout(60_000);
+    await signedIn(page);
+    await expect(page.locator('.expense-fab')).toBeVisible();
+    // After 15 seconds the floating button goes, and the same button sits in the header's top right.
+    await expect(page.locator('.expense-fab')).toHaveCount(0, { timeout: 25_000 });
+    const button = page.locator('.mobile-appbar').getByRole('button', { name: 'Add an expense' });
+    await expect(button).toBeVisible();
+    const box = (await button.boundingBox())!, header = (await page.locator('.mobile-appbar').boundingBox())!;
+    expect(box.x + box.width).toBeGreaterThan(header.x + header.width - 80);
+    await button.click();
+    await expect(page.getByRole('dialog', { name: 'Add an expense' })).toBeVisible();
   });
 
   test('the phone header is solid, and the last card scrolls clear of the + button', async ({ page }) => {

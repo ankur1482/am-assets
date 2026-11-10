@@ -15,6 +15,14 @@ These backups cover the app itself, not your financial data. Your data is covere
 
 ---
 
+## Version 10.28 (10 Nov 2026, 18:18): Menu arrow on the left edge, accounts row back, expense button moves to the top
+
+Backup taken before this release: `backup-2026-11-10-1818-IST`
+
+- **Open the menu from the left edge.** The ☰ button at the top left is gone. A small dark tab with an arrow (›) now sits on the left edge, halfway down the screen. Tap it, or pull it to the right, to slide the menu out. Tap anywhere on the page beside the menu to push it back.
+- **The row of people is back on investment screens.** When you open Stocks, Property or any other investment, the row with All, each person (and, on Stocks, Watchlist, ETFs, Dividends Earned and Dividend Buy Radar) sits right under the header again. It is no longer in the menu.
+- **The round + expense button gets out of the way.** It floats at the bottom left for 15 seconds after the app opens. Then it moves into the header, top right, as a blue wallet button, so it stops covering your figures. It works the same: tap it to log an expense.
+
 ## Version 10.27 (10 Nov 2026, 17:39): A side menu on the phone
 
 Backup taken before this release: `backup-2026-11-10-1739-IST`

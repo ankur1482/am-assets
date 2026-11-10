@@ -3914,3 +3914,20 @@ thead th {
   .phone-side-menu .phone-side-group + .phone-side-group { border-top: 1px solid #efe8da; margin-top: 6px; }
   .phone-side-menu .phone-side-toggle { font-size: 13px; color: #5b6b63; }
 }
+
+/* Phone: the side menu is pulled out from a small arrow tab on the left edge, halfway down. */
+.phone-menu-edge { display: none; }
+@media (max-width: 1024px) {
+  .phone-menu-edge {
+    position: fixed; left: 0; top: 50%; transform: translateY(-50%); z-index: 70;
+    display: flex; align-items: center; justify-content: center;
+    width: 26px; height: 64px; padding: 0 2px 0 0;
+    border-radius: 0 16px 16px 0 !important; border: 0;
+    background: #17382b !important; color: #fff !important; opacity: .88;
+    box-shadow: 4px 0 14px rgba(15,23,42,.22); touch-action: none;
+  }
+  .phone-menu-edge:active { opacity: 1; width: 32px; }
+}
+
+/* The quick-expense button once it has moved into the phone header. */
+.mobile-appbar .mobile-icon-btn.expense-header-btn, .app-shell .mobile-appbar .mobile-icon-btn.expense-header-btn { background: #0071e3 !important; color: #fff !important; border-color: #0071e3 !important; }
