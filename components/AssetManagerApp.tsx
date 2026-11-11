@@ -2046,14 +2046,18 @@ export default function AssetManagerApp() {
   }
   // Keep every screen on the latest saved records, so Goals, Home and the tables always match the
   // investments, even after a change on another device or tab. Reloads quietly on opening a screen, on
-  // coming back to the app and every two minutes, at most every 20 seconds, and never while a form is open.
-  const lastRecordsSync = useRef(0);
+  // coming back to the app and every two minutes, at most every 10 seconds, and never while a form is open.
+  // Elapsed time (performance.now), not the calendar clock, so a changed device clock cannot stop syncing.
+  const lastRecordsSync = useRef(-Infinity);
+  // Always the newest loadAll, so a timer or listener set up earlier never runs a stale copy of it.
+  const loadAllRef = useRef(loadAll);
+  loadAllRef.current = loadAll;
   useEffect(() => {
     if (!user?.id || editing || detail) return;
     const sync = () => {
-      if (Date.now() - lastRecordsSync.current < 20_000) return;
-      lastRecordsSync.current = Date.now();
-      loadAll(true);
+      if (performance.now() - lastRecordsSync.current < 10_000) return;
+      lastRecordsSync.current = performance.now();
+      loadAllRef.current(true);
     };
     const onShow = () => { if (document.visibilityState === "visible") sync(); };
     sync();
@@ -2061,7 +2065,6 @@ export default function AssetManagerApp() {
     document.addEventListener("visibilitychange", onShow);
     window.addEventListener("focus", sync);
     return () => { clearInterval(timer); document.removeEventListener("visibilitychange", onShow); window.removeEventListener("focus", sync); };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.id, activeWorkspaceId, view, editing, detail]);
   const totals = useMemo(
     () => computeLiveTotals(records),
@@ -15933,7 +15936,7 @@ Salary will stop counting as income, Company PF contributions will stop (interes
         </div>
         <div className="phone-one-col mt-4 grid grid-cols-3 gap-2 max-lg:grid-cols-2 max-sm:grid-cols-1">
           {f.assets.map((a, i) => (
-            <div key={a.key} className="flex items-center justify-between gap-2 rounded-xl border border-[#e3dccc] px-3 py-2 text-sm">
+            <div key={a.key} className="flex flex-wrap items-center justify-between gap-x-2 rounded-xl border border-[#e3dccc] px-3 py-2 text-sm">
               <span className="flex items-center gap-2">
                 <span className="inline-block h-3 w-3 shrink-0 rounded-sm" style={{ background: colors[i % colors.length] }} />
                 {a.label}
@@ -15942,6 +15945,13 @@ Salary will stop counting as income, Company PF contributions will stop (interes
                 <span className="font-semibold">{fmt(a.value)}</span>{" "}
                 <span className="text-xs text-gray-500">({a.shareOfTarget.toFixed(1)}% of target)</span>
               </span>
+              {/* Say how the property figure is reached, as the homes you live in are left out of it. */}
+              {a.key === "property" && homeValue > 0 && (
+                <span className="property-goal-note w-full text-xs text-gray-600">
+                  All property <span className="tabular-nums">{fmt(a.value + homeValue)}</span> less the home{homeRecords.length === 1 ? "" : "s"} you live in{" "}
+                  <span className="tabular-nums">{fmt(homeValue)}</span> ({homeRecords.map((r) => r.data?.broker || r.data?.security_name || "Home").join(", ")}), which goals leave out. Loans are taken off below.
+                </span>
+              )}
             </div>
           ))}
           {f.liabilities.map((l) => (

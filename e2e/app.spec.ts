@@ -744,6 +744,8 @@ test.describe('logged-in app', () => {
     await homeBox.click();
     await expect(homeBox).toBeChecked();
     await expect(page.getByText(/1 home \(₹60,00,000\) left out of goals and retirement/)).toBeVisible();
+    // The Property box says how its figure is reached.
+    await expect(page.locator('.property-goal-note')).toContainText('All property ₹1,70,00,000 less the home you live in ₹60,00,000');
     // Each goal is projected to its target date.
     await expect(page.getByText(/by 01-Jan-2032/).first()).toBeVisible();
     await expect(page.getByText(/If these keep growing and deposits continue/).first()).toBeVisible();
