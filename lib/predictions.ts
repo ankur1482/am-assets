@@ -1,5 +1,6 @@
 import { isCashAtHome, isDividendIncome, isEarningRent, isOverdraftLoan, isRentedProperty, isSavingsAccount, occupiedShareOfMonth, num } from './calculations';
 import { loansOf } from './plan/loans';
+import { monthsBetween } from './plan/dates';
 import { odPosition } from './plan/od';
 import { isPaidFromPayroll } from './plan/contributions';
 import { cardEstimate } from './plan/cards';
@@ -141,8 +142,8 @@ export function projectWealth(input: { starting: number; years: number; annualRe
 export function goalForecast(input: { current: number; target: number; targetDate: string; monthly: number; annualReturn: number; asOf?: string }) {
   const today = input.asOf || indiaDate();
   if (!validDate(input.targetDate) || !validDate(today) || num(input.target) <= 0) return null;
-  const [year, month, day] = today.split('-').map(Number), [targetYear, targetMonth, targetDay] = input.targetDate.split('-').map(Number);
-  const months = Math.max(0, (targetYear - year) * 12 + targetMonth - month + (targetDay > day ? 1 : 0));
+  // R7: the one month count, shared with Goals (calendar months, the day of the month ignored).
+  const months = monthsBetween(today, input.targetDate);
   if (months > 1200) return null;
   const rate = Math.pow(1 + clamp(input.annualReturn, -50, 40) / 100, 1 / 12) - 1;
   const growth = Math.pow(1 + rate, months), annuity = rate ? (growth - 1) / rate : months;

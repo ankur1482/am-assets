@@ -1,4 +1,5 @@
 import { isRentedProperty } from "./calculations";
+import { monthsBetween } from "./plan/dates";
 
 // Goal funding: treat everything owned as if it were cash today, subtract
 // everything owed, and measure what is left against the goal targets.
@@ -60,10 +61,10 @@ export function holdingsFor(sources: string[] | undefined, holdings: Holding[]):
 
 export function monthsUntil(targetDate: string | undefined, asOf: Date): number | null {
   if (!targetDate) return null;
-  const t = new Date(targetDate);
-  if (Number.isNaN(t.getTime())) return null;
-  const months = (t.getFullYear() - asOf.getFullYear()) * 12 + (t.getMonth() - asOf.getMonth());
-  return Math.max(0, months);
+  if (!/^\d{4}-\d{2}-\d{2}/.test(targetDate) || Number.isNaN(new Date(targetDate).getTime())) return null;
+  // R7: the one month count, shared with the Planner.
+  const from = `${asOf.getFullYear()}-${String(asOf.getMonth() + 1).padStart(2, "0")}-${String(asOf.getDate()).padStart(2, "0")}`;
+  return monthsBetween(from, targetDate.slice(0, 10));
 }
 
 const byPriorityThenDate = (a: GoalInput, b: GoalInput) => {

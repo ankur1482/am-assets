@@ -2,6 +2,8 @@
 // that person is still employed and, if so, until when they plan to work. When employment ends,
 // salary stops, PF contributions stop (interest continues) and gratuity freezes at the last day.
 
+import { monthsBetween } from "./plan/dates";
+
 type Rec = { id: string; module_key: string; data?: Record<string, any> | null };
 
 const typeOf = (d: Record<string, any>) => String(d?.category || "").trim().toLowerCase();
@@ -35,8 +37,7 @@ export function employmentFor<T extends Rec>(records: T[], account: string, asOf
 /** Whole months from asOf until the date (0 if it has passed), for stopping contributions in projections. */
 export function monthsUntilDate(date: string | null, asOf: string): number | null {
   if (!date) return null;
-  const months = (Number(date.slice(0, 4)) - Number(asOf.slice(0, 4))) * 12 + Number(date.slice(5, 7)) - Number(asOf.slice(5, 7));
-  return Math.max(0, months);
+  return monthsBetween(asOf, date); // R7: the one month count
 }
 
 /** Salary records whose person has not yet answered "Are you still employed?" this month. */

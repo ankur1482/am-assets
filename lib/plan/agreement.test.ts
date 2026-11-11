@@ -65,8 +65,8 @@ describe("goals (6.2 items 6, 7, 9)", () => {
     return { g, p: planner(household(), AS_OF, {}, g.current) };
   };
 
-  // D4: calendar months in one, plus one more month when the target day is later in the month in the other.
-  it.fails("6a. months left: Goals = Planner", () => {
+  // Fixed in task 1.7 (D4): both count with monthsBetween.
+  it("6a. months left: Goals = Planner", () => {
     const { g, p } = both();
     for (const goal of g.goals) expect(p.goals.find((x) => x.id === goal.id)?.forecast?.months, goal.id).toBe(goal.months);
   });
