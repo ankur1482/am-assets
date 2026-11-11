@@ -2,7 +2,7 @@
 // the user can tick exactly which ones each box adds up. With the default ticks
 // every box matches planningSnapshot's prefilled amount.
 import { isCashAtHome, isDividendIncome, isEarningRent, isRentedProperty, isSavingsAccount, num } from "./calculations";
-import { dividendsReceivedIn } from "./dividends";
+import { dividendsMonthlyAverage } from "./dividends";
 import { calculateInsurance, insuranceKind } from "./insurance";
 import { isCardRow, recurringPayments } from "./monthlyPayments";
 import { cardEstimate } from "./plan/cards";
@@ -62,8 +62,9 @@ export function plannerSources(records: PlanningRecord[], asOf: string): Record<
       }
     }
   }
-  const dividends = dividendsReceivedIn(records, asOf.slice(0, 7));
-  if (dividends) out.income.push({ id: "dividends-this-month", label: "Dividends confirmed this month", group: "Dividends", value: dividends, defaultOn: true });
+  // A monthly average of the last 12 months (R5). The id is kept from when this was "this month only", so saved ticks still apply.
+  const dividends = dividendsMonthlyAverage(records, asOf);
+  if (dividends) out.income.push({ id: "dividends-this-month", label: "Dividends received in the last 12 months, monthly average", group: "Dividends", value: dividends, defaultOn: true });
   for (const item of recurringPayments(records)) {
     // Card spends and transfers are already inside another payment, so they never add to expenses.
     // A card bill is a way of paying, not a cost: card spending is estimated from past bills below (R6).

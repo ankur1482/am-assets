@@ -43,11 +43,14 @@ describe('dividend confirmations', () => {
   it('lists each stock once to look up', () => {
     expect(dividendSymbols([stock('a'), stock('b'), stock('c', { ticker_symbol: 'ITC' }), { id: 'x', module_key: 'goals', data: {} }])).toEqual([{ symbol: 'RELIANCE', exchange: 'NSE' }, { symbol: 'ITC', exchange: 'NSE' }]);
   });
-  it('adds a confirmed dividend to that month only, in cash flow and month on month', () => {
+  // Changed in task 1.5 (R5): cash flow takes a typical month, the last 12 months' dividends divided by 12.
+  // Month on month still records each dividend in the month it arrived.
+  it('adds a confirmed dividend to month on month in its month, and to cash flow as a twelfth for a year', () => {
     const records = [receipt({ key: 'k' }), { ...receipt({ key: 'k2', status: 'not_received', amount: 999, received_on: '' }), id: 'no' }];
     expect(dividendsReceivedIn(records, '2026-06')).toBe(60);
-    expect(planningSnapshot(records, '2026-06-25')).toMatchObject({ monthlyDividend: 60, availableCashFlow: 60 });
-    expect(planningSnapshot(records, '2026-07-01').monthlyDividend).toBe(0);
+    expect(planningSnapshot(records, '2026-06-25')).toMatchObject({ monthlyDividend: 5, availableCashFlow: 5 });
+    expect(planningSnapshot(records, '2026-07-01').monthlyDividend).toBe(5);
+    expect(planningSnapshot(records, '2027-07-01').monthlyDividend).toBe(0);
     expect(ledgerEntries(records, computeRecord, '2026-06')).toEqual([expect.objectContaining({ id: 'd:dividend', group: 'Dividends', side: 'inflow', value: 60, account: 'Ankur' })]);
     expect(ledgerEntries(records, computeRecord, '2026-07')).toEqual([]);
   });

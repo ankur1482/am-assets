@@ -3358,15 +3358,15 @@ export default function AssetManagerApp() {
         {tiles("Monthly cash flow", [
           ["Salary In", flow.monthlySalary],
           ["Rent In", flow.monthlyRent],
-          ["Dividends In", flow.monthlyDividend],
+          ["Dividends In", flow.monthlyDividend, "Last 12 months received, divided by 12"],
           ["Loan EMIs", -flow.monthlyEmi],
           ["Investments", -flow.monthlyInvestment, "Paid from your bank"],
           ...(flow.monthlyPayrollInvestment > 0 ? [["Payroll PF", flow.monthlyPayrollInvestment, "Taken out before take-home pay, so not taken again here"]] : []),
-          ["Insurance This Year", -flow.annualPremium, "Paid in the month each premium is due, not every month"],
+          ["Insurance This Year", -flow.annualPremium, `${fmt(flow.monthlyPremium)} a month is set aside in cash flow below`],
           ["Regular Payments", -flow.monthlyRegular, "Card bills left out: card spending is the line below"],
           ["Card Spending", -flow.monthlyCardEstimate, flow.cardMonths ? `Average of the last ${flow.cardMonths} month${flow.cardMonths === 1 ? "" : "s"} of card bills${flow.cardRough ? " (rough)" : ""}` : "No card bills recorded yet: mark them paid on Payments"],
           ["Daily Expenses", -flow.monthlyDirectExpenses, "Google Pay and cash this month"],
-          ["Available Cash Flow", flow.availableCashFlow, "Each month, after EMIs, investments and payments (insurance is yearly)"],
+          ["Available Cash Flow", flow.availableCashFlow, "A typical month, after EMIs, investments, payments, card spending and a twelfth of yearly insurance"],
         ])}
       </div>
     );

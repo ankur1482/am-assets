@@ -93,3 +93,9 @@ export const receivedDividends = (records: DividendRecord[]) => records.filter(r
 /** Dividends confirmed as received during a month (YYYY-MM). */
 export const dividendsReceivedIn = (records: DividendRecord[], month: string) =>
   receivedDividends(records).filter(record => String(record.data.received_on || '').slice(0, 7) === month).reduce((sum, record) => sum + num(record.data.amount), 0);
+/** A typical month of dividends (R5): those received in the 12 months up to `asOf` (YYYY-MM-DD), divided by 12. */
+export function dividendsMonthlyAverage(records: DividendRecord[], asOf: string) {
+  const yearAgo = `${Number(asOf.slice(0, 4)) - 1}${asOf.slice(4, 10)}`;
+  const total = receivedDividends(records).filter(record => { const on = String(record.data.received_on || '').slice(0, 10); return on > yearAgo && on <= asOf; }).reduce((sum, record) => sum + num(record.data.amount), 0);
+  return total / 12;
+}

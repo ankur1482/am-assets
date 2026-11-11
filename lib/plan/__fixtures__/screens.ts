@@ -55,7 +55,7 @@ export function planner(records: PlanningRecord[], asOf: string, picks: SourcePi
   return {
     loanCount: snapshot.debts.length,
     emis,
-    surplus: income - emis - investing - expenses,
+    surplus: income - emis - investing - expenses - premiums / 12,
     spareOdCash,
     openingCash: sourceTotal("cash"),
     goals,

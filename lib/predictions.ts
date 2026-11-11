@@ -4,7 +4,7 @@ import { odPosition } from './plan/od';
 import { isPaidFromPayroll } from './plan/contributions';
 import { cardEstimate } from './plan/cards';
 import { calculateInsurance, normalizeInsurancePolicy } from './insurance';
-import { dividendsReceivedIn } from './dividends';
+import { dividendsMonthlyAverage } from './dividends';
 import { monthlyDirectExpenses } from './expenses';
 import { isCardRow, monthlyRegularTotal, recurringPayments } from './monthlyPayments';
 import { employmentOf } from './employment';
@@ -83,8 +83,8 @@ export function planningSnapshot(records: PlanningRecord[], asOf = indiaDate()) 
     if (!loan.emi && loan.parked < loan.balance) warnings.push(`${loan.name}: enter a monthly payment to estimate payoff.`);
   }
   const monthlyEmi = debts.reduce((sum, debt) => sum + debt.payment, 0);
-  // Dividends confirmed as received this month count alongside any average entered by hand.
-  monthlyDividend += dividendsReceivedIn(records, asOf.slice(0, 7));
+  // Dividends confirmed as received in the last 12 months, as a monthly average (R5), count alongside any average entered by hand.
+  monthlyDividend += dividendsMonthlyAverage(records, asOf);
   const monthlyIncome = monthlySalary + monthlyRent + monthlyDividend;
   const monthlyRegular = monthlyRegularTotal(recurringPayments(records));
   // R6: card bills are left out of regular payments; card spending is estimated from past bills instead.
@@ -94,8 +94,8 @@ export function planningSnapshot(records: PlanningRecord[], asOf = indiaDate()) 
     else if (card.rough) warnings.push(`Card spending is a rough estimate from only ${card.months} month${card.months === 1 ? '' : 's'} of bills.`);
   }
   const directExpenses = monthlyDirectExpenses(records, asOf.slice(0, 7));
-  // Insurance is paid yearly, in the month each premium falls due, so it is not taken from every month.
-  const availableCashFlow = monthlyIncome - monthlyEmi - monthlyInvestment - monthlyRegular - monthlyCardEstimate - directExpenses;
+  // A typical month carries a twelfth of the yearly premiums (R5); the 12-month forecast still takes each premium in its due month.
+  const availableCashFlow = monthlyIncome - monthlyEmi - monthlyInvestment - monthlyRegular - monthlyCardEstimate - directExpenses - monthlyPremium;
   // R3: OD money above a loan's balance is your own cash; money up to the balance can be redrawn but adds
   // to the loan if used. The two are shown side by side and never added into one headline.
   const od = odPosition(records, asOf);
