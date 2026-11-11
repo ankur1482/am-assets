@@ -17,8 +17,13 @@ const RECURRING_PERIOD = 'recurring';
 export const recurringRecord = (records: PaymentRecord[]) => records.find(record => record.module_key === MONTHLY_PAYMENT_MODULE && record.data?.period === RECURRING_PERIOD);
 export const recurringPayments = (records: PaymentRecord[]): RecurringPayment[] => recurringRecord(records)?.data?.items || [];
 export const recurringData = (items: RecurringPayment[]) => ({ period: RECURRING_PERIOD, items });
-/** What regular payments take out of cash flow each month. */
-export const monthlyRegularTotal = (items: RecurringPayment[]) => items.reduce((sum, item) => sum + (item.kind === 'on_card' || item.kind === 'transfer' ? 0 : Math.max(0, num(item.amount))), 0);
+/** A credit card bill: a card row, or a row named "credit card" saved as a regular payment (R6). */
+export const isCardRow = (item: Pick<RecurringPayment, 'kind' | 'label'>) => item.kind === 'card' || /credit\s*card/i.test(String(item.label || ''));
+/**
+ * What regular payments take out of cash flow each month. A card bill is a way of paying, not a cost of its own,
+ * so it is left out; card spending is estimated separately from past bills (R6).
+ */
+export const monthlyRegularTotal = (items: RecurringPayment[]) => items.reduce((sum, item) => sum + (item.kind === 'on_card' || item.kind === 'transfer' || isCardRow(item) ? 0 : Math.max(0, num(item.amount))), 0);
 
 /** Reads a payment list from an imported file, ignoring anything without a name. Throws if it is not a list. */
 export function parseRecurringImport(text: string): RecurringPayment[] {
@@ -79,7 +84,7 @@ export function paymentsDue(records: PaymentRecord[], compute: (moduleKey: strin
   for (const row of recurringPayments(records)) {
     // A transfer happens in the background: it is shown for reference and needs no action.
     const id = `rec:${row.id}`, transfer = row.kind === 'transfer', informational = row.kind === 'on_card' || transfer;
-    items.push({ id, recurringId: row.id, label: row.label, type: row.kind === 'card' ? 'Credit card' : row.kind === 'on_card' ? 'Auto-debited on a card' : transfer ? 'Background transfer' : 'Regular payment', bank: row.via, to: row.to, note: row.note, amount: saved?.amounts?.[id] ?? Math.max(0, num(row.amount)), dueDate: row.due_day ? emiDueDate(`0000-00-${String(row.due_day).padStart(2, '0')}`, month) : '', custom: false, informational, transfer });
+    items.push({ id, recurringId: row.id, label: row.label, type: row.kind === 'on_card' ? 'Auto-debited on a card' : transfer ? 'Background transfer' : isCardRow(row) ? 'Credit card' : 'Regular payment', bank: row.via, to: row.to, note: row.note, amount: saved?.amounts?.[id] ?? Math.max(0, num(row.amount)), dueDate: row.due_day ? emiDueDate(`0000-00-${String(row.due_day).padStart(2, '0')}`, month) : '', custom: false, informational, transfer });
   }
   // EMIs come from the one loan list (R2), so Payments shows the same loans as Home and the Planner.
   const emis = new Map(loansOf(records, asOf).map(loan => [loan.id, loan.emi]));

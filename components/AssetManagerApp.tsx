@@ -3363,7 +3363,8 @@ export default function AssetManagerApp() {
           ["Investments", -flow.monthlyInvestment, "Paid from your bank"],
           ...(flow.monthlyPayrollInvestment > 0 ? [["Payroll PF", flow.monthlyPayrollInvestment, "Taken out before take-home pay, so not taken again here"]] : []),
           ["Insurance This Year", -flow.annualPremium, "Paid in the month each premium is due, not every month"],
-          ["Regular Payments", -flow.monthlyRegular],
+          ["Regular Payments", -flow.monthlyRegular, "Card bills left out: card spending is the line below"],
+          ["Card Spending", -flow.monthlyCardEstimate, flow.cardMonths ? `Average of the last ${flow.cardMonths} month${flow.cardMonths === 1 ? "" : "s"} of card bills${flow.cardRough ? " (rough)" : ""}` : "No card bills recorded yet: mark them paid on Payments"],
           ["Daily Expenses", -flow.monthlyDirectExpenses, "Google Pay and cash this month"],
           ["Available Cash Flow", flow.availableCashFlow, "Each month, after EMIs, investments and payments (insurance is yearly)"],
         ])}

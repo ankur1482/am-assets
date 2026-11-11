@@ -4,7 +4,8 @@
 import { isCashAtHome, isDividendIncome, isEarningRent, isRentedProperty, isSavingsAccount, num } from "./calculations";
 import { dividendsReceivedIn } from "./dividends";
 import { calculateInsurance, insuranceKind } from "./insurance";
-import { recurringPayments } from "./monthlyPayments";
+import { isCardRow, recurringPayments } from "./monthlyPayments";
+import { cardEstimate } from "./plan/cards";
 import { employmentOf } from "./employment";
 import { isPaidFromPayroll } from "./plan/contributions";
 import type { PlanningRecord } from "./predictions";
@@ -65,9 +66,12 @@ export function plannerSources(records: PlanningRecord[], asOf: string): Record<
   if (dividends) out.income.push({ id: "dividends-this-month", label: "Dividends confirmed this month", group: "Dividends", value: dividends, defaultOn: true });
   for (const item of recurringPayments(records)) {
     // Card spends and transfers are already inside another payment, so they never add to expenses.
-    if (item.kind === "on_card" || item.kind === "transfer") continue;
+    // A card bill is a way of paying, not a cost: card spending is estimated from past bills below (R6).
+    if (item.kind === "on_card" || item.kind === "transfer" || isCardRow(item)) continue;
     out.expenses.push({ id: `payment:${item.id}`, label: item.label || "Payment", group: "Regular payments", value: Math.max(0, num(item.amount)), defaultOn: true });
   }
+  const card = cardEstimate(records, asOf);
+  if (card.months) out.expenses.push({ id: "card-estimate", label: `Card spending, average of the last ${card.months} month${card.months === 1 ? "" : "s"}${card.rough ? " (rough)" : ""}`, group: "Card spending", value: card.monthly, defaultOn: true });
   return out;
 }
 

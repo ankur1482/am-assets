@@ -7,9 +7,9 @@ import { goals, home, planner } from "./__fixtures__/screens";
 import type { SourcePicks } from "../plannerSources";
 
 const rupees = (v: number) => Math.round(v);
-// Choices a household might save in the Planner: the card bill unticked from living expenses
-// and payroll PF unticked from cash-funded investing.
-const SAVED_PICKS: SourcePicks = { expenses: ["payment:m1", "payment:m2"], investment: [] };
+// Choices a household might save in the Planner: school fees unticked from living expenses
+// and nothing ticked as cash-funded investing.
+const SAVED_PICKS: SourcePicks = { expenses: ["payment:m1"], investment: [] };
 
 beforeAll(() => {
   vi.useFakeTimers();

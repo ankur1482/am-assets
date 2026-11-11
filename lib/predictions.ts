@@ -2,10 +2,11 @@ import { isCashAtHome, isDividendIncome, isEarningRent, isOverdraftLoan, isRente
 import { loansOf } from './plan/loans';
 import { odPosition } from './plan/od';
 import { isPaidFromPayroll } from './plan/contributions';
+import { cardEstimate } from './plan/cards';
 import { calculateInsurance, normalizeInsurancePolicy } from './insurance';
 import { dividendsReceivedIn } from './dividends';
 import { monthlyDirectExpenses } from './expenses';
-import { monthlyRegularTotal, recurringPayments } from './monthlyPayments';
+import { isCardRow, monthlyRegularTotal, recurringPayments } from './monthlyPayments';
 import { employmentOf } from './employment';
 
 const clamp = (value: number, low: number, high: number) => Math.min(high, Math.max(low, Number.isFinite(value) ? value : low));
@@ -86,14 +87,20 @@ export function planningSnapshot(records: PlanningRecord[], asOf = indiaDate()) 
   monthlyDividend += dividendsReceivedIn(records, asOf.slice(0, 7));
   const monthlyIncome = monthlySalary + monthlyRent + monthlyDividend;
   const monthlyRegular = monthlyRegularTotal(recurringPayments(records));
+  // R6: card bills are left out of regular payments; card spending is estimated from past bills instead.
+  const card = cardEstimate(records, asOf), monthlyCardEstimate = card.monthly;
+  if (recurringPayments(records).some(isCardRow)) {
+    if (!card.months) warnings.push('No card spending recorded in the last 6 months, so card spending is left out of cash flow. Mark card bills paid on the Payments screen to build an estimate.');
+    else if (card.rough) warnings.push(`Card spending is a rough estimate from only ${card.months} month${card.months === 1 ? '' : 's'} of bills.`);
+  }
   const directExpenses = monthlyDirectExpenses(records, asOf.slice(0, 7));
   // Insurance is paid yearly, in the month each premium falls due, so it is not taken from every month.
-  const availableCashFlow = monthlyIncome - monthlyEmi - monthlyInvestment - monthlyRegular - directExpenses;
+  const availableCashFlow = monthlyIncome - monthlyEmi - monthlyInvestment - monthlyRegular - monthlyCardEstimate - directExpenses;
   // R3: OD money above a loan's balance is your own cash; money up to the balance can be redrawn but adds
   // to the loan if used. The two are shown side by side and never added into one headline.
   const od = odPosition(records, asOf);
   const cashNow = savingsBalance + cashAtHome + od.spare, canRedraw = od.canRedraw;
-  return { monthlyDirectExpenses: directExpenses, monthlyRegular, rentals, monthlySalary, monthlyRent, monthlyDividend, savingsBalance, cashAtHome, odParked, odSpare: od.spare, odAccounts: od.accounts, cashNow, canRedraw, liquidity: savingsBalance + cashAtHome + odParked, monthlyIncome, monthlyEmi, availableCashFlow, monthlyInvestment, monthlyPayrollInvestment, monthlyPremium, annualPremium: monthlyPremium * 12, premiumSchedule, salaryEnds, debts, warnings };
+  return { monthlyDirectExpenses: directExpenses, monthlyRegular, rentals, monthlySalary, monthlyRent, monthlyDividend, savingsBalance, cashAtHome, odParked, odSpare: od.spare, odAccounts: od.accounts, cashNow, canRedraw, liquidity: savingsBalance + cashAtHome + odParked, monthlyIncome, monthlyEmi, availableCashFlow, monthlyCardEstimate, cardMonths: card.months, cardRough: card.rough, monthlyInvestment, monthlyPayrollInvestment, monthlyPremium, annualPremium: monthlyPremium * 12, premiumSchedule, salaryEnds, debts, warnings };
 }
 
 export function projectWealth(input: { starting: number; years: number; annualReturn: number; inflation: number; monthly: number; annualStepUp: number; contributionYears: number; retirementMonthly: number }) {

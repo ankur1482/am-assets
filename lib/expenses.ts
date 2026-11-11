@@ -1,5 +1,5 @@
 import { num } from './calculations';
-import { MONTHLY_PAYMENT_MODULE, firstWordMatch, payAccountLabel, payAccounts, recurringPayments, recurringRecord } from './monthlyPayments';
+import { MONTHLY_PAYMENT_MODULE, firstWordMatch, isCardRow, payAccountLabel, payAccounts, recurringPayments, recurringRecord } from './monthlyPayments';
 
 export const EXPENSE_MODULE = 'expense';
 export const CARD_PREFIX = 'card:';
@@ -11,7 +11,7 @@ export type CardSpend = PaymentCard & { spend: number; expenses: number; payment
 
 /** Cards come from the regular payment list, including a card row saved as "same each month". */
 export const paymentCards = (records: ExpenseRecord[]): PaymentCard[] =>
-  recurringPayments(records).filter(row => row.kind === 'card' || /credit\s*card/i.test(row.label)).map(row => ({ id: `${CARD_PREFIX}${row.id}`, label: row.label }));
+  recurringPayments(records).filter(isCardRow).map(row => ({ id: `${CARD_PREFIX}${row.id}`, label: row.label }));
 
 /** Google Pay draws on whichever card or account was chosen for it, saved with the regular payment list. */
 function googlePayTags(records: ExpenseRecord[]): ExpenseTag[] {
