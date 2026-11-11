@@ -47,11 +47,12 @@ describe("loanPosition on the fixture's property loans", () => {
     expect(p.monthsLeft).toBe(170);
   });
 
-  // Today the payment dated after AS_OF already counts as drawn (D21); task 1.10 changes this.
-  it("home being built: the loan is what the bank has paid the builder, including a future-dated payment", () => {
+  // Changed in task 1.10 (D21, R1): the payment dated after AS_OF no longer counts as drawn, so the loan is on
+  // the 15,00,000 paid out so far (it was 24,60,766 with an EMI of 20,911 when the future payment counted).
+  it("home being built: the loan is what the bank has paid the builder by the as-of day", () => {
     const p = position(ID.building);
-    expect(Math.round(p.balance)).toBe(2460766);
-    expect(Math.round(p.emi)).toBe(20911);
+    expect(Math.round(p.balance)).toBe(1476460);
+    expect(Math.round(p.emi)).toBe(12547);
   });
 
   it("entered balance and EMI win", () => {

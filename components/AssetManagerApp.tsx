@@ -15555,6 +15555,7 @@ Salary will stop counting as income, Company PF contributions will stop (interes
                   <span className="tabular-nums">
                     Price {fmt(b.total)} · paid {fmt(b.paid)} ({b.paidPct.toFixed(0)}%) ·{" "}
                     <span className="font-semibold text-amber-700">still to pay {fmt(b.pending)}</span>
+                    {b.scheduledTotal > 0 && <span className="text-gray-600"> (of which {fmt(b.scheduledTotal)} is scheduled)</span>}
                   </span>
                 </div>
                 <div className="mt-1 h-2 w-full overflow-hidden rounded bg-[#eef1ec]">
@@ -15585,6 +15586,10 @@ Salary will stop counting as income, Company PF contributions will stop (interes
                         <span>
                           {p.date ? formatDate(p.date) : "No date"} · {p.note || "Stage payment"} ·{" "}
                           <span className="text-gray-600">{p.from === "own" ? "own money" : "home loan"}</span>
+                          {/* R1: a payment dated later has not happened yet, so it counts towards nothing until then. */}
+                          {b.scheduled.some((s) => s.id === p.id) && (
+                            <span className="construction-scheduled ml-2 font-semibold text-amber-700">scheduled, not counted until then</span>
+                          )}
                         </span>
                         <span className="flex items-center gap-2 font-semibold tabular-nums">
                           {fmt(p.amount)}

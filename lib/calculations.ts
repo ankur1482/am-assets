@@ -304,7 +304,7 @@ export function preEmiPosition(r:any,names:LoanFieldNames,asOf=new Date()){
   const possession=String(r.possession_date||'');
   if(/^\d{4}-\d{2}-\d{2}$/.test(possession)&&new Date(`${possession}T00:00:00`)<=asOf)return null;
   const amount=num(r.loan_amount),annualRate=num(r[names.rate]),rate=annualRate/1200,tenure=num(r[names.tenure]);
-  const fromLoan=cleanConstructionLoanPaid(r);
+  const fromLoan=cleanConstructionLoanPaid(r,asOf);
   // What the bank has paid the builder so far: recorded loan payments, else the balance entered, else the full loan.
   const disbursed=Math.max(0,fromLoan||num(r.loan_balance)||amount);
   const interest=disbursed*rate;
@@ -320,13 +320,14 @@ export function preEmiPosition(r:any,names:LoanFieldNames,asOf=new Date()){
     totalPayable:interest*monthsToPossession+afterPossession.paid,futureInterest:Math.max(0,interest*monthsToPossession+afterPossession.paid-Math.max(disbursed,amount)),
     principalPaid:0,interestPaid:num(r.interest_paid),nextInterest:interest,nextPrincipal:0,warnings,preEmi:true,fullEmi,possessionDate:possession};
 }
-const cleanConstructionLoanPaid=(r:any)=>(Array.isArray(r?.construction_payments)?r.construction_payments:[]).filter((p:any)=>p&&p.from==='loan').reduce((s:number,p:any)=>s+Math.max(0,num(p.amount)),0);
+// R1: what the bank has paid the builder by the as-of day; a payment dated later has not happened yet.
+const cleanConstructionLoanPaid=(r:any,asOf:Date=new Date())=>{const day=`${asOf.getFullYear()}-${String(asOf.getMonth()+1).padStart(2,'0')}-${String(asOf.getDate()).padStart(2,'0')}`;return(Array.isArray(r?.construction_payments)?r.construction_payments:[]).filter((p:any)=>p&&p.from==='loan'&&(!/^\d{4}-\d{2}-\d{2}$/.test(String(p.date||''))||String(p.date)<=day)).reduce((s:number,p:any)=>s+Math.max(0,num(p.amount)),0)};
 export function loanPosition(r:any,names:LoanFieldNames,asOf=new Date()){
   const pre=preEmiPosition(r,names,asOf);
   if(pre)return pre;
   // While a home is being built the bank pays the builder in stages, so interest and the EMI are on what it has
   // paid out (payments recorded 'from the home loan'), not the full sanctioned loan, which still shows as entered.
-  const disbursed=isUnderConstruction(r)?cleanConstructionLoanPaid(r):0;
+  const disbursed=isUnderConstruction(r)?cleanConstructionLoanPaid(r,asOf):0;
   if(disbursed>0)r={...r,loan_amount:disbursed,loan_balance:num(r.loan_balance)?Math.min(num(r.loan_balance),disbursed):''};
   const amount=num(r.loan_amount),annualRate=num(r[names.rate]),rate=annualRate/1200,tenure=num(r[names.tenure]),enteredMonths=num(r.emis_left),enteredEmi=num(r.emi_amount)||num(r.od_monthly_emi)||num(r.monthly_emi),
     enteredBalance=num(r.loan_balance),enteredPrincipal=num(r.principal_paid),elapsed=emisDueSince(r[names.start],asOf),originalEmi=emiFor(amount,rate,tenure);

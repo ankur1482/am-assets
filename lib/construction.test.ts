@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { computeRecord, computeTotals, num } from "./calculations";
+import { computeRecord, computeTotals, loanPosition, num, PROPERTY_LOAN_FIELDS } from "./calculations";
 import { cleanPayments, constructionSummary } from "./construction";
 
 describe("property being built", () => {
@@ -66,5 +66,32 @@ describe("still to pay the builder counts as owed", () => {
   it("is not counted when nothing is recorded, or once the home is ready", () => {
     expect(computeRecord("property", { ...home, construction_payments: [] }).construction_owed).toBe(0);
     expect(computeRecord("property", { ...home, construction_status: "Ready" }).construction_owed).toBe(0);
+  });
+});
+
+// R1 (task 1.10): a payment dated after the as-of day has not happened yet. It is listed as scheduled
+// and counts towards nothing (paid, loan drawn, EMI) until its date.
+describe("future-dated builder payments", () => {
+  const data = {
+    purchase_price: 10_000_000,
+    construction_status: "Under Construction",
+    loan_interest_rate: 8, loan_tenure_months: 240, loan_start_date: "2026-03-05",
+    construction_payments: [
+      { id: "a", date: "2025-03-01", amount: 2_500_000, from: "own" },
+      { id: "b", date: "2026-02-01", amount: 1_500_000, from: "loan" },
+      { id: "c", date: "2026-12-15", amount: 1_000_000, from: "loan" },
+    ],
+  };
+
+  it("counts only payments made by the as-of day, and lists the rest as scheduled", () => {
+    const s = constructionSummary(data, "2026-11-10");
+    expect(s).toMatchObject({ paid: 4_000_000, own: 2_500_000, loan: 1_500_000, pending: 6_000_000, scheduledTotal: 1_000_000 });
+    expect(s.scheduled.map((p) => p.id)).toEqual(["c"]);
+    expect(constructionSummary(data, "2026-12-15")).toMatchObject({ paid: 5_000_000, loan: 2_500_000, scheduledTotal: 0 });
+  });
+
+  it("the loan drawn is only what the bank has paid out by the as-of day", () => {
+    expect(loanPosition(data, PROPERTY_LOAN_FIELDS, new Date("2026-11-10T12:00:00")).balance).toBeLessThanOrEqual(1_500_000);
+    expect(loanPosition(data, PROPERTY_LOAN_FIELDS, new Date("2026-12-20T12:00:00")).balance).toBeGreaterThan(1_500_000);
   });
 });
