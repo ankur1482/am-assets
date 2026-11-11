@@ -18,14 +18,14 @@ beforeAll(() => {
 afterAll(() => vi.useRealTimers());
 
 describe("loans (6.2 items 1–2)", () => {
-  // D10: planningSnapshot works out balances itself and drops loans that loanPosition finds.
-  it.fails("1. monthly EMIs: Home Loans tile = cash flow = Planner", () => {
+  // Fixed in task 1.1 (D10): every screen reads loansOf.
+  it("1. monthly EMIs: Home Loans tile = cash flow = Planner", () => {
     const h = home(household(), AS_OF), p = planner(household(), AS_OF);
     expect(rupees(h.cashFlowEmis)).toBe(rupees(h.emis));
     expect(rupees(p.emis)).toBe(rupees(h.emis));
   });
 
-  it.fails("2. number of loans: Home Loans tile = Planner payoff explorer", () => {
+  it("2. number of loans: Home Loans tile = Planner payoff explorer", () => {
     expect(planner(household(), AS_OF).loanCount).toBe(home(household(), AS_OF).loanCount);
   });
 });

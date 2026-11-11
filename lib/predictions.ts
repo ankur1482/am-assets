@@ -1,4 +1,5 @@
-import { isCashAtHome, isDividendIncome, isEarningRent, isOverdraftLoan, isRentedProperty, isSavingsAccount, LOAN_FIELDS, occupiedShareOfMonth, loanPosition, num, parkedAgainstLoan, PROPERTY_LOAN_FIELDS } from './calculations';
+import { isCashAtHome, isDividendIncome, isEarningRent, isOverdraftLoan, isRentedProperty, isSavingsAccount, occupiedShareOfMonth, num } from './calculations';
+import { loansOf } from './plan/loans';
 import { calculateInsurance, normalizeInsurancePolicy } from './insurance';
 import { dividendsReceivedIn } from './dividends';
 import { monthlyDirectExpenses } from './expenses';
@@ -69,17 +70,11 @@ export function planningSnapshot(records: PlanningRecord[], asOf = indiaDate()) 
       }
     }
     if (['loans', 'property'].includes(record.module_key) && isOverdraftLoan(d)) odParked += Math.max(0, num(d.od_parked_balance));
-    if (['loans', 'borrowings', 'property'].includes(record.module_key)) {
-      const explicit = d.loan_balance !== '' && d.loan_balance !== null && d.loan_balance !== undefined;
-      const balance = Math.max(0, explicit ? num(d.loan_balance) : num(d.loan_amount) - num(d.principal_paid));
-      if (!balance) continue;
-      const annualRate = Math.max(0, num(record.module_key === 'property' ? d.loan_interest_rate : d.interest_rate));
-      const months = Math.max(0, num(d.emis_left) || num(record.module_key === 'property' ? d.loan_tenure_months : d.tenure_months));
-      const payment = Math.max(0, record.module_key === 'borrowings' ? num(d.monthly_emi) || num(d.emi_amount) || monthlyPayment(balance, annualRate, months) : loanPosition({ ...d, loan_balance: balance }, record.module_key === 'property' ? PROPERTY_LOAN_FIELDS : LOAN_FIELDS).emi);
-      const name = String(d.security_name || d.location || 'Loan');
-      debts.push({ id: record.id, name, balance, annualRate, payment, parked: parkedAgainstLoan(d, balance), isOd: isOverdraftLoan(d) });
-      if (!payment && parkedAgainstLoan(d, balance) < balance) warnings.push(`${name}: enter a monthly payment to estimate payoff.`);
-    }
+  }
+  // Loans come from the one loan list (R2), so every screen sees the same loans, balances and EMIs.
+  for (const loan of loansOf(records, asOf)) {
+    debts.push({ id: loan.id, name: loan.name, balance: loan.balance, annualRate: loan.annualRate, payment: loan.emi, parked: loan.parked, isOd: loan.isOd });
+    if (!loan.emi && loan.parked < loan.balance) warnings.push(`${loan.name}: enter a monthly payment to estimate payoff.`);
   }
   const monthlyEmi = debts.reduce((sum, debt) => sum + debt.payment, 0);
   // Dividends confirmed as received this month count alongside any average entered by hand.

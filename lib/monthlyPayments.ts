@@ -1,4 +1,6 @@
 import { isCashAtHome, isIncomeRecord, isOverdraftLoan, isSavingsAccount, num } from './calculations';
+import { loansOf } from './plan/loans';
+import { indiaToday } from './plan/dates';
 
 export const MONTHLY_PAYMENT_MODULE = 'monthlyPayment';
 
@@ -72,19 +74,21 @@ export function yearlyCommitments(records: PaymentRecord[], compute: (moduleKey:
 }
 
 /** Everything to pay in a month, soonest first: loan EMIs, premiums and yearly investments falling due, and payments added by hand. */
-export function paymentsDue(records: PaymentRecord[], compute: (moduleKey: string, data: any) => any, month: string, saved?: PaymentMonth): PaymentItem[] {
+export function paymentsDue(records: PaymentRecord[], compute: (moduleKey: string, data: any) => any, month: string, saved?: PaymentMonth, asOf: string = indiaToday()): PaymentItem[] {
   const items: PaymentItem[] = [];
   for (const row of recurringPayments(records)) {
     // A transfer happens in the background: it is shown for reference and needs no action.
     const id = `rec:${row.id}`, transfer = row.kind === 'transfer', informational = row.kind === 'on_card' || transfer;
     items.push({ id, recurringId: row.id, label: row.label, type: row.kind === 'card' ? 'Credit card' : row.kind === 'on_card' ? 'Auto-debited on a card' : transfer ? 'Background transfer' : 'Regular payment', bank: row.via, to: row.to, note: row.note, amount: saved?.amounts?.[id] ?? Math.max(0, num(row.amount)), dueDate: row.due_day ? emiDueDate(`0000-00-${String(row.due_day).padStart(2, '0')}`, month) : '', custom: false, informational, transfer });
   }
+  // EMIs come from the one loan list (R2), so Payments shows the same loans as Home and the Planner.
+  const emis = new Map(loansOf(records, asOf).map(loan => [loan.id, loan.emi]));
   for (const record of records) {
     const k = record.module_key, d = record.data || {};
     if (k === 'property' || k === 'loans') {
-      const c = compute(k, d);
-      if (num(c.monthly_emi) <= 0) continue;
-      items.push({ id: `${record.id}:emi`, label: String(k === 'property' ? d.broker || d.location || 'Home loan' : d.security_name || 'Loan'), type: 'Loan EMI', bank: String(d.loan_institution || (k === 'loans' ? d.broker : '') || ''), amount: num(c.monthly_emi), dueDate: emiDueDate(k === 'property' ? d.loan_start_date : d.purchase_date, month), custom: false });
+      const emi = emis.get(record.id) || 0;
+      if (emi <= 0) continue;
+      items.push({ id: `${record.id}:emi`, label: String(k === 'property' ? d.broker || d.location || 'Home loan' : d.security_name || 'Loan'), type: 'Loan EMI', bank: String(d.loan_institution || (k === 'loans' ? d.broker : '') || ''), amount: emi, dueDate: emiDueDate(k === 'property' ? d.loan_start_date : d.purchase_date, month), custom: false });
     } else if (k === 'insurance') {
       const c = compute(k, d);
       // A yearly premium repeats in the same month every year, even if its saved date has not been moved on.

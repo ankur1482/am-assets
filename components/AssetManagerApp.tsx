@@ -64,6 +64,8 @@ import { applyLedgerEdit, financialYearOf, ledgerEntries, mergeCurrentMonth, MON
 import PredictivePlanner, { type ForecastTab } from "@/components/PredictivePlanner";
 import { MONTHLY_UPLOAD_MODULE, periodLabel, requiredUploads, type UploadItem } from "@/lib/monthlyUploads";
 import { planningSnapshot } from "@/lib/predictions";
+import { loansOf } from "@/lib/plan/loans";
+import { indiaToday } from "@/lib/plan/dates";
 import { researchLinks } from "@/lib/researchLinks";
 import { ACCOUNT_TYPES, MODULES, RELATIONS } from "@/lib/modules";
 import { controlsOtherFields, isFieldVisible } from "@/lib/fieldVisibility";
@@ -13061,13 +13063,11 @@ Salary will stop counting as income, Company PF contributions will stop (interes
     const goalCount = (key: string) => goalList.filter((g) => g.status.key === key).length;
     const goalTarget = goalList.reduce((s, g) => s + g.target, 0), goalExpected = goalList.reduce((s, g) => s + (g.p?.projected || 0), 0);
     // Loans
-    const loanRows = [
-      ...records.filter((r) => r.module_key === "loans").map((r) => computeRecord("loans", r.data)),
-      ...records.filter((r) => r.module_key === "property").map((r) => computeRecord("property", r.data)).filter((c) => num(c.loan_balance) > 0),
-    ];
-    const owed = loanRows.reduce((s, c) => s + num(c.net_loan_balance ?? c.balance), 0);
-    const emis = loanRows.reduce((s, c) => s + num(c.monthly_emi), 0);
-    const nextClear = loanRows.map((c) => String(c.loan_clears_on || "")).filter((d) => /^\d{4}-\d{2}/.test(d)).sort()[0];
+    // The one loan list (R2), shared with the cash flow, the Planner and Payments.
+    const loanRows = loansOf(records, indiaToday());
+    const owed = loanRows.reduce((s, l) => s + l.netBalance, 0);
+    const emis = loanRows.reduce((s, l) => s + l.emi, 0);
+    const nextClear = loanRows.map((l) => l.clearsOn).filter((d) => /^\d{4}-\d{2}/.test(d)).sort()[0];
     // To do
     const todayIso = isoDate(), soon = new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10);
     const premiumsDue = records.filter((r) => {

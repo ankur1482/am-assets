@@ -15,20 +15,18 @@ import { cleanPlanned, DEFAULT_GROWTH, holdingGrowth, holdingMonthly, plannedIte
 import { insuranceKind } from "../../insurance";
 import { pickedIds, pickedTotal, plannerSources, type CashField, type SourcePicks } from "../../plannerSources";
 import { goalForecast, planningSnapshot, type PlanningRecord } from "../../predictions";
+import { loansOf } from "../loans";
 
 const GOAL_ASSET_KEYS = ["fixedIncome", "stocks", "mutualFunds", "bullion", "property", "ulips", "nsel", "otherAssets", "insurance"];
 
 /** Home screen: Loans tile, cash-flow details and "This month's cash". */
 export function home(records: PlanningRecord[], asOf: string) {
   const snapshot = planningSnapshot(records, asOf);
-  const loanRows = [
-    ...records.filter((r) => r.module_key === "loans").map((r) => computeRecord("loans", r.data)),
-    ...records.filter((r) => r.module_key === "property").map((r) => computeRecord("property", r.data)).filter((c) => num(c.loan_balance) > 0),
-  ];
+  const loanRows = loansOf(records, asOf);
   return {
     loanCount: loanRows.length,
-    emis: loanRows.reduce((s, c) => s + num(c.monthly_emi), 0),
-    owed: loanRows.reduce((s, c) => s + num(c.net_loan_balance ?? c.balance), 0),
+    emis: loanRows.reduce((s, l) => s + l.emi, 0),
+    owed: loanRows.reduce((s, l) => s + l.netBalance, 0),
     surplus: snapshot.availableCashFlow,
     cashFlowEmis: snapshot.monthlyEmi,
     liquidity: snapshot.liquidity,

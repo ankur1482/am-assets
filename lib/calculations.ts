@@ -331,11 +331,14 @@ export function loanPosition(r:any,names:LoanFieldNames,asOf=new Date()){
   const amount=num(r.loan_amount),annualRate=num(r[names.rate]),rate=annualRate/1200,tenure=num(r[names.tenure]),enteredMonths=num(r.emis_left),enteredEmi=num(r.emi_amount)||num(r.od_monthly_emi)||num(r.monthly_emi),
     enteredBalance=num(r.loan_balance),enteredPrincipal=num(r.principal_paid),elapsed=emisDueSince(r[names.start],asOf),originalEmi=emiFor(amount,rate,tenure);
   const isOd=isOverdraftLoan(r);
+  // A blank balance is worked out; an entered 0 means nothing is outstanding. An OD with 0 entered and money
+  // parked is ambiguous (paid off, or an unused limit entered as parked), so it keeps the loan amount until answered.
+  const zeroEntered=r.loan_balance!==''&&r.loan_balance!==null&&r.loan_balance!==undefined&&num(r.loan_balance)===0&&!(isOd&&num(r.od_parked_balance)>0);
   let scheduled=amount;
   const scheduleEmi=enteredEmi||originalEmi;
   // An OD balance moves with deposits and withdrawals, so it cannot be inferred from an EMI schedule.
   if(!isOd&&!enteredBalance&&!enteredPrincipal&&amount&&scheduleEmi&&elapsed)for(let i=0;i<elapsed&&scheduled>0;i++)scheduled=Math.max(0,scheduled*(1+rate)-scheduleEmi);
-  const balance=Math.max(0,enteredBalance||(enteredPrincipal?amount-enteredPrincipal:scheduled)),
+  const balance=zeroEntered?0:Math.max(0,enteredBalance||(enteredPrincipal?amount-enteredPrincipal:scheduled)),
     parked=parkedAgainstLoan(r,balance),netBalance=Math.max(0,balance-parked),
     monthsBasis=enteredMonths||(amount?0:tenure),
     remainingTerm=enteredMonths||(tenure?Math.max(1,tenure-elapsed):0),
