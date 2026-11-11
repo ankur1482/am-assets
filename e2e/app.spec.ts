@@ -919,6 +919,10 @@ test.describe('logged-in app', () => {
     const app = await signedIn(page);
     const home = page.getByRole('region', { name: 'Home' }).locator('visible=true').first();
     for (const title of ['Net worth', 'Goals', "This month's cash", 'Loans']) await expect(home.getByRole('button', { name: `${title}: open` })).toBeVisible();
+    // R17: the goals tile counts goals on track instead of adding them into one percentage.
+    const goalsTile = home.getByRole('button', { name: 'Goals: open' });
+    await expect(goalsTile.locator('.goals-tile-count')).toContainText(/\d+ of \d+ on track/);
+    await expect(goalsTile.getByText(/expected by the target dates/)).toHaveCount(0);
     await expect(home.getByText('To do', { exact: true })).toBeVisible();
     await home.getByRole('button', { name: 'Goals: open' }).click();
     await expect(page.getByText('What pays for each goal').locator('visible=true').first()).toBeVisible();

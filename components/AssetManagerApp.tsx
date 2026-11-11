@@ -68,6 +68,7 @@ import { loansOf } from "@/lib/plan/loans";
 import { indiaToday } from "@/lib/plan/dates";
 import { livedInHomes } from "@/lib/plan/home";
 import { DEFAULT_PLAN_SETTINGS } from "@/lib/plan/settings";
+import { goalsSummary } from "@/lib/plan/goalSummary";
 import { researchLinks } from "@/lib/researchLinks";
 import { ACCOUNT_TYPES, MODULES, RELATIONS } from "@/lib/modules";
 import { controlsOtherFields, isFieldVisible } from "@/lib/fieldVisibility";
@@ -13090,8 +13091,14 @@ Salary will stop counting as income, Company PF contributions will stop (interes
     const payments = currentPayments();
     // Goals
     const ahead = goalProjectionsById(), goalList = Object.values(ahead);
-    const goalCount = (key: string) => goalList.filter((g) => g.status.key === key).length;
-    const goalTarget = goalList.reduce((s, g) => s + g.target, 0), goalExpected = goalList.reduce((s, g) => s + (g.p?.projected || 0), 0);
+    // R17: goals are never added into one percentage; the tile counts them, names the weakest and
+    // sets the extra needed each month against the monthly surplus.
+    const goalSummary = goalsSummary(Object.entries(ahead).map(([id, g]) => ({
+      name: String(records.find((r) => r.id === id)?.data?.security_name || "Goal"),
+      target: g.target,
+      projected: g.p ? g.p.projected : null,
+      monthlyNeeded: g.p?.monthlyNeeded || 0,
+    })));
     // Loans
     // The one loan list (R2), shared with the cash flow, the Planner and Payments.
     const loanRows = loansOf(records, indiaToday());
@@ -13111,7 +13118,7 @@ Salary will stop counting as income, Company PF contributions will stop (interes
       { n: dividendsToConfirmCount(), text: "dividend to confirm", many: "dividends to confirm", action: openDividendsToConfirm },
       { n: premiumsDue, text: "insurance premium due in 30 days", many: "insurance premiums due in 30 days", action: () => setView("insurance") },
       { n: records.filter((r) => r.module_key === "fixedIncome" && fixedIncomeReviewDue(r)).length, text: "fixed income value to review", many: "fixed income values to review", action: () => setView("fixedIncome") },
-      { n: goalCount("off"), text: "goal needing work", many: "goals needing work", action: () => setView("goals") },
+      { n: goalSummary.needsWork, text: "goal needing work", many: "goals needing work", action: () => setView("goals") },
     ].filter((t) => t.n > 0);
     // Asked once a month for each salary: is this person still employed?
     const jobChecks = employmentChecksDue(records, todayIso);
@@ -13159,12 +13166,25 @@ Salary will stop counting as income, Company PF contributions will stop (interes
           ))}
           {tile("goals", "Goals", () => setView("goals"), goalList.length ? (
             <>
-              <span className="block text-3xl font-semibold tabular-nums text-[#17382b]">{goalTarget ? Math.round((goalExpected / goalTarget) * 100) : 0}%</span>
-              <span className="block text-xs text-gray-600">of {fmt(goalTarget)} expected by the target dates</span>
+              <span className="goals-tile-count block text-3xl font-semibold tabular-nums text-[#17382b]">
+                {goalSummary.onTrack} of {goalSummary.total} <span className="text-base font-semibold">on track</span>
+              </span>
+              {goalSummary.weakest && (
+                <span className="goals-tile-weakest block text-xs text-gray-700">
+                  Weakest: <b>{goalSummary.weakest.name}</b> at {goalSummary.weakest.pct}% of its target
+                </span>
+              )}
+              <span className="goals-tile-extra block text-xs text-gray-700">
+                {goalSummary.extraMonthly > 0 ? (
+                  <>Extra needed <b className="tabular-nums">{fmt(goalSummary.extraMonthly)}</b>/month · surplus <b className={`tabular-nums ${snapshot.availableCashFlow < goalSummary.extraMonthly ? "text-red-700" : "text-emerald-700"}`}>{fmt(snapshot.availableCashFlow)}</b>/month</>
+                ) : (
+                  <>No extra needed each month</>
+                )}
+              </span>
               <span className="mt-2 flex flex-wrap gap-1.5 text-xs font-bold">
-                {goalCount("on") > 0 && <span className="rounded-[999px] bg-emerald-100 px-2 py-0.5 text-emerald-800">{goalCount("on")} on track</span>}
-                {goalCount("close") > 0 && <span className="rounded-[999px] bg-amber-100 px-2 py-0.5 text-amber-900">{goalCount("close")} close</span>}
-                {goalCount("off") > 0 && <span className="rounded-[999px] bg-red-100 px-2 py-0.5 text-red-800">{goalCount("off")} need work</span>}
+                {goalSummary.close > 0 && <span className="rounded-[999px] bg-amber-100 px-2 py-0.5 text-amber-900">{goalSummary.close} close</span>}
+                {goalSummary.needsWork > 0 && <span className="rounded-[999px] bg-red-100 px-2 py-0.5 text-red-800">{goalSummary.needsWork} need work</span>}
+                {goalSummary.undated > 0 && <span className="rounded-[999px] bg-gray-100 px-2 py-0.5 text-gray-700">{goalSummary.undated} without a date</span>}
               </span>
             </>
           ) : <span className="block text-sm text-gray-600">No goals yet. Open to add your first one.</span>)}

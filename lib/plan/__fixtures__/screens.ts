@@ -17,6 +17,7 @@ import { pickedIds, pickedTotal, plannerSources, type CashField, type SourcePick
 import { goalForecast, planningSnapshot, type PlanningRecord } from "../../predictions";
 import { loansOf } from "../loans";
 import { livedInHomes } from "../home";
+import { goalsSummary } from "../goalSummary";
 import { DEFAULT_PLAN_SETTINGS, type PlanSettings } from "../settings";
 
 const GOAL_ASSET_KEYS = ["fixedIncome", "stocks", "mutualFunds", "bullion", "property", "ulips", "nsel", "otherAssets", "insurance"];
@@ -151,8 +152,8 @@ export function goals(records: PlanningRecord[], asOf: string, asOfInstant: Date
     /** What the Goals page hands the Planner as each goal's value today. */
     current: Object.fromEntries(f.goals.map((g) => [g.id, { value: g.value }])),
     extraNeeded: rows.reduce((s, g) => s + (g.p?.monthlyNeeded || 0), 0),
-    /** The Home goals tile: every projection added together over every target. */
-    homeTilePct: rows.reduce((s, g) => s + g.target, 0) ? (rows.reduce((s, g) => s + (g.p?.projected || 0), 0) / rows.reduce((s, g) => s + g.target, 0)) * 100 : 0,
+    /** The Home goals tile (R17): counts by status, the weakest goal and the extra needed each month. */
+    homeTile: goalsSummary(rows.map((g) => ({ name: g.id, target: g.target, projected: g.p ? g.p.projected : null, monthlyNeeded: g.p?.monthlyNeeded || 0 }))),
   };
 }
 
