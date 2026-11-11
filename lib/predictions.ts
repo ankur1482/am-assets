@@ -1,6 +1,7 @@
 import { isCashAtHome, isDividendIncome, isEarningRent, isOverdraftLoan, isRentedProperty, isSavingsAccount, occupiedShareOfMonth, num } from './calculations';
 import { loansOf } from './plan/loans';
 import { odPosition } from './plan/od';
+import { isPaidFromPayroll } from './plan/contributions';
 import { calculateInsurance, normalizeInsurancePolicy } from './insurance';
 import { dividendsReceivedIn } from './dividends';
 import { monthlyDirectExpenses } from './expenses';
@@ -36,7 +37,7 @@ export function monthlyPayment(balance: number, annualRate: number, months: numb
 }
 
 export function planningSnapshot(records: PlanningRecord[], asOf = indiaDate()) {
-  let monthlySalary = 0, monthlyRent = 0, monthlyDividend = 0, savingsBalance = 0, cashAtHome = 0, odParked = 0, monthlyInvestment = 0, monthlyPremium = 0;
+  let monthlySalary = 0, monthlyRent = 0, monthlyDividend = 0, savingsBalance = 0, cashAtHome = 0, odParked = 0, monthlyInvestment = 0, monthlyPayrollInvestment = 0, monthlyPremium = 0;
   const debts: DebtInput[] = [], warnings: string[] = [], rentals: Record<string, any>[] = [], premiumSchedule: PremiumDue[] = [], salaryEnds: { id: string; month: string; amount: number }[] = [];
   const propertyIds = new Set(records.filter(r => r.module_key === 'property').map(r => r.id));
   for (const record of records) {
@@ -56,7 +57,10 @@ export function planningSnapshot(records: PlanningRecord[], asOf = indiaDate()) 
       }
       else if (!propertyIds.has(d.linked_property_id)) monthlyRent += Math.max(0, num(d.employee_contribution));
     } else if (['fixedIncome', 'stocks', 'mutualFunds', 'ulips', 'bullion', 'otherAssets'].includes(record.module_key)) {
-      monthlyInvestment += Math.max(0, num(d.monthly_contribution) || num(d.sip_amount) || num(d.monthly_investment) || (record.module_key === 'fixedIncome' ? num(d.employee_contribution) + num(d.company_contribution) + num(d.yearly_investment) / 12 : num(d.monthly_premium)));
+      const amount = Math.max(0, num(d.monthly_contribution) || num(d.sip_amount) || num(d.monthly_investment) || (record.module_key === 'fixedIncome' ? num(d.employee_contribution) + num(d.company_contribution) + num(d.yearly_investment) / 12 : num(d.monthly_premium)));
+      // Payroll contributions (Company PF, EPF) come out before take-home pay, so they are not taken from cash again (R5).
+      if (record.module_key === 'fixedIncome' && isPaidFromPayroll(d)) monthlyPayrollInvestment += amount;
+      else monthlyInvestment += amount;
     }
     if (record.module_key === 'property' && isRentedProperty(d)) {
       rentals.push(d);
@@ -89,7 +93,7 @@ export function planningSnapshot(records: PlanningRecord[], asOf = indiaDate()) 
   // to the loan if used. The two are shown side by side and never added into one headline.
   const od = odPosition(records, asOf);
   const cashNow = savingsBalance + cashAtHome + od.spare, canRedraw = od.canRedraw;
-  return { monthlyDirectExpenses: directExpenses, monthlyRegular, rentals, monthlySalary, monthlyRent, monthlyDividend, savingsBalance, cashAtHome, odParked, odSpare: od.spare, odAccounts: od.accounts, cashNow, canRedraw, liquidity: savingsBalance + cashAtHome + odParked, monthlyIncome, monthlyEmi, availableCashFlow, monthlyInvestment, monthlyPremium, annualPremium: monthlyPremium * 12, premiumSchedule, salaryEnds, debts, warnings };
+  return { monthlyDirectExpenses: directExpenses, monthlyRegular, rentals, monthlySalary, monthlyRent, monthlyDividend, savingsBalance, cashAtHome, odParked, odSpare: od.spare, odAccounts: od.accounts, cashNow, canRedraw, liquidity: savingsBalance + cashAtHome + odParked, monthlyIncome, monthlyEmi, availableCashFlow, monthlyInvestment, monthlyPayrollInvestment, monthlyPremium, annualPremium: monthlyPremium * 12, premiumSchedule, salaryEnds, debts, warnings };
 }
 
 export function projectWealth(input: { starting: number; years: number; annualReturn: number; inflation: number; monthly: number; annualStepUp: number; contributionYears: number; retirementMonthly: number }) {

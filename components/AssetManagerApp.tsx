@@ -3360,7 +3360,8 @@ export default function AssetManagerApp() {
           ["Rent In", flow.monthlyRent],
           ["Dividends In", flow.monthlyDividend],
           ["Loan EMIs", -flow.monthlyEmi],
-          ["Investments", -flow.monthlyInvestment],
+          ["Investments", -flow.monthlyInvestment, "Paid from your bank"],
+          ...(flow.monthlyPayrollInvestment > 0 ? [["Payroll PF", flow.monthlyPayrollInvestment, "Taken out before take-home pay, so not taken again here"]] : []),
           ["Insurance This Year", -flow.annualPremium, "Paid in the month each premium is due, not every month"],
           ["Regular Payments", -flow.monthlyRegular],
           ["Daily Expenses", -flow.monthlyDirectExpenses, "Google Pay and cash this month"],
@@ -4065,6 +4066,9 @@ export default function AssetManagerApp() {
       return t === "epf" || t === "companypf" || t === "pf" || t === "salary" || t === "rentalincome" || t === "dividendincome";
     if (name === "company_contribution")
       return t === "epf" || t === "companypf" || t === "pf";
+    // Where a regular deposit's money comes from (R5); income, cash and gratuity have no deposits.
+    if (name === "paid_from")
+      return !["salary", "rentalincome", "dividendincome", "savingsinbank", "cashathome", "gratuity"].includes(t);
     if (name === "gratuity_value") return t === "gratuity";
     if (name === "yearly_total_value") return t === "salary" || t === "rentalincome" || t === "dividendincome";
     if (name === "rent_agreement_start_date" || name === "rentee_name" || name === "rentee_phone")

@@ -6,6 +6,7 @@ import { dividendsReceivedIn } from "./dividends";
 import { calculateInsurance, insuranceKind } from "./insurance";
 import { recurringPayments } from "./monthlyPayments";
 import { employmentOf } from "./employment";
+import { isPaidFromPayroll } from "./plan/contributions";
 import type { PlanningRecord } from "./predictions";
 
 export type CashField = "cash" | "income" | "expenses" | "investment" | "insurance";
@@ -44,7 +45,9 @@ export function plannerSources(records: PlanningRecord[], asOf: string): Record<
     }
     if (["fixedIncome", "stocks", "mutualFunds", "ulips", "bullion", "otherAssets"].includes(r.module_key) && !(r.module_key === "fixedIncome" && (isSavingsAccount(d) || isCashAtHome(d) || isDividendIncome(d) || /^(salary|rental\s*income)$/.test(lower)))) {
       const monthly = Math.max(0, num(d.monthly_contribution) || num(d.sip_amount) || num(d.monthly_investment) || (r.module_key === "fixedIncome" ? num(d.employee_contribution) + num(d.company_contribution) + num(d.yearly_investment) / 12 : num(d.monthly_premium)));
-      if (monthly) out.investment.push({ id: r.id, label: join(d.security_name || category || r.module_key, d.broker) + who(d), group: { fixedIncome: "Fixed income", stocks: "Stocks", mutualFunds: "Mutual funds (SIP)", ulips: "ULIPs", bullion: "Gold & silver", otherAssets: "Other" }[r.module_key] || "Other", value: monthly, defaultOn: true });
+      // Payroll contributions come out before take-home pay, so they start unticked (R5).
+      const payroll = r.module_key === "fixedIncome" && isPaidFromPayroll(d);
+      if (monthly) out.investment.push({ id: r.id, label: join(d.security_name || category || r.module_key, d.broker) + who(d) + (payroll ? " (from payroll, already out of take-home pay)" : ""), group: { fixedIncome: "Fixed income", stocks: "Stocks", mutualFunds: "Mutual funds (SIP)", ulips: "ULIPs", bullion: "Gold & silver", otherAssets: "Other" }[r.module_key] || "Other", value: monthly, defaultOn: !payroll });
     }
     if (r.module_key === "property" && isRentedProperty(d)) {
       const earning = isEarningRent(d, asOf);
