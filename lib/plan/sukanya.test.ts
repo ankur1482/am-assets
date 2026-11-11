@@ -144,3 +144,65 @@ describe("finding her date of birth", async () => {
     expect(line.basis).not.toMatch(/no date of birth/);
   });
 });
+
+// Fixed Income is the source for Sukanya accounts: their dates and the scheme checks are worked out
+// there, from the opening date and the girl's date of birth, and goals read the same facts.
+describe("Sukanya facts for the Fixed Income page", async () => {
+  const { sukanyaFacts, sukanyaSaveCheck } = await import("./sukanya");
+  const dates = { Mira: "2014-02-10", Asha: "1985-07-01", Riya: "2010-03-01" };
+  const rec = (data: Record<string, any>) => ({ account_name: "Mira", category: "Sukanya Samriddhi", purchase_date: "2018-06-01", ...data });
+
+  it("works out her age at opening, deposit end, education and marriage dates, maturity and status", () => {
+    expect(sukanyaFacts(rec({ yearly_investment: 150000 }), dates, "2026-11-10")).toMatchObject({
+      girl: "Mira", birthDate: "2014-02-10", ageAtOpening: 4, ageToday: 12,
+      depositsUntil: "2033-06-01", depositYearsLeft: 6, educationFrom: "2032-02-10", marriageFrom: "2032-02-10", maturity: "2039-06-01",
+      status: "Deposits open", withinYearlyLimit: true,
+    });
+  });
+
+  it("knows when deposits have closed and when it has matured", () => {
+    expect(sukanyaFacts(rec({ purchase_date: "2005-01-01", account_name: "Riya" }), dates, "2026-11-10").status).toBe("Matured");
+    expect(sukanyaFacts(rec({ purchase_date: "2010-06-01", account_name: "Riya" }), dates, "2026-11-10").status).toBe("Deposits closed, still earning interest");
+  });
+
+  describe("saving applies the scheme rules", () => {
+    it("accepts a valid account and fills in the 21-year term and the notified rate", () => {
+      const r = sukanyaSaveCheck(rec({}), dates, []);
+      expect(r.errors).toEqual([]);
+      expect(r.data).toMatchObject({ lock_in_years: 21, interest_rate: 8.2, maturity_date: "2039-06-01" });
+    });
+
+    it("refuses an account in a parent's name", () => {
+      expect(sukanyaSaveCheck(rec({ account_name: "Asha" }), dates, []).errors.join(" ")).toMatch(/in the girl's own name/);
+    });
+
+    it("refuses opening after she turned 10", () => {
+      expect(sukanyaSaveCheck(rec({ account_name: "Riya", purchase_date: "2021-01-01" }), dates, []).errors.join(" ")).toMatch(/before she turns 10/);
+    });
+
+    it("refuses more than ₹1,50,000 a year", () => {
+      expect(sukanyaSaveCheck(rec({ yearly_investment: 200000 }), dates, []).errors.join(" ")).toMatch(/1,50,000/);
+    });
+
+    it("refuses a second account for the same girl", () => {
+      expect(sukanyaSaveCheck(rec({}), dates, [{ id: "other", data: rec({}) }]).errors.join(" ")).toMatch(/only one Sukanya account/);
+    });
+
+    it("needs her date of birth and the opening date", () => {
+      const errors = sukanyaSaveCheck(rec({ account_name: "Kavi", purchase_date: "" }), dates, []).errors.join(" ");
+      expect(errors).toMatch(/date of birth/);
+      expect(errors).toMatch(/opened/);
+    });
+  });
+});
+
+describe("Fixed Income value of a Sukanya record", async () => {
+  const { computeRecord } = await import("../calculations");
+  it("counts deposits for 15 years only", async () => {
+    const { vi } = await import("vitest");
+    vi.useFakeTimers(); vi.setSystemTime(new Date("2026-11-10T12:00:00+05:30"));
+    const c = computeRecord("fixedIncome", { category: "Sukanya Samriddhi", purchase_date: "2005-01-01", yearly_investment: 100000, interest_rate: 8.2 });
+    vi.useRealTimers();
+    expect(c.invested).toBe(1500000);
+  });
+});

@@ -114,6 +114,8 @@ const monthSpan=(d:any)=>{const start=d?new Date(d):new Date();if(Number.isNaN(s
 const typeKey=(r:any)=>String(r.category||'').toLowerCase();
 const isGratuity=(r:any)=>/gratuity/.test(typeKey(r));
 const isAnnualAccount=(r:any)=>/ppf|sukanya|gratuity/.test(typeKey(r));
+// Sukanya deposits are allowed only for 15 years from opening (Sukanya Samriddhi Account Scheme, 2019, para 4(3)).
+const depositYearsCap=(r:any)=>/sukanya/.test(typeKey(r))?15:Infinity;
 const isPf=(r:any)=>/^epf$|^pf$|company\s*pf|provident/.test(typeKey(r));
 const isCompanyPf=(r:any)=>/^pf$|company\s*pf/.test(typeKey(r));
 const fiBaseDate=(r:any)=>r.purchase_date||r.account_creation_date;
@@ -134,7 +136,7 @@ function projectedFixedIncomeValue(r:any,periodYears:number){
   if(isAnnualAccount(r)){
     const fullYears=Math.floor(Math.max(0,periodYears)),partial=Math.max(0,periodYears-fullYears);
     let balance=initial;
-    for(let i=0;i<fullYears;i++)balance=(balance+yearly)*(1+rate);
+    for(let i=0;i<fullYears;i++)balance=(balance+(i<depositYearsCap(r)?yearly:0))*(1+rate);
     if(partial)balance=balance*(1+(rate*partial));
     return balance;
   }
@@ -147,7 +149,7 @@ function projectedFixedIncomeValue(r:any,periodYears:number){
 function fixedIncomeInvested(r:any,periodYears:number){
   const initial=num(r.gratuity_value)||num(r.initial_investment)||num(r.investment_amount),yearly=num(r.yearly_investment),monthly=num(r.employee_contribution)+num(r.company_contribution);
   if(isPf(r))return initial+(monthly*Math.max(0,Math.round(periodYears*12)));
-  if(isAnnualAccount(r))return initial+(yearly*Math.floor(Math.max(0,periodYears)));
+  if(isAnnualAccount(r))return initial+(yearly*Math.min(depositYearsCap(r),Math.floor(Math.max(0,periodYears))));
   return initial+(yearly*Math.floor(Math.max(0,periodYears)))+(monthly*monthSpan(fiBaseDate(r)));
 }
 

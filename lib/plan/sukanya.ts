@@ -11,6 +11,7 @@
 // can actually be taken out by the goal's date.
 import { num } from "../calculations";
 import { monthsBetween } from "./dates";
+import { notifiedRate } from "../fixedIncomeRates";
 import { futureValue, type PlannedInvestment, type ProjectionItem } from "../goalProjection";
 
 export const SUKANYA = { depositYears: 15, maturityYears: 21, maxPerYear: 150000, minPerYear: 250, openBeforeAge: 10, withdrawFromAge: 18, educationShare: 0.5 } as const;
@@ -185,4 +186,66 @@ export function withSukanyaRules(
     }
     return item;
   });
+}
+
+export type SukanyaFacts = {
+  girl: string; birthDate: string | null; opened: string | null;
+  ageAtOpening: number | null; ageToday: number | null;
+  depositsUntil: string | null; depositYearsLeft: number | null;
+  /** From her 18th birthday (or passing class 10, if earlier) up to half can be withdrawn for her education. */
+  educationFrom: string | null;
+  /** From her 18th birthday the account can be closed for her marriage. */
+  marriageFrom: string | null;
+  maturity: string | null;
+  status: "Opening date missing" | "Deposits open" | "Deposits closed, still earning interest" | "Matured";
+  yearlyDeposit: number; withinYearlyLimit: boolean;
+  warnings: string[];
+};
+
+/**
+ * Everything the scheme decides about one Sukanya account, from its opening date and the girl's date of
+ * birth. The Fixed Income page shows these, and goals use the same dates.
+ */
+export function sukanyaFacts(data: Record<string, any>, birthDates: Record<string, string>, asOf: string): SukanyaFacts {
+  const girl = String(data?.account_name || "").trim(), birthDate = birthDateOf(birthDates, girl), terms = sukanyaTerms(data, birthDate, undefined, girl ? [girl] : []);
+  const opened = terms.opened, yearlyDeposit = Math.max(0, num(data?.yearly_investment));
+  const status: SukanyaFacts["status"] = !opened ? "Opening date missing" : terms.maturity && asOf >= terms.maturity ? "Matured" : terms.depositsUntil && asOf >= terms.depositsUntil ? "Deposits closed, still earning interest" : "Deposits open";
+  return {
+    girl, birthDate, opened,
+    ageAtOpening: birthDate && opened ? ageOn(birthDate, opened) : null,
+    ageToday: birthDate ? ageOn(birthDate, asOf) : null,
+    depositsUntil: terms.depositsUntil,
+    depositYearsLeft: terms.depositsUntil ? Math.floor(monthsBetween(asOf, terms.depositsUntil) / 12) : null,
+    educationFrom: terms.turns18, marriageFrom: terms.turns18, maturity: terms.maturity,
+    status, yearlyDeposit, withinYearlyLimit: yearlyDeposit <= SUKANYA.maxPerYear,
+    warnings: terms.warnings,
+  };
+}
+
+/**
+ * The scheme's conditions for opening and keeping an account, checked when a Sukanya record is saved.
+ * Errors stop the save; the returned data has the 21-year term, maturity date and notified rate filled in.
+ */
+export function sukanyaSaveCheck(data: Record<string, any>, birthDates: Record<string, string>, otherSukanya: { id: string; data: Record<string, any> | null }[]) {
+  const errors: string[] = [], girl = String(data?.account_name || "").trim(), opened = sukanyaOpened(data), dob = birthDateOf(birthDates, girl);
+  if (!girl) errors.push("Choose the girl as the Account: a Sukanya account is always in the girl's own name.");
+  if (!opened) errors.push("Enter the date the account was opened (Start Date), so its 15 years of deposits and 21-year maturity can be worked out.");
+  if (girl && !dob) errors.push(`Add ${girl}'s date of birth on Settings → Accounts first. It decides whether the account can be opened and when the money can be taken out.`);
+  if (dob && opened) {
+    const age = ageOn(dob, opened);
+    if (opened < dob) errors.push(`The account is dated ${opened}, before ${girl} was born (${dob}). Check the dates.`);
+    else if (age >= 18) errors.push(`${girl} was ${age} when it was opened. A Sukanya account is in the girl's own name: choose the daughter as the Account.`);
+    else if (age >= SUKANYA.openBeforeAge) errors.push(`${girl} was ${age} when it was opened, but a Sukanya account can only be opened before she turns 10.`);
+  }
+  if (num(data?.yearly_investment) > SUKANYA.maxPerYear) errors.push(`At most ₹1,50,000 can be deposited in a financial year; ₹${num(data.yearly_investment).toLocaleString("en-IN")} is entered.`);
+  if (girl && otherSukanya.some((r) => norm(String(r.data?.account_name || "")) === norm(girl)))
+    errors.push(`${girl} already has a Sukanya account. The scheme allows only one Sukanya account per girl.`);
+  const rate = notifiedRate("Sukanya Samriddhi");
+  const filled = {
+    ...data,
+    lock_in_years: num(data?.lock_in_years) || SUKANYA.maturityYears,
+    interest_rate: num(data?.interest_rate) || rate || data?.interest_rate,
+    ...(opened ? { maturity_date: addYears(opened, SUKANYA.maturityYears) } : {}),
+  };
+  return { errors, data: filled };
 }

@@ -1,5 +1,5 @@
 import { expect, test, type CDPSession, type Locator, type Page } from '@playwright/test';
-import { expectHealthy, fixtureRecords, openApp, type MockedApp } from './helpers';
+import { expectHealthy, fixtureRecords, openApp, WORKSPACE_ID, type MockedApp } from './helpers';
 import { APP_VERSION } from '../lib/appVersion';
 
 const isPhone = (page: Page) => (page.viewportSize()?.width ?? 1440) <= 1024;
@@ -956,5 +956,25 @@ test.describe('logged-in app', () => {
     await expect.poll(() => app.writes.find(w => w.table === 'records' && w.body?.module_key === 'planSettings')?.body?.data?.birth_dates).toEqual({ Asha: '1985-07-01' });
     await expect(page.getByRole('row', { name: /Asha/ }).locator('.account-birth-date')).toContainText('01-Jul-1985 (age 41)');
     await expectHealthy(page, app, 'date of birth');
+  });
+
+  test('Fixed Income shows each Sukanya account by the scheme dates, from the girl\'s date of birth', async ({ page }) => {
+    const records = [
+      ...fixtureRecords(),
+      { id: '33333333-3333-4333-8333-000000000301', module_key: 'fixedIncome', user_id: '22222222-2222-4222-8222-222222222222', workspace_id: WORKSPACE_ID, created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z', data: { account_name: 'Mira', category: 'Sukanya Samriddhi', purchase_date: '2018-06-01', current_value_today: 800000, yearly_investment: 150000 } },
+      { id: '33333333-3333-4333-8333-000000000302', module_key: 'planSettings', user_id: '22222222-2222-4222-8222-222222222222', workspace_id: WORKSPACE_ID, created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z', data: { birth_dates: { Mira: '2014-02-10' } } },
+    ];
+    const app = await openApp(page, records as any);
+    if (isPhone(page)) await pickInvestment(page, /^Fixed Income/);
+    else await open(page, app, /^Fixed Income/);
+    const panel = page.getByRole('region', { name: 'Sukanya Samriddhi accounts' }).locator('visible=true');
+    const row = panel.getByRole('row', { name: /Mira/ });
+    await expect(row).toContainText('(age 12)');
+    await expect(row).toContainText('(she was 4)');
+    await expect(row).toContainText('until 01-Jun-2033');
+    await expect(row).toContainText('10-Feb-2032');
+    await expect(row).toContainText('01-Jun-2039');
+    await expect(row.locator('.sukanya-status')).toHaveText('Deposits open');
+    await expectHealthy(page, app, 'Sukanya panel');
   });
 });

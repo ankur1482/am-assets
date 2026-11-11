@@ -1,5 +1,5 @@
 ﻿"use client";
-import { memo, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, memo, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowDown,
   ArrowLeft,
@@ -68,7 +68,7 @@ import { loansOf } from "@/lib/plan/loans";
 import { indiaToday } from "@/lib/plan/dates";
 import { livedInHomes } from "@/lib/plan/home";
 import { PLAN_SETTINGS_MODULE, planSettingsData, planSettingsRecord, readPlanSettings, withBirthDate, type PlanSettings } from "@/lib/plan/settings";
-import { ageOn, withSukanyaRules } from "@/lib/plan/sukanya";
+import { ageOn, isSukanya, sukanyaFacts, sukanyaSaveCheck, withSukanyaRules } from "@/lib/plan/sukanya";
 import { goalsSummary } from "@/lib/plan/goalSummary";
 import { researchLinks } from "@/lib/researchLinks";
 import { ACCOUNT_TYPES, MODULES, RELATIONS } from "@/lib/modules";
@@ -3387,6 +3387,17 @@ export default function AssetManagerApp() {
     if (!user) return;
     if (!canEditModule(moduleKey))
       return setToast("This household access is read-only for this module");
+    // Sukanya Samriddhi: the scheme's conditions are checked before saving, and its 21-year term,
+    // maturity date and notified rate are filled in (Sukanya Samriddhi Account Scheme, 2019).
+    if (moduleKey === "fixedIncome" && isSukanya(data)) {
+      const others = records.filter((r) => r.module_key === "fixedIncome" && isSukanya(r.data) && r.id !== record?.id);
+      const check = sukanyaSaveCheck(data, planSettings.birthDates, others);
+      if (check.errors.length) {
+        alert(`This Sukanya Samriddhi account cannot be saved yet:\n\n• ${check.errors.join("\n• ")}`);
+        return;
+      }
+      data = check.data;
+    }
     if (!editChallenge(record ? "save edits" : "add this record")) return;
     if (moduleKey === "watchlist")
       data = await captureWatchlistBasePrice(data, record);
@@ -5907,6 +5918,7 @@ export default function AssetManagerApp() {
               )}
           </section>
           {phoneMode && view === "property" && <div className="mt-3">{constructionPanel(phoneRecords.filter((r) => r.module_key === "property"))}</div>}
+          {phoneMode && view === "fixedIncome" && sukanyaPanel()}
           <h3 className="phone-section-title">Consolidated Holdings</h3>
           <div className={`phone-list ${view === "property" ? "phone-property-list" : ""}`}>
             {moduleRows.length ? (
@@ -15950,6 +15962,56 @@ Salary will stop counting as income, Company PF contributions will stop (interes
       </div>
     );
   }
+  /**
+   * Sukanya Samriddhi accounts on the Fixed Income page: what the scheme decides for each, from its opening
+   * date and the girl's date of birth. Goals use the same dates (Sukanya Samriddhi Account Scheme, 2019).
+   */
+  function sukanyaPanel() {
+    const rows = records.filter((r) => r.module_key === "fixedIncome" && isSukanya(r.data));
+    if (!rows.length) return null;
+    const today = indiaToday(), d = (v: string | null) => (v ? formatDate(v) : "—");
+    return (
+      <section className="sukanya-panel mt-4 rounded-3xl border border-[#ded6c4] bg-white p-4 shadow-sm" aria-label="Sukanya Samriddhi accounts">
+        <h4 className="text-base font-semibold text-[#17382b]">Sukanya Samriddhi accounts</h4>
+        <p className="mt-0.5 text-xs text-gray-600">
+          Scheme rules: opened in the girl&apos;s name before she turns 10 · ₹250 to ₹1,50,000 a year · deposits for 15 years from opening ·
+          from 18 (or passing class 10) up to half can be withdrawn for her education · can be closed for her marriage at 18 or over · matures 21 years after opening.
+          Goals count each account by these dates.
+        </p>
+        <div className="mt-3 overflow-auto">
+          <table className="w-full min-w-[900px] border-collapse text-sm">
+            <thead className="bg-[#f5efe3] text-left text-xs uppercase tracking-widest">
+              <tr>
+                <th className="p-2">Girl</th><th>Opened</th><th>Deposits</th><th>This year</th><th>Half for education from</th><th>Can close for marriage from</th><th>Matures</th><th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r) => {
+                const f = sukanyaFacts(r.data || {}, planSettings.birthDates, today);
+                return (
+                  <Fragment key={r.id}>
+                    <tr className="border-t border-[#eee6d9]">
+                      <td className="p-2 font-semibold">{f.girl || "—"}{f.ageToday !== null && <span className="text-xs font-normal text-gray-500"> (age {f.ageToday})</span>}</td>
+                      <td>{d(f.opened)}{f.ageAtOpening !== null && <span className="text-xs text-gray-500"> (she was {f.ageAtOpening})</span>}</td>
+                      <td>{f.depositsUntil ? <>until {d(f.depositsUntil)}{f.status === "Deposits open" && f.depositYearsLeft !== null && <span className="text-xs text-gray-500"> ({f.depositYearsLeft} years left)</span>}</> : "—"}</td>
+                      <td className={f.withinYearlyLimit ? "tabular-nums" : "tabular-nums font-semibold text-red-700"}>{fmt(f.yearlyDeposit)} <span className="text-xs text-gray-500">of ₹1,50,000</span></td>
+                      <td>{d(f.educationFrom)}</td>
+                      <td>{d(f.marriageFrom)}</td>
+                      <td>{d(f.maturity)}</td>
+                      <td className="sukanya-status text-xs font-semibold">{f.status}</td>
+                    </tr>
+                    {f.warnings.length > 0 && (
+                      <tr><td colSpan={8} className="pb-2 text-xs font-semibold text-amber-800">{f.warnings.join(" ")}</td></tr>
+                    )}
+                  </Fragment>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </section>
+    );
+  }
   function goalsFundingPanel() {
     const { f, holdings, goalRecords, homeRecords, homeValue, homeLoan, protection } = goalFundingNow();
     if (!f.target) {
@@ -17118,6 +17180,7 @@ Salary will stop counting as income, Company PF contributions will stop (interes
         )}
         {/* Goals: the table of where each goal stands comes first; the detail and choices follow. */}
         {k === "goals" && <div className="mt-4">{goalsFundingPanel()}</div>}
+        {k === "fixedIncome" && sukanyaPanel()}
       </section>
     );
   }
