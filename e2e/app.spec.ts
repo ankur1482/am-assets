@@ -940,4 +940,21 @@ test.describe('logged-in app', () => {
     await expect(page.getByRole('group', { name: 'Still employed: Asha' })).toHaveCount(0);
     await expectHealthy(page, app, 'employment check');
   });
+
+  test('a date of birth entered on an account is saved for the household and shown with the age', async ({ page }) => {
+    test.skip(isPhone(page), 'Covered on desktop');
+    const app = await signedIn(page);
+    page.on('dialog', dialog => dialog.accept(dialog.message().match(/\b\d{4}\b/)?.[0] || ''));
+    await open(page, app, /^Settings/);
+    await page.getByRole('button', { name: 'Accounts', exact: true }).click();
+    const row = page.getByRole('row', { name: /Asha/ });
+    await expect(row.locator('.account-birth-date')).toHaveText('Not entered');
+    await row.getByRole('button', { name: 'Edit' }).click();
+    await page.getByLabel('Date of birth').fill('1985-07-01');
+    await page.getByRole('button', { name: 'Save', exact: true }).click();
+    // Saved in the household's planning settings record, not on the login profile.
+    await expect.poll(() => app.writes.find(w => w.table === 'records' && w.body?.module_key === 'planSettings')?.body?.data?.birth_dates).toEqual({ Asha: '1985-07-01' });
+    await expect(page.getByRole('row', { name: /Asha/ }).locator('.account-birth-date')).toContainText('01-Jul-1985 (age 41)');
+    await expectHealthy(page, app, 'date of birth');
+  });
 });

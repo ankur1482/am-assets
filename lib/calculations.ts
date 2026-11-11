@@ -118,7 +118,8 @@ const isPf=(r:any)=>/^epf$|^pf$|company\s*pf|provident/.test(typeKey(r));
 const isCompanyPf=(r:any)=>/^pf$|company\s*pf/.test(typeKey(r));
 const fiBaseDate=(r:any)=>r.purchase_date||r.account_creation_date;
 
-export function fixedIncomeMaturityDate(r:any){if(isCompanyPf(r))return '';const base=fiBaseDate(r),lock=num(r.lock_in_years);if(!base||!lock)return '';const d=new Date(base);if(Number.isNaN(d.getTime()))return '';d.setMonth(d.getMonth()+Math.round(lock*12));return d.toISOString().slice(0,10)}
+// A Sukanya account matures 21 years after opening (Sukanya Samriddhi Account Scheme, 2019, para 9(1)), even when no lock-in is entered.
+export function fixedIncomeMaturityDate(r:any){if(isCompanyPf(r))return '';const base=fiBaseDate(r),lock=num(r.lock_in_years)||(/sukanya/i.test(typeKey(r))?21:0);if(!base||!lock)return '';const d=new Date(base);if(Number.isNaN(d.getTime()))return '';d.setMonth(d.getMonth()+Math.round(lock*12));return d.toISOString().slice(0,10)}
 const yearEndFraction=()=>{const now=new Date(),fyStart=new Date(now.getFullYear()-(now.getMonth()<3?1:0),3,1),fyEnd=new Date(fyStart.getFullYear()+1,2,31);return Math.max(0,(fyEnd.getTime()-now.getTime())/(fyEnd.getTime()-fyStart.getTime()))}
 const yearsUntil=(date:any)=>{const end=date?new Date(date):new Date();if(Number.isNaN(end.getTime()))return 0;const now=new Date();return Math.max(0,(end.getTime()-now.getTime())/(365.25*24*60*60*1000))}
 

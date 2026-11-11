@@ -3,6 +3,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { AS_OF, AS_OF_INSTANT, household } from "./__fixtures__/household";
 import { goals } from "./__fixtures__/screens";
 import { livedInHomes } from "./home";
+import { DEFAULT_PLAN_SETTINGS } from "./settings";
 
 beforeAll(() => {
   vi.useFakeTimers();
@@ -24,7 +25,7 @@ describe("livedInHomes", () => {
 describe("Goals net worth as cash", () => {
   it("leaves out the lived-in home's loan as well as the home", () => {
     const g = goals(household(), AS_OF, AS_OF_INSTANT);
-    const withLoan = goals(household(), AS_OF, AS_OF_INSTANT, undefined, { homeLoanAgainstPlan: true });
+    const withLoan = goals(household(), AS_OF, AS_OF_INSTANT, undefined, { ...DEFAULT_PLAN_SETTINGS, homeLoanAgainstPlan: true });
     expect(Math.round(g.netAvailable - withLoan.netAvailable)).toBe(3000000);
   });
 });

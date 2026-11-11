@@ -62,7 +62,7 @@ export function monthlyToClose(gap: number, yearlyPct: number, months: number) {
 }
 
 /** payMonths: how long the monthly amount continues (employment end); fixedAtTarget: a value worked out directly, such as gratuity. */
-export type ProjectionItem = { id: string; label: string; today: number; monthly: number; rate: number; basis: string; deduct?: number; payMonths?: number | null; fixedAtTarget?: number };
+export type ProjectionItem = { id: string; label: string; today: number; monthly: number; rate: number; basis: string; deduct?: number; payMonths?: number | null; fixedAtTarget?: number; warning?: string };
 export type ProjectedItem = ProjectionItem & { atTarget: number };
 
 /**

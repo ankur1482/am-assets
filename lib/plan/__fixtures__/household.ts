@@ -46,7 +46,7 @@ export function household(): PlanningRecord[] {
 
     // Balance-only savings schemes (no cost recorded)
     row(ID.ppf, "fixedIncome", { account_name: "Ravi", category: "PPF", broker: "Govt", current_value_today: 1200000, purchase_date: "2016-04-10", lock_in_years: 15 }),
-    row(ID.sukanya, "fixedIncome", { account_name: "Asha", category: "Sukanya Samriddhi", broker: "Govt", current_value_today: 800000, purchase_date: "2018-06-01", lock_in_years: 21 }),
+    row(ID.sukanya, "fixedIncome", { account_name: "Mira", category: "Sukanya Samriddhi", broker: "Govt", current_value_today: 800000, purchase_date: "2018-06-01", lock_in_years: 21 }),
 
     // Cash
     row(ID.savingsHdfc, "fixedIncome", { account_name: "Asha", category: "Savings in Bank", broker: "HDFC Bank", current_value_today: 300000 }),

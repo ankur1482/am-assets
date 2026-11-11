@@ -18,6 +18,7 @@ import { goalForecast, planningSnapshot, type PlanningRecord } from "../../predi
 import { loansOf } from "../loans";
 import { livedInHomes } from "../home";
 import { goalsSummary } from "../goalSummary";
+import { withSukanyaRules } from "../sukanya";
 import { DEFAULT_PLAN_SETTINGS, type PlanSettings } from "../settings";
 
 const GOAL_ASSET_KEYS = ["fixedIncome", "stocks", "mutualFunds", "bullion", "property", "ulips", "nsel", "otherAssets", "insurance"];
@@ -136,7 +137,9 @@ export function goals(records: PlanningRecord[], asOf: string, asOfInstant: Date
         const rate = weight > 0 ? pool.reduce((t, i) => t + i.rate * (i.today - (i.deduct || 0)), 0) / weight : 0;
         items = g.allocated > 0 ? [{ id: "shared", label: "shared", today: g.allocated, monthly: 0, rate, basis: "" }] : [];
       }
-      items = [...items, ...plannedItems(cleanPlanned(records.find((r) => r.id === g.id)?.data?.planned_investments), rates)];
+      const goalRecord = records.find((r) => r.id === g.id), planned = cleanPlanned(goalRecord?.data?.planned_investments);
+      items = [...items, ...plannedItems(planned, rates)];
+      items = withSukanyaRules(items, { records, planned, birthDates: settings.birthDates, asOf, months: g.monthsLeft, goal: { targetDate: g.targetDate, category: goalRecord?.data?.category, name: g.name, owner: String(goalRecord?.data?.account_name || "") } });
       p = projectGoal({ target: g.target, months: g.monthsLeft, items });
     }
     const share = p && g.target ? p.projected / g.target : 0;

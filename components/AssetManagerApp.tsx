@@ -67,7 +67,8 @@ import { planningSnapshot } from "@/lib/predictions";
 import { loansOf } from "@/lib/plan/loans";
 import { indiaToday } from "@/lib/plan/dates";
 import { livedInHomes } from "@/lib/plan/home";
-import { DEFAULT_PLAN_SETTINGS } from "@/lib/plan/settings";
+import { PLAN_SETTINGS_MODULE, planSettingsData, planSettingsRecord, readPlanSettings, withBirthDate, type PlanSettings } from "@/lib/plan/settings";
+import { ageOn, withSukanyaRules } from "@/lib/plan/sukanya";
 import { goalsSummary } from "@/lib/plan/goalSummary";
 import { researchLinks } from "@/lib/researchLinks";
 import { ACCOUNT_TYPES, MODULES, RELATIONS } from "@/lib/modules";
@@ -2120,7 +2121,7 @@ export default function AssetManagerApp() {
   // Which records each Predictive Planner cash flow box adds up, also kept on the login profile.
   const plannerPicks = plannerPicksPending ?? cleanPicks(user?.user_metadata?.planner_picks);
   // Household planning settings (R19). Saved per household from Phase 2; the defaults apply until then.
-  const planSettings = DEFAULT_PLAN_SETTINGS;
+  const planSettings = readPlanSettings(records);
   async function savePlannerPicks(next: SourcePicks) {
     setPlannerPicksPending(next);
     const { data, error } = await supabase.auth.updateUser({ data: { planner_picks: next } });
@@ -3582,7 +3583,21 @@ export default function AssetManagerApp() {
       await loadAll(true);
     }
   }
-  async function saveAccount(payload: any, existing?: Account | null) {
+  /** Saves the household's planning settings record (R19), keeping any keys this version does not know. */
+  async function savePlanSettings(next: PlanSettings) {
+    if (!user) return false;
+    if (!canEditModule(PLAN_SETTINGS_MODULE)) {
+      setToast("This household access cannot change planning settings");
+      return false;
+    }
+    const existing = planSettingsRecord(records), data = { ...(existing?.data || {}), ...planSettingsData(next) };
+    const { error } = existing
+      ? await supabase.from("records").update({ data }).eq("id", existing.id)
+      : await supabase.from("records").insert({ user_id: user.id, ...(activeWorkspaceId ? { workspace_id: activeWorkspaceId } : {}), module_key: PLAN_SETTINGS_MODULE, data });
+    if (error) setToast(error.message);
+    return !error;
+  }
+  async function saveAccount(payload: any, existing?: Account | null, birthDate?: string) {
     if (!user) return;
     if (!canEditModule("accounts"))
       return setToast("This household access cannot change accounts");
@@ -3616,6 +3631,11 @@ export default function AssetManagerApp() {
         });
       if (error) return setToast(error.message);
     }
+    // The date of birth lives in the household's planning settings, by account name (it follows a rename).
+    const name = String(payload.name).trim(), previous = existing?.name;
+    const oldDate = planSettings.birthDates[previous || name] || "", nextDate = birthDate ?? oldDate;
+    if (nextDate !== oldDate || (previous && previous !== name && oldDate))
+      await savePlanSettings(withBirthDate(planSettings, name, nextDate, previous));
     setAccModal(null);
     setToast("Account saved");
     await loadAll(true);
@@ -13666,6 +13686,7 @@ Salary will stop counting as income, Company PF contributions will stop (interes
                   <th>Relation</th>
                   <th>Type</th>
                   <th>Institution</th>
+                  <th>Date of birth</th>
                   <th>Action</th>
                 </tr>
               </thead>
@@ -13676,6 +13697,13 @@ Salary will stop counting as income, Company PF contributions will stop (interes
                     <td>{a.relation}</td>
                     <td>{a.type}</td>
                     <td>{a.institution}</td>
+                    <td className="account-birth-date tabular-nums">
+                      {planSettings.birthDates[a.name] ? (
+                        <>{formatDate(planSettings.birthDates[a.name])} <span className="text-xs text-gray-500">(age {ageOn(planSettings.birthDates[a.name], indiaToday())})</span></>
+                      ) : (
+                        <span className="text-xs text-gray-500">Not entered</span>
+                      )}
+                    </td>
                     <td className="space-x-2">
                       <button
                         className="btn"
@@ -15857,7 +15885,13 @@ Salary will stop counting as income, Company PF contributions will stop (interes
       items = g.allocated > 0 ? [{ id: "shared", label: "Its share of your net worth", today: g.allocated, monthly: 0, rate, basis: "Average of your unpicked holdings" }] : [];
     }
     // Investments the user plans to make for this goal grow alongside what they already hold.
-    items = [...items, ...plannedItems(cleanPlanned(records.find((r) => r.id === g.id)?.data?.planned_investments), rates)];
+    const goalRecord = records.find((r) => r.id === g.id), planned = cleanPlanned(goalRecord?.data?.planned_investments);
+    items = [...items, ...plannedItems(planned, rates)];
+    // Sukanya Samriddhi: deposits stop after 15 years, and only what can be taken out by the goal's date counts.
+    items = withSukanyaRules(items, {
+      records, planned, birthDates: planSettings.birthDates, asOf: indiaToday(), months: g.monthsLeft,
+      goal: { targetDate: g.targetDate, category: goalRecord?.data?.category, name: g.name, owner: String(goalRecord?.data?.account_name || "") },
+    });
     return projectGoal({ target: g.target, months: g.monthsLeft, items });
   }
   /** On track (100%+), close (80% to 99%), needs work (under 80%), or no date to project to. */
@@ -15909,6 +15943,7 @@ Salary will stop counting as income, Company PF contributions will stop (interes
                 {i.monthly > 0 && <> · adding {fmt(i.monthly)}/month</>}
               </span>
               <span className="tabular-nums font-semibold">{fmt(i.atTarget)}</span>
+              {i.warning && <span className="goal-line-warning w-full text-[11px] font-semibold text-amber-800">{i.warning}</span>}
             </div>
           ))}
         </div>
@@ -18736,6 +18771,7 @@ Salary will stop counting as income, Company PF contributions will stop (interes
                 notes: String(fd.get("notes") || ""),
               },
               a,
+              String(fd.get("birth_date") || ""),
             );
           }}
         >
@@ -18779,6 +18815,18 @@ Salary will stop counting as income, Company PF contributions will stop (interes
               className="field-input"
               defaultValue={a?.institution || ""}
             />
+          </div>
+          <div>
+            <label className="field-label" htmlFor="account-birth-date">Date of birth</label>
+            <input
+              id="account-birth-date"
+              name="birth_date"
+              type="date"
+              className="field-input"
+              max={indiaToday()}
+              defaultValue={a ? planSettings.birthDates[a.name] || "" : ""}
+            />
+            <small className="text-xs text-gray-500">Used for plans, such as when a daughter&apos;s Sukanya money can be taken out.</small>
           </div>
           <div className="col-span-2 max-md:col-span-1">
             <label className="field-label">Notes</label>
