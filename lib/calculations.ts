@@ -231,6 +231,9 @@ function fixedIncomeRecord(r:any){
   }
   // A PF only receives contributions up to the last working day.
   const pfEnd=isPf(r)&&r.last_working_date?new Date(r.last_working_date):null,elapsed=pfEnd&&!Number.isNaN(pfEnd.getTime())&&pfEnd<new Date()?Math.max(0,years(fiBaseDate(r))-years(r.last_working_date)):years(fiBaseDate(r));if(isCompanyPf(r))r.broker='Govt';r.maturity_date=isCompanyPf(r)?'':fixedIncomeMaturityDate(r)||r.maturity_date;r.invested=fixedIncomeInvested(r,elapsed);r.interest_incurred_fy=fixedIncomeInterestIncurredFy(r);r.worth_till_date=fixedIncomeWorthTillDate(r);r.latest=r.worth_till_date;r.maturity_value=isCompanyPf(r)?'':fixedIncomeMaturityValue(r);r.year_end_maturity_value=fixedIncomeYearEndValue(r);r.locked_until=r.maturity_date||'';
+  // R18: cost is what was deposited when that is entered; when nothing was ever recorded it is unknown (null), not zero,
+  // so the balance is not shown as all gain. Its value still counts in net worth.
+  if(num(r.total_deposited)>0)r.invested=num(r.total_deposited);else if(!num(r.invested)&&num(r.latest)>0)r.invested=null;
   if(/^salary$|^rental\s*income$/.test(typeKey(r)))r.yearly_total_value=(num(r.employee_contribution)+num(r.company_contribution))*12;
   return r
 }
@@ -475,10 +478,10 @@ export function computeRecord(k:string,r0:any){const r={...r0};if(k==='stocks'){
     r.construction_owed=b.paid>0?Math.min(b.pending,Math.max(0,num(r.latest)-b.paid)):0;
     // While it is being built, what has gone in is what has been paid so far (own money and loan), not the full price.
     if(b.paid>0)r.invested=b.paid}else{r.construction_paid='';r.construction_pending='';r.construction_owed=0}}else if(k==='fixedIncome'){fixedIncomeRecord(r)}else if(k==='ulips'){r.invested=num(r.investment_amount)||num(r.premium_amount);r.latest=num(r.latest_value)||r.invested}else if(k==='insurance'){insuranceRecord(r)}else if(k==='loans'){applyLoanPosition(r,LOAN_FIELDS);r.latest=r.balance}else if(k==='borrowings'){r.balance=num(r.loan_balance)||(num(r.loan_amount)-num(r.principal_paid));r.loan_balance=r.balance;r.net_loan_balance=r.balance;r.latest=r.balance}else if(k==='goals'){r.gap=Math.max(0,num(r.target_amount)-num(r.current_value));r.monthly_required=r.gap/months(new Date(),new Date(r.target_date||new Date()))}// A home being built gains only beyond what is paid and still owed, so the unpaid price is not shown as a loss.
-  r.gain=k==='insurance'?0:num(r.latest)-num(r.invested)-(k==='property'?num(r.construction_owed):0);
+  r.gain=k==='insurance'?0:r.invested===null?null:num(r.latest)-num(r.invested)-(k==='property'?num(r.construction_owed):0);
   // What is left to clear on a property (the bank's loan in use, after money parked in the OD, plus any builder
   // amount already inside its value), and what is yours once that is cleared.
-  if(k==='property'){r.to_clear=Math.max(0,num(r.balance))+num(r.construction_owed);r.realised_value=num(r.latest)-r.to_clear}r.gain_pct=k==='insurance'?0:num(r.invested)?r.gain/num(r.invested)*100:0;return r}
+  if(k==='property'){r.to_clear=Math.max(0,num(r.balance))+num(r.construction_owed);r.realised_value=num(r.latest)-r.to_clear}r.gain_pct=k==='insurance'?0:r.invested===null?null:num(r.invested)?r.gain/num(r.invested)*100:0;return r}
 // odSpare (R3): money parked in OD accounts above their loan balances. It is your own cash, so it adds to net worth,
 // but it is kept out of `assets` so a screen's holdings total (such as Property) does not include cash.
 export function computeTotals(records:any[]){let assets=0,liabilities=0,invested=0,gain=0,odSpare=0;records.forEach(rec=>{const k=rec.module_key,c=computeRecord(k,rec.data); if(['stocks','mutualFunds','ulips','bullion','nsel','fixedIncome','property','otherAssets'].includes(k)){assets+=num(c.latest);invested+=num(c.invested);gain+=num(c.gain)} if(k==='insurance')assets+=num(c.latest);if(k==='property'||k==='loans')odSpare+=num(c.od_spare);if(['loans','borrowings'].includes(k))liabilities+=num(c.balance);if(k==='property')liabilities+=num(c.balance)+num(c.construction_owed)});return{assets,liabilities,odSpare,net:assets+odSpare-liabilities,invested,gain}}

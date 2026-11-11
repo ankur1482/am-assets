@@ -15035,6 +15035,9 @@ Salary will stop counting as income, Company PF contributions will stop (interes
     );
   }
   function formatModuleCell(moduleKey: string, col: string, c: any, record?: Rec) {
+    // R18: a holding with no recorded cost has an unknown cost, not ₹0, so it has no gain either.
+    if (c?.invested === null && ["invested", "gain", "gain_pct"].includes(col))
+      return col === "invested" ? <span className="cost-not-recorded text-xs text-gray-500">cost not recorded</span> : <span className="text-gray-400">—</span>;
     // Only properties being built have stage payments; ready ones show a dash.
     if (moduleKey === "property" && ["construction_paid", "construction_pending"].includes(col)) {
       if (c[col] === "" || c[col] === undefined) return <span className="text-gray-400">—</span>;
