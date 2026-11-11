@@ -213,6 +213,8 @@ type WorkspaceMember = {
 };
 const views = [
   ["dashboard", "DB", "Home"],
+  // Payments this month and Expenses, moved off the Home dashboard into Investments on 11 Nov 2026.
+  ["payments", "PY", "Payments"],
   ["allInvestments", "AI", "All Investments"],
   [TRANSACTION_MODULE, "TX", "Transactions"],
   ["stocks", "ST", "Stocks"],
@@ -253,6 +255,7 @@ const groups = [
       "ulips",
       "otherAssets",
       "nsel",
+      "payments",
     ],
   ],
   // Removed from the menus on 10 Nov 2026 at the user's request (the screens and their data remain):
@@ -546,7 +549,8 @@ const compactName = (value: any) => {
     .trim();
   return cleaned || name;
 };
-const DIVIDENDS_EARNED_TAB = "Dividends Earned";
+// Dividends to confirm and dividends earned share one Stocks tab; its count is the dividends still to confirm.
+const DIVIDENDS_EARNED_TAB = "Dividends Earned / Confirmed";
 const DIVIDEND_RADAR_TAB = "Dividend Buy Radar";
 const OD_LOAN_LABELS: Record<string, string> = {
   loan_structure: "Repayment Structure",
@@ -2098,7 +2102,7 @@ export default function AssetManagerApp() {
     accountTab(k) === "All" ||
     String(r.data?.account_name || "Unassigned") === accountTab(k);
   const canViewModule = (moduleKey: string) =>
-    ["dashboard", "purchaseCalculator", "backups", "household", "settings"].includes(
+    ["dashboard", "payments", "purchaseCalculator", "backups", "household", "settings"].includes(
       moduleKey,
     ) ||
     workspaceAccess.all_modules ||
@@ -4882,12 +4886,13 @@ export default function AssetManagerApp() {
           (id !== "admin" || isAdmin) &&
           (id === "admin" || canViewModule(id)) &&
           isTabShown(id) &&
-          (g !== "Investments" || showAllInvestmentTypes || heldTypes.has(id) || view === id || !heldTypes.size),
+          // Payments is not an investment type, so it always shows.
+          (g !== "Investments" || id === "payments" || showAllInvestmentTypes || heldTypes.has(id) || view === id || !heldTypes.size),
       ),
     ])
     .filter(([, ids]: any) => ids.length);
   const hiddenInvestmentTypes = (groups.find(([g]) => g === "Investments")?.[1] as string[]).filter(
-    (id) => canViewModule(id) && isTabShown(id) && !heldTypes.has(id),
+    (id) => id !== "payments" && canViewModule(id) && isTabShown(id) && !heldTypes.has(id),
   ).length;
   const investmentTypesToggle = (compact = false) =>
     hiddenInvestmentTypes > 0 && heldTypes.size > 0 ? (
@@ -5121,7 +5126,7 @@ export default function AssetManagerApp() {
           id: account,
           label:
             account === DIVIDENDS_EARNED_TAB
-              ? `${account} (${receivedDividends(records).length})`
+              ? `${account} (${dividendsToConfirmCount()})`
               : account === DIVIDEND_RADAR_TAB
                 ? `${account} (${currentBuySignals().length})`
                 : account,
@@ -5603,16 +5608,8 @@ export default function AssetManagerApp() {
     if (view === MONTHLY_VALUATION_MODULE) return <div className="phone-screen p-3">{monthlyValuationPanel()}</div>;
     if (view === TRANSACTION_MODULE) return <div className="phone-screen p-3">{transactionLedgerPanel()}</div>;
     if (view === "backups") return <div className="phone-screen p-3">{backupCenterPanel()}</div>;
-    // phoneView also renders, hidden, on desktop, where the desktop dashboard already shows these panels.
-    if (phoneMode && view === "dashboard" && ["payments", "dividends", "expenses"].includes(detailTabs.dashboard))
-      return (
-        <div className="phone-screen space-y-3 p-3">
-          {dashboardTabs()}
-          <div className="phone-overall-sections min-w-0">
-            {detailTabs.dashboard === "payments" ? monthlyPaymentsPanel() : detailTabs.dashboard === "expenses" ? expensesPanel() : dividendsPanel()}
-          </div>
-        </div>
-      );
+    // phoneView also renders, hidden, on desktop, where the desktop screen already shows these panels.
+    if (phoneMode && view === "payments") return <div className="phone-screen space-y-3 p-3">{paymentsView()}</div>;
     if (view === "earnings") return <div className="phone-screen p-3">{earningsPanel()}</div>;
     // Phone-only screens for today's goal and admin tools; desktop shows its own versions.
     if (phoneMode && view === "goals")
@@ -5630,7 +5627,7 @@ export default function AssetManagerApp() {
       return phoneMode ? <div className="phone-screen">{bullionCalculatorPanel()}</div> : null;
 
     const selectedAccount = phoneAccountTab();
-    if (selectedAccount === DIVIDENDS_EARNED_TAB) return <div className="phone-screen p-3">{phoneAccountStrip()}<DividendHistory history={dividendHistory(records)} /></div>;
+    if (selectedAccount === DIVIDENDS_EARNED_TAB) return <div className="phone-screen space-y-3 p-3">{phoneAccountStrip()}<div className="phone-overall-sections min-w-0">{dividendsPanel()}</div><DividendHistory history={dividendHistory(records)} /></div>;
     if (selectedAccount === DIVIDEND_RADAR_TAB) return <div className="phone-screen p-3">{phoneAccountStrip()}{dividendRadarPanel()}</div>;
     const isPhoneEtfWatchlist = view === "stocks" && selectedAccount === "ETFs",
       isPhoneStockWatchlist =
@@ -5948,7 +5945,6 @@ export default function AssetManagerApp() {
       );
     return (
       <div className="phone-screen">
-        {dashboardTabs()}
         {strip}
         {phoneMode && <div className="mt-3">{homeTiles(true)}</div>}
         {phoneAccountStrip()}
@@ -8240,6 +8236,7 @@ export default function AssetManagerApp() {
             </header>
           )}
           {view === "dashboard" && !phoneMode && dashboardModern()}
+          {view === "payments" && !phoneMode && paymentsView()}
           {view === "allInvestments" && allInvestmentsView()}
           {view === "futureWealth" && !phoneMode && canViewModule("futureWealth") && predictivePlannerView()}
           {view === MONTHLY_UPLOAD_MODULE && monthlyUploadsPanel()}
@@ -9805,31 +9802,45 @@ export default function AssetManagerApp() {
       return (num(c.live_price || c.live_nav) - prev) * num(d.quantity);
     return 0;
   }
-  function dashboardTabs() {
-    const onPayments = detailTabs.dashboard === "payments",
-      onDividends = detailTabs.dashboard === "dividends",
-      onExpenses = detailTabs.dashboard === "expenses",
+  /** Dividends whose payout date has come, waiting for a yes or no. */
+  function dividendsToConfirmCount() {
+    return dividendsPending().filter((item) => item.state !== "awaiting").length;
+  }
+  /** Opens a screen's tab, on desktop and on the phone. */
+  function openPayments(tab: "month" | "expenses" = "month") {
+    setView("payments");
+    setDetailTabs((p) => ({ ...p, payments: tab }));
+  }
+  function openDividendsToConfirm() {
+    setView("stocks");
+    setAccountTabs((p) => ({ ...p, stocks: DIVIDENDS_EARNED_TAB, __phone: DIVIDENDS_EARNED_TAB }));
+  }
+  /** Payments (under Investments): this month's payments, and expenses. Moved off the Home dashboard on 11 Nov 2026. */
+  function paymentsView() {
+    const onExpenses = detailTabs.payments === "expenses",
       unpaid = currentPayments().unpaidCount,
-      unconfirmed = dividendsPending().filter((item) => item.state !== "awaiting").length,
       tabClass = (active: boolean) =>
         `shrink-0 rounded-xl px-3 py-2 text-sm font-semibold ${active ? "bg-sage text-white" : "text-[#17382b]"}`;
-    const count = (n: number) => (n ? ` (${n})` : ""),
-      tabs = [
-        { id: "summary", name: "Overall Dashboard", short: "Overall", active: !onPayments && !onDividends && !onExpenses },
-        { id: "payments", name: `Payments This Month${count(unpaid)}`, short: `Payments${count(unpaid)}`, active: onPayments },
-        { id: "dividends", name: `Dividends to Confirm${count(unconfirmed)}`, short: `Dividends${count(unconfirmed)}`, active: onDividends },
+    const tabs = [
+        { id: "month", name: `Payments This Month${unpaid ? ` (${unpaid})` : ""}`, short: `This month${unpaid ? ` (${unpaid})` : ""}`, active: !onExpenses },
         { id: "expenses", name: "Expenses", short: "Expenses", active: onExpenses },
       ],
-      choose = (id: string) => setDetailTabs((p) => ({ ...p, dashboard: id }));
-    if (phoneMode)
-      return <OneRowTabs label="Dashboard sections" tabs={tabs.map((tab) => ({ id: tab.id, label: tab.short, fullName: tab.name, active: tab.active, onSelect: () => choose(tab.id) }))} />;
-    return (
+      choose = (id: string) => setDetailTabs((p) => ({ ...p, payments: id }));
+    const tabRow = phoneMode ? (
+      <OneRowTabs label="Payments sections" tabs={tabs.map((tab) => ({ id: tab.id, label: tab.short, fullName: tab.name, active: tab.active, onSelect: () => choose(tab.id) }))} />
+    ) : (
       <div className="flex flex-wrap gap-2 rounded-2xl border border-[#e3dccc] bg-white p-1">
         {tabs.map((tab) => (
           <button key={tab.id} onClick={() => choose(tab.id)} aria-pressed={tab.active} className={tabClass(tab.active)}>
             {tab.name}
           </button>
         ))}
+      </div>
+    );
+    return (
+      <div className="space-y-5">
+        {tabRow}
+        <div className="phone-overall-sections min-w-0">{onExpenses ? expensesPanel() : monthlyPaymentsPanel()}</div>
       </div>
     );
   }
@@ -13077,8 +13088,8 @@ Salary will stop counting as income, Company PF contributions will stop (interes
     }).length;
     const todos = [
       { n: uploadStatus.missing.length, text: "monthly document to upload", many: "monthly documents to upload", action: () => setView(MONTHLY_UPLOAD_MODULE) },
-      { n: payments.unpaidCount, text: "payment still to make this month", many: "payments still to make this month", action: () => { setView("dashboard"); setDetailTabs((p) => ({ ...p, dashboard: "payments" })); } },
-      { n: dividendsPending().filter((item) => item.state !== "awaiting").length, text: "dividend to confirm", many: "dividends to confirm", action: () => { setView("dashboard"); setDetailTabs((p) => ({ ...p, dashboard: "dividends" })); } },
+      { n: payments.unpaidCount, text: "payment still to make this month", many: "payments still to make this month", action: () => openPayments("month") },
+      { n: dividendsToConfirmCount(), text: "dividend to confirm", many: "dividends to confirm", action: openDividendsToConfirm },
       { n: premiumsDue, text: "insurance premium due in 30 days", many: "insurance premiums due in 30 days", action: () => setView("insurance") },
       { n: records.filter((r) => r.module_key === "fixedIncome" && fixedIncomeReviewDue(r)).length, text: "fixed income value to review", many: "fixed income values to review", action: () => setView("fixedIncome") },
       { n: goalCount("off"), text: "goal needing work", many: "goals needing work", action: () => setView("goals") },
@@ -13138,7 +13149,7 @@ Salary will stop counting as income, Company PF contributions will stop (interes
               </span>
             </>
           ) : <span className="block text-sm text-gray-600">No goals yet. Open to add your first one.</span>)}
-          {tile("cash", "This month's cash", () => { setView("dashboard"); setDetailTabs((p) => ({ ...p, dashboard: "payments" })); }, (
+          {tile("cash", "This month's cash", () => openPayments("month"), (
             <>
               <span className="block text-3xl font-semibold tabular-nums text-[#17382b]">{fmt(snapshot.liquidity)}</span>
               <span className="block text-xs text-gray-600">ready to use (savings, cash and money parked in OD)</span>
@@ -13224,16 +13235,9 @@ Salary will stop counting as income, Company PF contributions will stop (interes
           };
         })
         .filter((r) => r.latest || r.invested);
-    if (!onPhone && ["payments", "dividends", "expenses"].includes(detailTabs.dashboard))
-      return (
-        <div className="space-y-5">
-          {dashboardTabs()}
-          {detailTabs.dashboard === "payments" ? monthlyPaymentsPanel() : detailTabs.dashboard === "expenses" ? expensesPanel() : dividendsPanel()}
-        </div>
-      );
+    // Payments and Expenses moved to Investments → Payments, and Dividends to confirm to the Stocks tab, on 11 Nov 2026.
     return (
       <div className="space-y-5">
-        {!onPhone && dashboardTabs()}
         {!onPhone && homeTiles()}
         <h3 id="home-details" className="scroll-mt-24 pt-2 text-sm font-bold uppercase tracking-[.14em] text-gray-500">Details</h3>
         {/* Removed 10 Nov 2026 at the user's request: the Invested / Today / Month start / Overall gain / Net worth strip. */}
@@ -16383,7 +16387,7 @@ Salary will stop counting as income, Company PF contributions will stop (interes
                   t === "All"
                     ? moduleRecords.length
                     : k === "stocks" && t === DIVIDENDS_EARNED_TAB
-                      ? receivedDividends(records).length
+                      ? dividendsToConfirmCount()
                     : k === "stocks" && t === DIVIDEND_RADAR_TAB
                       ? currentBuySignals().length
                     : k === "stocks" && t === "Watchlist"
@@ -16406,7 +16410,11 @@ Salary will stop counting as income, Company PF contributions will stop (interes
             </div>
           )}
           {selected === DIVIDENDS_EARNED_TAB ? (
-            <DividendHistory history={dividendHistory(records)} />
+            // Dividends waiting for a yes or no come first, then everything earned so far.
+            <div className="space-y-5">
+              {dividendsPanel()}
+              <DividendHistory history={dividendHistory(records)} />
+            </div>
           ) : selected === DIVIDEND_RADAR_TAB ? (
             dividendRadarPanel()
           ) : (
@@ -16450,7 +16458,7 @@ Salary will stop counting as income, Company PF contributions will stop (interes
                 t === "All"
                   ? moduleRecords.length
                   : k === "stocks" && t === DIVIDENDS_EARNED_TAB
-                    ? receivedDividends(records).length
+                    ? dividendsToConfirmCount()
                   : k === "stocks" && t === DIVIDEND_RADAR_TAB
                     ? currentBuySignals().length
                   : k === "stocks" && t === "Watchlist"

@@ -26,6 +26,19 @@ async function open(page: Page, app: MockedApp, name: string | RegExp) {
   await expectHealthy(page, app, String(name));
 }
 
+// Payments (with its Expenses tab) is under Investments, and dividends to confirm are a Stocks tab (since 11 Nov 2026).
+async function goPayments(page: Page, app: MockedApp, tab?: 'Expenses') {
+  if (isPhone(page)) await phoneGo(page, 'Payments');
+  else await open(page, app, /^Payments/);
+  if (tab && isPhone(page)) await tapTab(page.getByRole('group', { name: 'Payments sections' }), tab);
+  else if (tab) await page.getByRole('button', { name: tab, exact: true }).click();
+}
+async function goDividends(page: Page, app: MockedApp) {
+  if (isPhone(page)) return pickInvestment(page, /^Stocks/, /^Dividends Earned/);
+  await open(page, app, /^Stocks/);
+  await page.getByRole('button', { name: /^Dividends Earned \/ Confirmed \(/ }).click();
+}
+
 // On the phone, everything is picked from a side menu that slides in from the left.
 async function openInvestDrawer(page: Page) {
   const menu = page.getByRole('dialog', { name: 'Menu' });
@@ -92,23 +105,25 @@ test.describe('logged-in app', () => {
       await expect(page.locator('.desktop-sidebar').getByRole('button', { name, exact: true })).toHaveCount(0);
   });
 
-  test('dashboard tabs show payments and dividends', async ({ page }) => {
+  test('payments sit under Investments and dividends to confirm under Stocks', async ({ page }) => {
     const app = await signedIn(page);
-    await page.getByRole('button', { name: /Payments This Month/ }).click();
+    // Home no longer carries these as tabs.
+    await expect(page.getByRole('button', { name: /^(Payments This Month|Dividends to Confirm)/ }).locator('visible=true')).toHaveCount(0);
+    await goPayments(page, app);
     await expect(page.getByRole('region', { name: 'Payments due' }).getByText('Example Maintenance')).toBeVisible();
     await expect(page.getByRole('columnheader', { name: 'Paid from' })).toBeVisible();
     // The phone layout keeps a hidden copy of the desktop panels in the page, so look only at what is on show.
     await expect(page.getByText('Automatic, no action needed').locator('visible=true')).toBeVisible();
     await expect(page.getByText('Included in the card bill').locator('visible=true')).toBeVisible();
-    await page.getByRole('button', { name: /Dividends to Confirm/ }).click();
+    await goDividends(page, app);
     await expect(page.getByText(/Example Paints/).locator('visible=true').first()).toBeVisible();
-    await expectHealthy(page, app, 'dashboard tabs');
+    await expectHealthy(page, app, 'payments and dividends');
   });
 
   test('a payment can be added with the plus button, against a named purpose', async ({ page }) => {
     test.skip(isPhone(page), 'Covered on desktop');
     const app = await signedIn(page);
-    await page.getByRole('button', { name: /Payments This Month/ }).click();
+    await goPayments(page, app);
     await page.getByRole('button', { name: 'Add a payment' }).click();
     const form = page.locator('.pay-add-row');
     await form.getByLabel('Payment against').fill('School fees');
@@ -124,9 +139,11 @@ test.describe('logged-in app', () => {
     test.skip(isPhone(page), 'Phone has its own tab row, tested below');
     const app = await signedIn(page);
     await open(page, app, /^Stocks/);
-    const tabs = page.getByRole('button', { name: /^(Watchlist|Dividends Earned|Dividend Buy Radar) \(/ });
+    const tabs = page.getByRole('button', { name: /^(Watchlist|Dividends Earned \/ Confirmed|Dividend Buy Radar) \(/ });
     await expect(tabs).toHaveCount(3);
-    await page.getByRole('button', { name: /^Dividends Earned \(/ }).click();
+    // Its count is the dividends still to confirm; confirmations sit above what has been earned.
+    await page.getByRole('button', { name: /^Dividends Earned \/ Confirmed \(/ }).click();
+    await expect(page.getByRole('region', { name: 'Dividends to confirm' })).toBeVisible();
     const earned = page.getByRole('region', { name: 'Dividends earned table' });
     await expect(earned.getByRole('columnheader', { name: 'Received on' })).toBeVisible();
     await expect(earned.getByText('Sold Example')).toBeVisible();
@@ -166,7 +183,7 @@ test.describe('logged-in app', () => {
   test('a card can pay a payment, and the Expenses tab opens', async ({ page }) => {
     test.skip(isPhone(page), 'Covered on desktop');
     const app = await signedIn(page);
-    await page.getByRole('button', { name: /Payments This Month/ }).click();
+    await goPayments(page, app);
     await page.getByRole('combobox', { name: 'Paid from for Example Maintenance' }).selectOption({ label: 'Example Card' });
     await page.getByRole('row', { name: /Example Maintenance/ }).getByRole('button', { name: 'Mark paid' }).click();
     await expect(page.getByRole('row', { name: /Example Maintenance/ }).getByText('Example Card')).toBeVisible();
@@ -188,8 +205,7 @@ test.describe('logged-in app', () => {
     await expect(sheet).toHaveCount(0);
     const saved = app.writes.find(write => write.table === 'records' && write.body?.module_key === 'expense');
     expect(saved?.body?.data).toMatchObject({ amount: 450, label: 'Groceries', tag_id: 'google-pay', tag_label: 'Google Pay' });
-    await phoneGo(page, 'Home');
-    await page.getByRole('button', { name: 'Expenses', exact: true }).click();
+    await goPayments(page, app, 'Expenses');
     await expect(page.getByRole('region', { name: 'Expenses this month' }).getByText('Groceries')).toBeVisible();
     await expectHealthy(page, app, 'quick expense');
   });
@@ -210,10 +226,11 @@ test.describe('logged-in app', () => {
     await expectHealthy(page, app, 'phone dividends earned');
   });
 
-  test('the phone dashboard has the same tabs as desktop, all in view', async ({ page }) => {
+  test('the phone Payments screen has both tabs, all in view', async ({ page }) => {
     test.skip(!isPhone(page), 'Phone layout only');
     const app = await signedIn(page);
-    for (const name of [/^Overall Dashboard$/, /^Payments This Month/, /^Dividends to Confirm/, /^Expenses$/]) {
+    await goPayments(page, app);
+    for (const name of [/^Payments This Month/, /^Expenses$/]) {
       const tab = page.getByRole('button', { name });
       await expect(tab).toBeInViewport({ ratio: 1 });
       await tab.click();
@@ -419,7 +436,8 @@ test.describe('logged-in app', () => {
     };
     for (const width of [320, 360, 412, 480]) {
       await page.setViewportSize({ width, height: 800 });
-      await onOneLine(page.getByRole('group', { name: 'Dashboard sections' }), `dashboard tabs at ${width}`);
+      await goPayments(page, app);
+      await onOneLine(page.getByRole('group', { name: 'Payments sections' }), `payments tabs at ${width}`);
       await pickInvestment(page, /^Stocks/);
       const header = (await page.locator('.mobile-appbar').boundingBox())!;
       expect(header.height, `header at ${width}`).toBeLessThan(96);
@@ -536,9 +554,9 @@ test.describe('logged-in app', () => {
   test('payments, dividends and expenses read clearly on a phone', async ({ page }) => {
     test.skip(!isPhone(page), 'Phone layout only');
     const app = await signedIn(page);
-    await expect(page.getByRole('group', { name: 'Dashboard sections' })).toBeVisible();
-    for (const name of [/^Payments This Month/, /^Dividends to Confirm/, /^Expenses$/]) {
-      await page.getByRole('group', { name: 'Dashboard sections' }).getByRole('button', { name }).click();
+    const places = [() => goPayments(page, app), () => goPayments(page, app, 'Expenses'), () => goDividends(page, app)];
+    for (const [name, go] of places.map((go, i) => [['payments', 'expenses', 'dividends'][i], go] as const)) {
+      await go();
       await expect(page.locator('.phone-overall-sections')).toBeVisible();
       const problems = await page.evaluate(() => {
         const all = [...document.querySelectorAll('.phone-overall-sections *')];
@@ -563,7 +581,7 @@ test.describe('logged-in app', () => {
   test('the phone header and menu stay on screen while scrolling', async ({ page }) => {
     test.skip(!isPhone(page), 'Phone layout only');
     const app = await signedIn(page);
-    await expect(page.getByRole('group', { name: 'Dashboard sections' })).toBeVisible();
+    await expect(page.locator('.mobile-appbar')).toBeVisible();
     // The page grows as the app finishes loading, so keep trying until there is room to scroll.
     await expect.poll(() => page.evaluate(() => { scrollTo({ top: 2500, behavior: 'instant' }); return scrollY; })).toBeGreaterThan(2000);
     await expect(page.locator('.mobile-appbar')).toBeInViewport({ ratio: 1 });
