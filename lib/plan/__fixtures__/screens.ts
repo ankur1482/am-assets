@@ -16,6 +16,8 @@ import { insuranceKind } from "../../insurance";
 import { pickedIds, pickedTotal, plannerSources, type CashField, type SourcePicks } from "../../plannerSources";
 import { goalForecast, planningSnapshot, type PlanningRecord } from "../../predictions";
 import { loansOf } from "../loans";
+import { livedInHomes } from "../home";
+import { DEFAULT_PLAN_SETTINGS, type PlanSettings } from "../settings";
 
 const GOAL_ASSET_KEYS = ["fixedIncome", "stocks", "mutualFunds", "bullion", "property", "ulips", "nsel", "otherAssets", "insurance"];
 
@@ -72,7 +74,8 @@ export function planner(records: PlanningRecord[], asOf: string, picks: SourcePi
 }
 
 /** Goals screen: funding today and the projection to each goal's date. */
-export function goals(records: PlanningRecord[], asOf: string, asOfInstant: Date, rates: GrowthRates = DEFAULT_GROWTH) {
+export function goals(records: PlanningRecord[], asOf: string, asOfInstant: Date, rates: GrowthRates = DEFAULT_GROWTH, settings: PlanSettings = DEFAULT_PLAN_SETTINGS) {
+  const home = livedInHomes(records, settings), countsAgainstGoals = (r: PlanningRecord) => settings.homeLoanAgainstPlan || !home.ids.has(r.id);
   const homeRecords = records.filter((r) => r.module_key === "property" && isPrimaryResidence(r.data));
   const homeValue = homeRecords.reduce((s, r) => s + num(computeRecord("property", r.data).latest), 0);
   const holdings: (Holding & { gross: number })[] = GOAL_ASSET_KEYS.flatMap((k) =>
@@ -87,12 +90,12 @@ export function goals(records: PlanningRecord[], asOf: string, asOfInstant: Date
   );
   const assetClasses = [...GOAL_ASSET_KEYS.map((k) => ({ key: k, label: k, value: holdings.filter((h) => h.moduleKey === k).reduce((s, h) => s + h.gross, 0) })), { key: "odSpare", label: "odSpare", value: records.filter((r) => r.module_key === "property" || r.module_key === "loans").reduce((s, r) => s + num(computeRecord(r.module_key, r.data).od_spare), 0) }];
   const sumBalance = (k: string) => records.filter((r) => r.module_key === k).reduce((s, r) => s + num(computeRecord(k, r.data).balance), 0);
-  const propertyLoans = records.filter((r) => r.module_key === "property").map((r) => computeRecord("property", r.data)).filter((r) => num(r.loan_balance) > 0).reduce((s, r) => s + num(r.net_loan_balance), 0);
+  const propertyLoans = records.filter((r) => r.module_key === "property" && countsAgainstGoals(r)).map((r) => computeRecord("property", r.data)).filter((r) => num(r.loan_balance) > 0).reduce((s, r) => s + num(r.net_loan_balance), 0);
   const liabilityClasses = [
     { key: "loans", label: "Loans", value: sumBalance("loans") },
     { key: "propertyLoans", label: "Property loans", value: propertyLoans },
     { key: "borrowings", label: "Borrowings", value: sumBalance("borrowings") },
-    { key: "builders", label: "Still to pay builders", value: records.filter((r) => r.module_key === "property").reduce((t, r) => t + num(computeRecord("property", r.data).construction_owed), 0) },
+    { key: "builders", label: "Still to pay builders", value: records.filter((r) => r.module_key === "property" && countsAgainstGoals(r)).reduce((t, r) => t + num(computeRecord("property", r.data).construction_owed), 0) },
   ];
   const goalInputs = records.filter((r) => r.module_key === "goals").map((r) => ({
     id: r.id, name: String(r.data?.security_name || "Goal"), target: num(r.data?.target_amount),
@@ -142,6 +145,7 @@ export function goals(records: PlanningRecord[], asOf: string, asOfInstant: Date
   return {
     netAvailable: f.netAvailable,
     homeValue,
+    homeLoan: home.loan,
     protectionValue,
     goals: rows,
     /** What the Goals page hands the Planner as each goal's value today. */

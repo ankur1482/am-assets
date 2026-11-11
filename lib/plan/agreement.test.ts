@@ -53,9 +53,10 @@ describe("cash flow and cash (6.2 items 3, 4, 8)", () => {
 });
 
 describe("net worth (6.2 item 5)", () => {
-  it("5. Home net worth = Goals 'net worth as cash' with the lived-in home and protection cover added back", () => {
+  // Since task 1.9 (R4) the lived-in home's own loan is left out with it, so adding the home back takes its loan off.
+  it("5. Home net worth = Goals 'net worth as cash' with the lived-in home (less its loan) and protection cover added back", () => {
     const h = home(household(), AS_OF), g = goals(household(), AS_OF, AS_OF_INSTANT);
-    expect(rupees(g.netAvailable + g.homeValue + g.protectionValue)).toBe(rupees(h.netWorth));
+    expect(rupees(g.netAvailable + g.homeValue - g.homeLoan + g.protectionValue)).toBe(rupees(h.netWorth));
   });
 });
 

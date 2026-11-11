@@ -66,6 +66,8 @@ import { MONTHLY_UPLOAD_MODULE, periodLabel, requiredUploads, type UploadItem } 
 import { planningSnapshot } from "@/lib/predictions";
 import { loansOf } from "@/lib/plan/loans";
 import { indiaToday } from "@/lib/plan/dates";
+import { livedInHomes } from "@/lib/plan/home";
+import { DEFAULT_PLAN_SETTINGS } from "@/lib/plan/settings";
 import { researchLinks } from "@/lib/researchLinks";
 import { ACCOUNT_TYPES, MODULES, RELATIONS } from "@/lib/modules";
 import { controlsOtherFields, isFieldVisible } from "@/lib/fieldVisibility";
@@ -2116,6 +2118,8 @@ export default function AssetManagerApp() {
   const savedGrowth = growthPending ?? cleanGrowth(user?.user_metadata?.growth_rates);
   // Which records each Predictive Planner cash flow box adds up, also kept on the login profile.
   const plannerPicks = plannerPicksPending ?? cleanPicks(user?.user_metadata?.planner_picks);
+  // Household planning settings (R19). Saved per household from Phase 2; the defaults apply until then.
+  const planSettings = DEFAULT_PLAN_SETTINGS;
   async function savePlannerPicks(next: SourcePicks) {
     setPlannerPicksPending(next);
     const { data, error } = await supabase.auth.updateUser({ data: { planner_picks: next } });
@@ -15304,8 +15308,11 @@ Salary will stop counting as income, Company PF contributions will stop (interes
     ];
     const sumBalance = (k: string) =>
       records.filter((r) => r.module_key === k).reduce((s, r) => s + num(computeRecord(k, r.data).balance), 0);
+    // R4: the home you live in is left out, and so is what is owed on it (unless the plan setting counts it).
+    const home = livedInHomes(records, planSettings);
+    const countsAgainstGoals = (r: Rec) => planSettings.homeLoanAgainstPlan || !home.ids.has(r.id);
     const propertyLoans = records
-      .filter((r) => r.module_key === "property")
+      .filter((r) => r.module_key === "property" && countsAgainstGoals(r))
       .map((r) => computeRecord("property", r.data))
       .filter((r) => num(r.loan_balance) > 0)
       .reduce((s, r) => s + num(r.net_loan_balance), 0);
@@ -15313,7 +15320,7 @@ Salary will stop counting as income, Company PF contributions will stop (interes
       { key: "loans", label: "Loans", value: MODULES.loans ? sumBalance("loans") : 0 },
       { key: "propertyLoans", label: "Property loans", value: propertyLoans },
       { key: "borrowings", label: "Borrowings", value: MODULES.borrowings ? sumBalance("borrowings") : 0 },
-      { key: "builders", label: "Still to pay builders", value: records.filter((r) => r.module_key === "property").reduce((t, r) => t + num(computeRecord("property", r.data).construction_owed), 0) },
+      { key: "builders", label: "Still to pay builders", value: records.filter((r) => r.module_key === "property" && countsAgainstGoals(r)).reduce((t, r) => t + num(computeRecord("property", r.data).construction_owed), 0) },
     ];
     const goalRecords = records.filter((r) => r.module_key === "goals");
     const goalInputs = goalRecords.map((r) => ({
@@ -15332,7 +15339,7 @@ Salary will stop counting as income, Company PF contributions will stop (interes
     const protectionValue = records
       .filter((r) => r.module_key === "insurance" && insuranceKind(r.data) === "protection")
       .reduce((t, r) => t + num(computeLiveRecord("insurance", r.data).latest), 0);
-    return { f: goalFunding(assetClasses, liabilityClasses, goalInputs, new Date(), holdings), holdings, goalRecords, homeRecords, homeValue, protection, protectionValue };
+    return { f: goalFunding(assetClasses, liabilityClasses, goalInputs, new Date(), holdings), holdings, goalRecords, homeRecords, homeValue, homeLoan: home.loan, protection, protectionValue };
   }
   /** Each goal's value today, by goal id, for the goals table and the Predictive Planner. */
   function goalCurrentValues() {
@@ -15881,7 +15888,7 @@ Salary will stop counting as income, Company PF contributions will stop (interes
     );
   }
   function goalsFundingPanel() {
-    const { f, holdings, goalRecords, homeRecords, homeValue, protection } = goalFundingNow();
+    const { f, holdings, goalRecords, homeRecords, homeValue, homeLoan, protection } = goalFundingNow();
     if (!f.target) {
       return (
         <div className="phone-light-card">
@@ -15925,7 +15932,9 @@ Salary will stop counting as income, Company PF contributions will stop (interes
         </div>
         <p className="mb-3 text-xs font-semibold text-[#40584c]">
           Net worth as cash = everything you own at today&apos;s value ({fmt(f.totalAssets)}) − all loans and borrowings ({fmt(f.totalLiabilities)}).
-          {homeValue > 0 && <> The home you live in ({fmt(homeValue)}) is left out.</>}
+          {homeValue > 0 && (homeLoan > 0
+            ? <> The home you live in ({fmt(homeValue)}) and its loan ({fmt(homeLoan)}) are left out, as it is kept for good.</>
+            : <> The home you live in ({fmt(homeValue)}) is left out.</>)}
           {" "}Insurance counts only policies that pay money back (LIC, endowment, money back, ULIP).
         </p>
         <div className="space-y-2">
