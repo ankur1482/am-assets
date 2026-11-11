@@ -23,7 +23,12 @@ export type GoalFunding = GoalInput & {
   funding: "selected" | "shared";
   /** The holdings set aside for this goal (none when it shares net worth). */
   holdingIds: string[];
+  /** The part of the target covered today (never more than the target). */
   allocated: number;
+  /** Full value today of what pays for the goal, never capped (R10). A sharing goal's value is its share. */
+  value: number;
+  /** How much of `value` is above the target today. */
+  surplusToday: number;
   gap: number;
   fundedPct: number;
   monthsLeft: number | null;
@@ -124,12 +129,16 @@ export function goalFunding(
     }
     const goalGap = goalTarget - allocated;
     const monthsLeft = monthsUntil(g.targetDate, asOf);
+    // R10: picked holdings count in full, so a surplus stays visible instead of disappearing at the target.
+    const value = own !== undefined ? own : allocated;
     return {
       ...g,
       funding: own !== undefined ? "selected" : "shared",
       holdingIds: ownIds.get(g.id) || [],
       target: goalTarget,
       allocated,
+      value,
+      surplusToday: Math.max(0, value - goalTarget),
       gap: goalGap,
       fundedPct: goalTarget > 0 ? (allocated / goalTarget) * 100 : 0,
       monthsLeft,

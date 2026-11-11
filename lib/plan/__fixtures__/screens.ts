@@ -137,7 +137,7 @@ export function goals(records: PlanningRecord[], asOf: string, asOfInstant: Date
     }
     const share = p && g.target ? p.projected / g.target : 0;
     const status = !p ? "undated" : share >= 1 ? "on" : share >= 0.8 ? "close" : "off";
-    return { id: g.id, target: g.target, months: g.monthsLeft, shownToday: g.allocated, holdingsToday: own.reduce((s, h) => s + h.value, 0), funding: g.funding, holdingIds: g.holdingIds, p, status };
+    return { id: g.id, target: g.target, months: g.monthsLeft, shownToday: g.value, holdingsToday: own.reduce((s, h) => s + h.value, 0), funding: g.funding, holdingIds: g.holdingIds, p, status };
   });
   return {
     netAvailable: f.netAvailable,
@@ -145,7 +145,7 @@ export function goals(records: PlanningRecord[], asOf: string, asOfInstant: Date
     protectionValue,
     goals: rows,
     /** What the Goals page hands the Planner as each goal's value today. */
-    current: Object.fromEntries(f.goals.map((g) => [g.id, { value: g.allocated }])),
+    current: Object.fromEntries(f.goals.map((g) => [g.id, { value: g.value }])),
     extraNeeded: rows.reduce((s, g) => s + (g.p?.monthlyNeeded || 0), 0),
     /** The Home goals tile: every projection added together over every target. */
     homeTilePct: rows.reduce((s, g) => s + g.target, 0) ? (rows.reduce((s, g) => s + (g.p?.projected || 0), 0) / rows.reduce((s, g) => s + g.target, 0)) * 100 : 0,

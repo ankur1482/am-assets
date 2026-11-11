@@ -15336,7 +15336,8 @@ Salary will stop counting as income, Company PF contributions will stop (interes
   }
   /** Each goal's value today, by goal id, for the goals table and the Predictive Planner. */
   function goalCurrentValues() {
-    return Object.fromEntries(goalFundingNow().f.goals.map((g) => [g.id, { value: g.allocated, funding: g.funding }]));
+    // The full value, not capped at the target, so the Planner starts from what the goal really has (D2).
+    return Object.fromEntries(goalFundingNow().f.goals.map((g) => [g.id, { value: g.value, funding: g.funding }]));
   }
   async function setGoalSources(goal: Rec, sources: string[]) {
     if (!canEditModule("goals")) {
@@ -16077,8 +16078,15 @@ Salary will stop counting as income, Company PF contributions will stop (interes
                       </div>
                     </div>
                     <div className="text-right tabular-nums">
-                      <div>Today <b>{fmt(g.allocated)}</b> of {fmt(g.target)}</div>
-                      {g.gap > 0 ? <div className="text-xs font-semibold text-red-700">short {fmt(g.gap)} today</div> : <div className="text-xs font-semibold text-emerald-700">covered today</div>}
+                      {/* The full value of what pays for it, never capped at the target (R10). */}
+                      <div>Today <b>{fmt(g.value)}</b> of {fmt(g.target)}</div>
+                      {g.gap > 0 ? (
+                        <div className="text-xs font-semibold text-red-700">short {fmt(g.gap)} today</div>
+                      ) : g.surplusToday > 0 ? (
+                        <div className="goal-surplus-today text-xs font-semibold text-emerald-700">covered today, {fmt(g.surplusToday)} more than needed</div>
+                      ) : (
+                        <div className="text-xs font-semibold text-emerald-700">covered today</div>
+                      )}
                     </div>
                   </div>
                   <div className="mt-2 h-2 w-full overflow-hidden rounded bg-[#eef1ec]">

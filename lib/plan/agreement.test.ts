@@ -71,8 +71,8 @@ describe("goals (6.2 items 6, 7, 9)", () => {
     for (const goal of g.goals) expect(p.goals.find((x) => x.id === goal.id)?.forecast?.months, goal.id).toBe(goal.months);
   });
 
-  // D2: a goal's value today is capped at its target, then handed to the Planner capped.
-  it.fails("6b. value today: Goals card = its funding holdings = Planner starting value", () => {
+  // Fixed in task 1.8 (D2): the full value is shown and handed to the Planner.
+  it("6b. value today: Goals card = its funding holdings = Planner starting value", () => {
     const { g, p } = both();
     for (const goal of g.goals.filter((x) => x.funding === "selected")) {
       expect(rupees(goal.shownToday), goal.id).toBe(rupees(goal.holdingsToday));
