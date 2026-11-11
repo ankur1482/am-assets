@@ -3949,3 +3949,6 @@ thead th {
 .networth-line-label { min-width: 0; overflow-wrap: anywhere; }
 .networth-subtotal { display: flex; justify-content: space-between; gap: 8px; margin-top: 6px; padding: 6px 4px 0 26px; border-top: 1px solid #e3dccc; font-size: 14px; font-weight: 800; color: #17382b; }
 .networth-total { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px; margin-top: 12px; padding: 10px 12px; border-radius: 12px; background: #eef5ee; font-size: 15px; font-weight: 800; color: #17382b; }
+/* Goals page: each part of a goal card has its label on the left, or above it on a narrow screen. */
+.goal-card-row { display: grid; grid-template-columns: 8rem minmax(0, 1fr); align-items: start; gap: 12px; margin-top: 12px; }
+@media (max-width: 640px) { .goal-card-row { grid-template-columns: minmax(0, 1fr); gap: 4px; } }

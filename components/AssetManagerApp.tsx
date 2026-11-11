@@ -15874,9 +15874,17 @@ Salary will stop counting as income, Company PF contributions will stop (interes
     const bar = (children: React.ReactNode) => (
       <div className="relative h-7 w-full overflow-hidden rounded-lg bg-[#eef1ec]">{children}</div>
     );
-    return (
-      <div className="phone-light-card mb-4 rounded-3xl border border-[#ded6c4] bg-white p-4 shadow-sm">
-        {homeQuestion(homeRecords, homeValue)}
+    // Laid out in three sections (11 Nov 2026): each goal first, then net worth as cash, then the assumptions.
+    const sectionClass = "goals-section rounded-3xl border border-[#ded6c4] bg-white p-4 shadow-sm";
+    const sectionHead = (title: string, note?: React.ReactNode) => (
+      <div className="mb-3 border-b border-[#efe9dc] pb-2">
+        <h4 className="text-base font-semibold text-[#17382b]">{title}</h4>
+        {note && <p className="mt-0.5 text-xs text-gray-600">{note}</p>}
+      </div>
+    );
+    const worthSection = (
+      <section className={sectionClass} aria-label="Your net worth as cash">
+        {sectionHead("Your net worth as cash", "Everything you own at today's value, less everything you owe, measured against all your goal targets together.")}
         <div className="mb-3 grid grid-cols-4 gap-3 max-lg:grid-cols-2">
           {[
             ["Total target", fmt(f.target), "text-[#17382b]"],
@@ -15895,12 +15903,6 @@ Salary will stop counting as income, Company PF contributions will stop (interes
           {homeValue > 0 && <> The home you live in ({fmt(homeValue)}) is left out.</>}
           {" "}Insurance counts only policies that pay money back (LIC, endowment, money back, ULIP).
         </p>
-        {(protection.life > 0 || protection.health > 0) && (
-          <p className="mb-3 rounded-xl border border-blue-100 bg-blue-50 px-3 py-2 text-xs font-semibold text-blue-900">
-            Family protection, not counted towards goals: life cover {fmt(protection.life)}
-            {protection.health > 0 && <>, health and critical illness cover {fmt(protection.health)}</>}. It pays out only if something happens.
-          </p>
-        )}
         <div className="space-y-2">
           <div>
             <div className="mb-1 flex justify-between text-xs font-semibold text-gray-600">
@@ -15968,13 +15970,19 @@ Salary will stop counting as income, Company PF contributions will stop (interes
             </div>
           ))}
         </div>
-        <div className="mt-4">
-          <div className="mb-1 text-sm font-semibold text-[#17382b]">What pays for each goal</div>
-          <p className="mb-2 text-xs text-gray-600">
-            Pick a whole type (such as All Fixed Income) or single holdings for a goal, and its value is worked out live from them.
-            A goal with nothing picked shares whatever net worth is left after loans and after the picked holdings, high priority first, then the nearest date.
+      </section>
+    );
+    const assumptionsSection = (
+      <section className={sectionClass} aria-label="Assumptions behind these figures">
+        {sectionHead("Assumptions behind these figures", "Change these and every goal above is worked out again.")}
+        {homeQuestion(homeRecords, homeValue)}
+        {(protection.life > 0 || protection.health > 0) && (
+          <p className="mb-3 rounded-xl border border-blue-100 bg-blue-50 px-3 py-2 text-xs font-semibold text-blue-900">
+            Family protection, not counted towards goals: life cover {fmt(protection.life)}
+            {protection.health > 0 && <>, health and critical illness cover {fmt(protection.health)}</>}. It pays out only if something happens.
           </p>
-          <div className="mb-3 rounded-xl border border-[#e3dccc] bg-[#f7fbf5] p-3">
+        )}
+          <div className="rounded-xl border border-[#e3dccc] bg-[#f7fbf5] p-3">
             <div className="mb-2 text-xs font-semibold text-[#17382b]">
               Growth a year used to project each goal to its target date. Shares, gold and silver start at their actual averages over the last 10 years; change any figure and it is saved for you (all categories and the year-by-year history are in Admin Console → Growth Rates).
             </div>
@@ -15988,7 +15996,18 @@ Salary will stop counting as income, Company PF contributions will stop (interes
               Fixed income grows at its own saved interest rate. Regular deposits (SIPs, PPF, Sukanya) are assumed to continue until each target date. Property loans are taken off as they stand today, which is cautious. Past trends are not a guarantee.
             </div>
           </div>
-          <div className="space-y-2">
+      </section>
+    );
+    const goalsSection = (
+      <section className={sectionClass} aria-label="What pays for each goal">
+        {sectionHead(
+          "What pays for each goal",
+          <>
+            Pick a whole type (such as All Fixed Income) or single holdings for a goal, and its value is worked out live from them.
+            A goal with nothing picked shares whatever net worth is left after loans and after the picked holdings, high priority first, then the nearest date.
+          </>,
+        )}
+          <div className="space-y-3">
             {f.goals.map((g) => {
               const record = goalRecords.find((r) => r.id === g.id);
               const sources = cleanSources(g.sources);
@@ -16010,25 +16029,38 @@ Salary will stop counting as income, Company PF contributions will stop (interes
                 if (gone?.module_key === "insurance") return `${gone.data?.security_name || "Policy"}: family protection, not counted`;
                 return "Removed holding";
               };
+              const status = goalStatus(goalProjection(g, holdings, f.unclaimedIds), g.target);
+              // Set directly, as the appearance themes recolour Tailwind's light backgrounds.
+              const statusStyle = ({ on: { background: "#ecfdf3", color: "#065f46", borderColor: "#a7f3d0" }, close: { background: "#fffbeb", color: "#92400e", borderColor: "#fde68a" }, off: { background: "#fef2f2", color: "#991b1b", borderColor: "#fecaca" }, none: { background: "#f9fafb", color: "#374151", borderColor: "#e5e7eb" } } as const)[status.key];
+              // Each part of the card has its label on the left (above it on a phone).
+              const cardRow = (label: string, content: React.ReactNode) => (
+                <div className="goal-card-row">
+                  <div className="pt-1.5 text-[10px] font-semibold uppercase tracking-widest text-gray-500">{label}</div>
+                  <div className="min-w-0">{content}</div>
+                </div>
+              );
               return (
-                <div key={g.id} id={`goal-card-${g.id}`} className="scroll-mt-24 rounded-xl border border-[#e3dccc] px-3 py-2 text-sm transition-shadow">
-                  <div className="flex flex-wrap items-baseline justify-between gap-2">
-                    <span className="font-semibold">
-                      {g.name}
-                      {g.priority && <span className="ml-2 text-xs font-normal text-gray-500">{g.priority}</span>}
-                      <span className="ml-2 text-xs font-normal text-gray-600">
+                <div key={g.id} id={`goal-card-${g.id}`} className="goal-card scroll-mt-24 rounded-2xl border border-[#e3dccc] bg-[#fdfcf9] px-4 py-3 text-sm transition-shadow">
+                  <div className="flex flex-wrap items-start justify-between gap-2">
+                    <div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="text-base font-semibold text-[#17382b]">{g.name}</span>
+                        {g.priority && <span className="rounded-full border border-[#e3dccc] bg-white px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-gray-600">{g.priority}</span>}
+                        <span className="goal-status-pill rounded-[999px] border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide" style={statusStyle}>{status.label}</span>
+                      </div>
+                      <div className="mt-0.5 text-xs text-gray-600">
                         {g.targetDate ? `by ${formatDate(g.targetDate)}${g.monthsLeft !== null ? ` (${g.monthsLeft} months)` : ""}` : "no target date"}
-                      </span>
-                    </span>
-                    <span className="tabular-nums">
-                      Today {fmt(g.allocated)} of {fmt(g.target)}
-                      {g.gap > 0 ? <span className="ml-2 text-red-700">short {fmt(g.gap)} today</span> : <span className="ml-2 text-emerald-700">covered today</span>}
-                    </span>
+                      </div>
+                    </div>
+                    <div className="text-right tabular-nums">
+                      <div>Today <b>{fmt(g.allocated)}</b> of {fmt(g.target)}</div>
+                      {g.gap > 0 ? <div className="text-xs font-semibold text-red-700">short {fmt(g.gap)} today</div> : <div className="text-xs font-semibold text-emerald-700">covered today</div>}
+                    </div>
                   </div>
-                  <div className="mt-1 h-2 w-full overflow-hidden rounded bg-[#eef1ec]">
+                  <div className="mt-2 h-2 w-full overflow-hidden rounded bg-[#eef1ec]">
                     <div className="h-full bg-emerald-600" style={{ width: `${Math.min(100, g.fundedPct)}%` }} />
                   </div>
-                  <div className="mt-2 flex flex-wrap items-center gap-2">
+                  {cardRow("Paid for by", <div className="flex flex-wrap items-center gap-2">
                     {sources.length ? (
                       sources.map((src) => (
                         <span key={src} className="inline-flex items-center gap-1 rounded-full border border-[#cfe3d6] bg-[#f3faf5] px-2.5 py-1 text-xs font-semibold text-[#17382b]">
@@ -16050,7 +16082,7 @@ Salary will stop counting as income, Company PF contributions will stop (interes
                     )}
                     {record && (
                       <select
-                        className="field-input !w-auto max-w-full text-xs"
+                        className="field-input !w-auto max-w-full text-xs sm:max-w-sm"
                         aria-label={`Add what pays for ${g.name}`}
                         value=""
                         disabled={!canEditModule("goals")}
@@ -16087,14 +16119,20 @@ Salary will stop counting as income, Company PF contributions will stop (interes
                         })}
                       </select>
                     )}
-                  </div>
-                  {record && plannedInvestmentsRow(record, g.name)}
-                  {goalProjectionBlock(g, holdings, f.unclaimedIds)}
+                  </div>)}
+                  {record && cardRow("Planned investing", plannedInvestmentsRow(record, g.name))}
+                  {cardRow("Where it's heading", goalProjectionBlock(g, holdings, f.unclaimedIds) || <span className="text-xs text-gray-500">Add a target date and something that pays for this goal to see where it is heading.</span>)}
                 </div>
               );
             })}
           </div>
-        </div>
+      </section>
+    );
+    return (
+      <div className="goals-panel phone-light-card mb-4 space-y-4">
+        {goalsSection}
+        {worthSection}
+        {assumptionsSection}
       </div>
     );
   }
