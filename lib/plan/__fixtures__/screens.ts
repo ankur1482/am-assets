@@ -4,7 +4,7 @@
 //
 // Sources (find by name; line numbers drift):
 //   home()    AssetManagerApp.tsx homeTiles(): Loans tile, planningSnapshot cash flow and liquidity
-//   planner() PredictivePlanner.tsx: spareOdCash, sourceTotal, monthlyAvailable, goalRows, NumberField values
+//   planner() PredictivePlanner.tsx: OD spare cash, sourceTotal, monthlyAvailable, goalRows, NumberField values
 //   goals()   AssetManagerApp.tsx goalFundingNow() + goalProjection() + goalStatus()
 // Live prices are taken from the records themselves (live_price, latest_value); computeLiveRecord
 // only differs from computeRecord when a live bullion quote is loaded, which the fixture has none of.
@@ -29,7 +29,8 @@ export function home(records: PlanningRecord[], asOf: string) {
     owed: loanRows.reduce((s, l) => s + l.netBalance, 0),
     surplus: snapshot.availableCashFlow,
     cashFlowEmis: snapshot.monthlyEmi,
-    liquidity: snapshot.liquidity,
+    cashNow: snapshot.cashNow,
+    canRedraw: snapshot.canRedraw,
     netWorth: computeTotals(records).net,
   };
 }
@@ -37,9 +38,9 @@ export function home(records: PlanningRecord[], asOf: string) {
 /** Predictive Planner, with no boxes typed over (each box at its prefilled value). */
 export function planner(records: PlanningRecord[], asOf: string, picks: SourcePicks = {}, goalCurrent: Record<string, { value: number }> = {}, annualReturn = 8) {
   const snapshot = planningSnapshot(records, asOf);
-  const spareOdCash = Math.max(0, snapshot.odParked - snapshot.debts.reduce((sum, d) => sum + (d.parked || 0), 0));
+  const spareOdCash = snapshot.odSpare;
   const baseSources = plannerSources(records, asOf);
-  const sources = { ...baseSources, cash: [...baseSources.cash, ...(spareOdCash > 0 ? [{ id: "spare-od-cash", label: "Spare money parked in OD (above the loan balance)", group: "Savings and cash", value: spareOdCash, defaultOn: true }] : [])] };
+  const sources = { ...baseSources, cash: [...baseSources.cash, ...(spareOdCash > 0 ? [{ id: "spare-od-cash", label: "Spare money in OD accounts (above the loan balance)", group: "Savings and cash", value: spareOdCash, defaultOn: true }] : [])] };
   const sourceTotal = (field: CashField) => pickedTotal(sources[field], picks[field]);
   const monthlyAmount = snapshot.monthlyInvestment;
   const income = sourceTotal("income"), expenses = sourceTotal("expenses");
@@ -85,7 +86,7 @@ export function goals(records: PlanningRecord[], asOf: string, asOfInstant: Date
         return { id: r.id, moduleKey: k, label: r.id, value: Math.max(0, num(c.realised_value)), gross };
       }),
   );
-  const assetClasses = GOAL_ASSET_KEYS.map((k) => ({ key: k, label: k, value: holdings.filter((h) => h.moduleKey === k).reduce((s, h) => s + h.gross, 0) }));
+  const assetClasses = [...GOAL_ASSET_KEYS.map((k) => ({ key: k, label: k, value: holdings.filter((h) => h.moduleKey === k).reduce((s, h) => s + h.gross, 0) })), { key: "odSpare", label: "odSpare", value: records.filter((r) => r.module_key === "property" || r.module_key === "loans").reduce((s, r) => s + num(computeRecord(r.module_key, r.data).od_spare), 0) }];
   const sumBalance = (k: string) => records.filter((r) => r.module_key === k).reduce((s, r) => s + num(computeRecord(k, r.data).balance), 0);
   const propertyLoans = records.filter((r) => r.module_key === "property").map((r) => computeRecord("property", r.data)).filter((r) => num(r.loan_balance) > 0).reduce((s, r) => s + num(r.net_loan_balance), 0);
   const liabilityClasses = [

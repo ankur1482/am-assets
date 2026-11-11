@@ -7,7 +7,7 @@ import { CARD_PREFIX, type CardSpend } from '@/lib/expenses';
 import { defaultSource, payAccountLabel, mergeRecurring, monthName, parseRecurringImport, paymentTotals, type PayAccount, type PaymentItem, type RecurringKind, type RecurringPayment, type YearlyCommitment } from '@/lib/monthlyPayments';
 
 type Props = {
-  monthTitle: string; items: PaymentItem[]; accounts: PayAccount[]; cards: CardSpend[]; liquidity: number; canEdit: boolean; recurring: RecurringPayment[]; yearly: YearlyCommitment[];
+  monthTitle: string; items: PaymentItem[]; accounts: PayAccount[]; cards: CardSpend[]; cashNow: number; canRedraw: number; canEdit: boolean; recurring: RecurringPayment[]; yearly: YearlyCommitment[];
   onPay: (item: PaymentItem, amount: number, fromId: string) => Promise<boolean>;
   onUndo: (item: PaymentItem) => Promise<boolean>;
   onAdd: (label: string, amount: number, dueDate: string, fromId: string, alreadyPaid: boolean) => Promise<boolean>;
@@ -86,18 +86,20 @@ function RecurringEditor({ recurring, onSaveRecurring }: Pick<Props, 'recurring'
   </details>;
 }
 
-export default function MonthlyPayments({ monthTitle, items, accounts, cards, liquidity, canEdit, recurring, yearly, onPay, onUndo, onAdd, onRemove, onAmount, onEditPaid, onSaveRecurring }: Props) {
+export default function MonthlyPayments({ monthTitle, items, accounts, cards, cashNow, canRedraw, canEdit, recurring, yearly, onPay, onUndo, onAdd, onRemove, onAmount, onEditPaid, onSaveRecurring }: Props) {
   const [fromId, setFromId] = useState(''), [label, setLabel] = useState(''), [amount, setAmount] = useState(''), [dueDate, setDueDate] = useState(''), [addFrom, setAddFrom] = useState(''), [alreadyPaid, setAlreadyPaid] = useState(true), [adding, setAdding] = useState(false), [showAdd, setShowAdd] = useState(false);
-  const totals = paymentTotals(items), selected = fromId || accounts[0]?.id || 'other', after = liquidity - totals.remaining, statements = cards.reduce((sum, card) => sum + card.spend, 0);
+  // R3: your own cash and money you can redraw from OD loans are shown side by side, never added together.
+  const totals = paymentTotals(items), selected = fromId || accounts[0]?.id || 'other', after = cashNow - totals.remaining, statements = cards.reduce((sum, card) => sum + card.spend, 0);
   return <section className="mom" aria-label={`Payments for ${monthTitle}`}>
     <div className="sale-preview">
       <span><small>Payments in {monthTitle}</small><strong>{fmt(totals.total)}</strong></span>
       <span><small>Already paid</small><strong>{fmt(totals.paid)}</strong></span>
       <span><small>Still to pay</small><strong className={totals.remaining ? 'mom-down' : 'mom-up'}>{fmt(totals.remaining)}</strong></span>
-      <span><small>Liquidity now</small><strong>{fmt(liquidity)}</strong></span>
-      <span><small>Liquidity after payments</small><strong className={after < 0 ? 'mom-down' : ''}>{fmt(after)}</strong></span>
+      <span><small>Cash now</small><strong>{fmt(cashNow)}</strong><small>Savings, cash at home and spare money in OD</small></span>
+      <span><small>Cash after payments</small><strong className={after < 0 ? 'mom-down' : ''}>{fmt(after)}</strong></span>
+      {canRedraw > 0 && <span><small>Can redraw from OD</small><strong>{fmt(canRedraw)}</strong><small>Adds to the loan if used</small></span>}
       {statements > 0 && <span><small>Estimated next card statement</small><strong>{fmt(statements)}</strong><small>Spent on cards this month, due later</small></span>}
-      {statements > 0 && <span><small>Liquidity after that statement</small><strong className={after - statements < 0 ? 'mom-down' : ''}>{fmt(after - statements)}</strong></span>}
+      {statements > 0 && <span><small>Cash after that statement</small><strong className={after - statements < 0 ? 'mom-down' : ''}>{fmt(after - statements)}</strong></span>}
     </div>
     {canEdit && <label className="pay-from">Default account for each row<select value={selected} onChange={event => setFromId(event.target.value)}>
       <SourceOptions accounts={accounts} cards={cards} />

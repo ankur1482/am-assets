@@ -365,6 +365,8 @@ function applyLoanPosition(r:any,names:LoanFieldNames){
   const loan=loanPosition(r,names);
   Object.assign(r,{loan_balance:loan.balance,monthly_emi:loan.emi,emiFuture:loan.totalPayable,emis_left:loan.monthsLeft??'',interest_rate:loan.annualRate,principal_paid:loan.principalPaid,interest_paid:loan.interestPaid,loan_clears_on:loan.clearsOn,future_interest:loan.futureInterest,next_emi_interest:loan.nextInterest,next_emi_principal:loan.nextPrincipal,net_loan_balance:loan.netBalance,balance:loan.netBalance});
   if(isOverdraftLoan(r))Object.assign(r,{od_months_to_clear:loan.monthsLeft??'',od_monthly_interest:loan.nextInterest,od_interest_saved_monthly:loan.parked*loan.annualRate/1200});
+  // R3: money parked above the balance is your own money, so it counts as an asset in net worth.
+  r.od_spare=isOverdraftLoan(r)?Math.max(0,num(r.od_parked_balance)-loan.balance):0;
 }
 
 function insuranceRecord(r:any){
@@ -476,5 +478,7 @@ export function computeRecord(k:string,r0:any){const r={...r0};if(k==='stocks'){
   // What is left to clear on a property (the bank's loan in use, after money parked in the OD, plus any builder
   // amount already inside its value), and what is yours once that is cleared.
   if(k==='property'){r.to_clear=Math.max(0,num(r.balance))+num(r.construction_owed);r.realised_value=num(r.latest)-r.to_clear}r.gain_pct=k==='insurance'?0:num(r.invested)?r.gain/num(r.invested)*100:0;return r}
-export function computeTotals(records:any[]){let assets=0,liabilities=0,invested=0,gain=0;records.forEach(rec=>{const k=rec.module_key,c=computeRecord(k,rec.data); if(['stocks','mutualFunds','ulips','bullion','nsel','fixedIncome','property','otherAssets'].includes(k)){assets+=num(c.latest);invested+=num(c.invested);gain+=num(c.gain)} if(k==='insurance')assets+=num(c.latest);if(['loans','borrowings'].includes(k))liabilities+=num(c.balance);if(k==='property')liabilities+=num(c.balance)+num(c.construction_owed)});return{assets,liabilities,net:assets-liabilities,invested,gain}}
+// odSpare (R3): money parked in OD accounts above their loan balances. It is your own cash, so it adds to net worth,
+// but it is kept out of `assets` so a screen's holdings total (such as Property) does not include cash.
+export function computeTotals(records:any[]){let assets=0,liabilities=0,invested=0,gain=0,odSpare=0;records.forEach(rec=>{const k=rec.module_key,c=computeRecord(k,rec.data); if(['stocks','mutualFunds','ulips','bullion','nsel','fixedIncome','property','otherAssets'].includes(k)){assets+=num(c.latest);invested+=num(c.invested);gain+=num(c.gain)} if(k==='insurance')assets+=num(c.latest);if(k==='property'||k==='loans')odSpare+=num(c.od_spare);if(['loans','borrowings'].includes(k))liabilities+=num(c.balance);if(k==='property')liabilities+=num(c.balance)+num(c.construction_owed)});return{assets,liabilities,odSpare,net:assets+odSpare-liabilities,invested,gain}}
 import { calculateInsurance, normalizeInsurancePolicy } from './insurance';

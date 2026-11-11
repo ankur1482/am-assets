@@ -112,6 +112,12 @@ test.describe('logged-in app', () => {
     await goPayments(page, app);
     await expect(page.getByRole('region', { name: 'Payments due' }).getByText('Example Maintenance')).toBeVisible();
     await expect(page.getByRole('columnheader', { name: 'Paid from' })).toBeVisible();
+    // Own cash and money that can be redrawn from the OD loan are shown apart (R3): ₹5,00,000 savings with
+    // ₹10,00,000 parked against a ₹25,00,000 OD balance gives cash ₹5,00,000 and ₹10,00,000 to redraw.
+    const summary = page.locator('.sale-preview').locator('visible=true').first();
+    await expect(summary.getByText('Cash now', { exact: true })).toBeVisible();
+    await expect(summary.locator('span', { hasText: 'Cash now' }).locator('strong')).toHaveText('₹5,00,000');
+    await expect(summary.locator('span', { hasText: 'Can redraw from OD' }).locator('strong')).toHaveText('₹10,00,000');
     // The phone layout keeps a hidden copy of the desktop panels in the page, so look only at what is on show.
     await expect(page.getByText('Automatic, no action needed').locator('visible=true')).toBeVisible();
     await expect(page.getByText('Included in the card bill').locator('visible=true')).toBeVisible();
@@ -779,7 +785,7 @@ test.describe('logged-in app', () => {
     const app = await signedIn(page);
     await open(page, app, 'Predictive Planner');
     await page.getByRole('tab', { name: 'Cash flow & loans' }).click();
-    const cash = page.getByLabel('Cash outside OD accounts (₹)');
+    const cash = page.getByLabel('Cash now (₹)');
     const before = Number(await cash.inputValue());
     const box = cash.locator('xpath=ancestor::div[2]');
     await box.getByText(/Choose from your records/).click();

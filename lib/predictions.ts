@@ -1,5 +1,6 @@
 import { isCashAtHome, isDividendIncome, isEarningRent, isOverdraftLoan, isRentedProperty, isSavingsAccount, occupiedShareOfMonth, num } from './calculations';
 import { loansOf } from './plan/loans';
+import { odPosition } from './plan/od';
 import { calculateInsurance, normalizeInsurancePolicy } from './insurance';
 import { dividendsReceivedIn } from './dividends';
 import { monthlyDirectExpenses } from './expenses';
@@ -84,7 +85,11 @@ export function planningSnapshot(records: PlanningRecord[], asOf = indiaDate()) 
   const directExpenses = monthlyDirectExpenses(records, asOf.slice(0, 7));
   // Insurance is paid yearly, in the month each premium falls due, so it is not taken from every month.
   const availableCashFlow = monthlyIncome - monthlyEmi - monthlyInvestment - monthlyRegular - directExpenses;
-  return { monthlyDirectExpenses: directExpenses, monthlyRegular, rentals, monthlySalary, monthlyRent, monthlyDividend, savingsBalance, cashAtHome, odParked, liquidity: savingsBalance + cashAtHome + odParked, monthlyIncome, monthlyEmi, availableCashFlow, monthlyInvestment, monthlyPremium, annualPremium: monthlyPremium * 12, premiumSchedule, salaryEnds, debts, warnings };
+  // R3: OD money above a loan's balance is your own cash; money up to the balance can be redrawn but adds
+  // to the loan if used. The two are shown side by side and never added into one headline.
+  const od = odPosition(records, asOf);
+  const cashNow = savingsBalance + cashAtHome + od.spare, canRedraw = od.canRedraw;
+  return { monthlyDirectExpenses: directExpenses, monthlyRegular, rentals, monthlySalary, monthlyRent, monthlyDividend, savingsBalance, cashAtHome, odParked, odSpare: od.spare, odAccounts: od.accounts, cashNow, canRedraw, liquidity: savingsBalance + cashAtHome + odParked, monthlyIncome, monthlyEmi, availableCashFlow, monthlyInvestment, monthlyPremium, annualPremium: monthlyPremium * 12, premiumSchedule, salaryEnds, debts, warnings };
 }
 
 export function projectWealth(input: { starting: number; years: number; annualReturn: number; inflation: number; monthly: number; annualStepUp: number; contributionYears: number; retirementMonthly: number }) {

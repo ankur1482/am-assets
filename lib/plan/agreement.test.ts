@@ -40,10 +40,9 @@ describe("cash flow and cash (6.2 items 3, 4, 8)", () => {
     expect(rupees(planner(household(), AS_OF, SAVED_PICKS).surplus)).toBe(rupees(home(household(), AS_OF).surplus));
   });
 
-  // D11: Home adds every rupee parked in OD; the Planner adds parked money minus what is parked
-  // against loans it happened to find. Neither is R3's "cash now".
-  it.fails("4. cash now: Home = Planner", () => {
-    expect(rupees(planner(household(), AS_OF).openingCash)).toBe(rupees(home(household(), AS_OF).liquidity));
+  // Fixed in task 1.2 (D11): both read R3's split of each OD account.
+  it("4. cash now: Home = Planner", () => {
+    expect(rupees(planner(household(), AS_OF).openingCash)).toBe(rupees(home(household(), AS_OF).cashNow));
   });
 
   // D7: each box shows the snapshot figure but the sum uses the ticked records.

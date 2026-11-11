@@ -3333,7 +3333,7 @@ export default function AssetManagerApp() {
   }
   function monthlyCashFlowPanel() {
     const flow = planningSnapshot(records);
-    if (!flow.monthlyIncome && !flow.monthlyEmi && !flow.liquidity) return null;
+    if (!flow.monthlyIncome && !flow.monthlyEmi && !flow.cashNow && !flow.canRedraw) return null;
     const tiles = (label: string, items: (string | number)[][]) => (
       <section className="monthly-cashflow" aria-label={label}>
         {items.map(([name, value, note]) => (
@@ -3347,11 +3347,13 @@ export default function AssetManagerApp() {
     );
     return (
       <div className="space-y-3">
-        {tiles("Liquidity available now", [
+        {/* R3: your own cash and money you can redraw from OD loans are shown side by side, never added together. */}
+        {tiles("Cash available now", [
           ["Savings in Bank", flow.savingsBalance],
           ["Cash at Home", flow.cashAtHome],
-          ["Parked in OD", flow.odParked, "Withdrawable, but raises interest if used"],
-          ["Liquidity Now", flow.liquidity],
+          ["Spare in OD", flow.odSpare, "Parked above the loan balance: your own money"],
+          ["Cash Now", flow.cashNow],
+          ["Can Redraw from OD", flow.canRedraw, "Parked against a loan: adds to the loan if used"],
         ])}
         {tiles("Monthly cash flow", [
           ["Salary In", flow.monthlySalary],
@@ -9730,6 +9732,7 @@ export default function AssetManagerApp() {
   function computeLiveTotals(rs: Rec[]) {
     let assets = 0,
       liabilities = 0,
+      odSpare = 0,
       invested = 0,
       gain = 0;
     rs.forEach((rec) => {
@@ -9752,13 +9755,16 @@ export default function AssetManagerApp() {
         gain += num(c.gain);
       }
       if (k === "insurance") assets += num(c.latest);
+      // R3: OD money above the loan balance is your own cash; it adds to net worth but is not a holding.
+      if (k === "property" || k === "loans") odSpare += num(c.od_spare);
       if (["loans", "borrowings"].includes(k)) liabilities += num(c.balance);
       if (k === "property") liabilities += num(c.balance) + num(c.construction_owed);
     });
     return {
       assets,
       liabilities,
-      net: assets - liabilities,
+      odSpare,
+      net: assets + odSpare - liabilities,
       invested,
       gain,
     };
@@ -10014,7 +10020,8 @@ export default function AssetManagerApp() {
         items={items}
         accounts={payAccounts(records)}
         cards={cardSpendIn(records, month)}
-        liquidity={planningSnapshot(records).liquidity}
+        cashNow={planningSnapshot(records).cashNow}
+        canRedraw={planningSnapshot(records).canRedraw}
         canEdit={canEditModule(MONTHLY_PAYMENT_MODULE)}
         onPay={markPaymentPaid}
         onUndo={undoPayment}
@@ -13015,13 +13022,15 @@ Salary will stop counting as income, Company PF contributions will stop (interes
       if (["stocks", "mutualFunds", "ulips", "bullion", "nsel", "fixedIncome", "property", "otherAssets", "insurance"].includes(k)) add(plus, k, num(c.latest));
       if (k === "loans" || k === "borrowings") add(minus, k, num(c.balance));
       if (k === "property") { add(minus, "propertyLoans", num(c.balance)); add(minus, "builders", num(c.construction_owed)); }
+      if (k === "property" || k === "loans") add(plus, "odSpare", num(c.od_spare));
     }
     const label: Record<string, string> = {
       bullion: "Gold & Silver", insurance: "Insurance (value today)", fixedIncome: "Fixed Income (incl. interest so far)",
       property: "Property (value today)", loans: "Loans", borrowings: "Borrowings",
       propertyLoans: "Home loans on your property (less money parked in OD)", builders: "Still to pay builders",
+      odSpare: "Spare money in OD accounts (above the loan balance)",
     };
-    const opens: Record<string, string> = { propertyLoans: "property", builders: "property" };
+    const opens: Record<string, string> = { propertyLoans: "property", builders: "property", odSpare: "property" };
     const lines = (m: Map<string, number>) => [...m.entries()].filter(([, v]) => v).sort((a, b) => b[1] - a[1])
       .map(([k, v]) => ({ k, label: label[k] || MODULES[k]?.title || k, value: v, open: opens[k] || k }));
     const own = lines(plus), owe = lines(minus);
@@ -13151,8 +13160,13 @@ Salary will stop counting as income, Company PF contributions will stop (interes
           ) : <span className="block text-sm text-gray-600">No goals yet. Open to add your first one.</span>)}
           {tile("cash", "This month's cash", () => openPayments("month"), (
             <>
-              <span className="block text-3xl font-semibold tabular-nums text-[#17382b]">{fmt(snapshot.liquidity)}</span>
-              <span className="block text-xs text-gray-600">ready to use (savings, cash and money parked in OD)</span>
+              <span className="block text-3xl font-semibold tabular-nums text-[#17382b]">{fmt(snapshot.cashNow)}</span>
+              <span className="block text-xs text-gray-600">cash now (savings, cash at home and spare money in OD)</span>
+              {snapshot.canRedraw > 0 && (
+                <span className="block text-xs text-gray-600">
+                  + <b className="tabular-nums">{fmt(snapshot.canRedraw)}</b> can be redrawn from OD loans (adds to the loan if used)
+                </span>
+              )}
               <span className="mt-1 block text-xs text-gray-700">
                 Income {fmt(snapshot.monthlyIncome)}/month · still to pay this month <b className={payments.remaining > 0 ? "text-amber-700" : "text-emerald-700"}>{fmt(payments.remaining)}</b>
               </span>
@@ -15273,11 +15287,15 @@ Salary will stop counting as income, Company PF contributions will stop (interes
         }),
     );
     // Totals use full values; loans are subtracted once, as liabilities.
-    const assetClasses = GOAL_ASSET_KEYS.filter((k) => MODULES[k]).map((k) => ({
-      key: k,
-      label: goalTypeLabel(k),
-      value: holdings.filter((h) => h.moduleKey === k).reduce((s, h) => s + h.gross, 0),
-    }));
+    const assetClasses = [
+      ...GOAL_ASSET_KEYS.filter((k) => MODULES[k]).map((k) => ({
+        key: k,
+        label: goalTypeLabel(k),
+        value: holdings.filter((h) => h.moduleKey === k).reduce((s, h) => s + h.gross, 0),
+      })),
+      // R3: OD money above the loan balance is your own cash.
+      { key: "odSpare", label: "Spare money in OD", value: records.filter((r) => r.module_key === "property" || r.module_key === "loans").reduce((s, r) => s + num(computeRecord(r.module_key, r.data).od_spare), 0) },
+    ];
     const sumBalance = (k: string) =>
       records.filter((r) => r.module_key === k).reduce((s, r) => s + num(computeRecord(k, r.data).balance), 0);
     const propertyLoans = records
