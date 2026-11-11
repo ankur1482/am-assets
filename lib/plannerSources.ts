@@ -6,6 +6,7 @@ import { dividendsMonthlyAverage } from "./dividends";
 import { calculateInsurance, insuranceKind } from "./insurance";
 import { isCardRow, recurringPayments } from "./monthlyPayments";
 import { cardEstimate } from "./plan/cards";
+import { monthlyDirectExpenses } from "./expenses";
 import { employmentOf } from "./employment";
 import { isPaidFromPayroll } from "./plan/contributions";
 import type { PlanningRecord } from "./predictions";
@@ -73,6 +74,9 @@ export function plannerSources(records: PlanningRecord[], asOf: string): Record<
   }
   const card = cardEstimate(records, asOf);
   if (card.months) out.expenses.push({ id: "card-estimate", label: `Card spending, average of the last ${card.months} month${card.months === 1 ? "" : "s"}${card.rough ? " (rough)" : ""}`, group: "Card spending", value: card.monthly, defaultOn: true });
+  // Google Pay and cash spending logged this month (card spending is in the estimate above).
+  const direct = monthlyDirectExpenses(records, asOf.slice(0, 7));
+  if (direct) out.expenses.push({ id: "direct-expenses", label: "Day-to-day spending this month (Google Pay, cash)", group: "Day-to-day spending", value: direct, defaultOn: true });
   return out;
 }
 

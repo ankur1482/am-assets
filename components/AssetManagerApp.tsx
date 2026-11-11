@@ -3332,7 +3332,8 @@ export default function AssetManagerApp() {
     return <MonthlyUploads items={uploadStatus.items} locked={locked} canSubmit={canSubmitUploads} onUpload={submitMonthlyUpload} onMarkUnavailable={markMonthlyUploadUnavailable} />;
   }
   function monthlyCashFlowPanel() {
-    const flow = planningSnapshot(records);
+    // The records ticked in the Planner, so Home, the dashboard and the Planner add up the same figures (D8).
+    const flow = planningSnapshot(records, indiaToday(), plannerPicks);
     if (!flow.monthlyIncome && !flow.monthlyEmi && !flow.cashNow && !flow.canRedraw) return null;
     const tiles = (label: string, items: (string | number)[][]) => (
       <section className="monthly-cashflow" aria-label={label}>
@@ -13081,7 +13082,7 @@ Salary will stop counting as income, Company PF contributions will stop (interes
   function homeTiles(onPhone = false) {
     const assetRecords = records.filter((r) => MODULES[r.module_key]?.kind === "asset" || r.module_key === "insurance");
     const todayMove = assetRecords.reduce((s, r) => (showsDailyChange(r.module_key) ? s + todayGainFor(r.module_key, r) : s), 0);
-    const snapshot = planningSnapshot(records);
+    const snapshot = planningSnapshot(records, indiaToday(), plannerPicks);
     const payments = currentPayments();
     // Goals
     const ahead = goalProjectionsById(), goalList = Object.values(ahead);

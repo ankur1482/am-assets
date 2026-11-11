@@ -35,9 +35,9 @@ describe("cash flow and cash (6.2 items 3, 4, 8)", () => {
     expect(rupees(planner(household(), AS_OF).surplus)).toBe(rupees(home(household(), AS_OF).surplus));
   });
 
-  // D8: Home and the dashboard ignore the records ticked in the Planner.
-  it.fails("3b. typical monthly surplus: Home = Planner with saved ticks", () => {
-    expect(rupees(planner(household(), AS_OF, SAVED_PICKS).surplus)).toBe(rupees(home(household(), AS_OF).surplus));
+  // Fixed in task 1.6 (D8): Home and the dashboard use the records ticked in the Planner.
+  it("3b. typical monthly surplus: Home = Planner with saved ticks", () => {
+    expect(rupees(planner(household(), AS_OF, SAVED_PICKS).surplus)).toBe(rupees(home(household(), AS_OF, SAVED_PICKS).surplus));
   });
 
   // Fixed in task 1.2 (D11): both read R3's split of each OD account.
@@ -45,8 +45,8 @@ describe("cash flow and cash (6.2 items 3, 4, 8)", () => {
     expect(rupees(planner(household(), AS_OF).openingCash)).toBe(rupees(home(household(), AS_OF).cashNow));
   });
 
-  // D7: each box shows the snapshot figure but the sum uses the ticked records.
-  it.fails("8. each Planner box displays the number the calculation uses", () => {
+  // Fixed in task 1.6 (D7): each box shows the ticked total the sums use.
+  it("8. each Planner box displays the number the calculation uses", () => {
     const boxes = planner(household(), AS_OF, SAVED_PICKS).boxes;
     for (const [name, box] of Object.entries(boxes)) expect(rupees(box.shown), name).toBe(rupees(box.used));
   });
@@ -109,4 +109,11 @@ describe("goals (6.2 items 6, 7, 9)", () => {
 
 describe("the plan engine (6.2 item 10)", () => {
   it.todo("10. plan.netWorth.total = Σ assets − Σ liabilities (once buildPlan exists, task 2.1)");
+});
+
+describe("saved ticks reach the snapshot (task 1.6)", () => {
+  it("unticking a payment in the Planner changes Home's surplus by that amount", () => {
+    const all = home(household(), AS_OF).surplus, without = home(household(), AS_OF, SAVED_PICKS).surplus;
+    expect(rupees(without - all)).toBe(20000);
+  });
 });

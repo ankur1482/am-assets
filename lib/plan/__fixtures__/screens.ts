@@ -20,8 +20,8 @@ import { loansOf } from "../loans";
 const GOAL_ASSET_KEYS = ["fixedIncome", "stocks", "mutualFunds", "bullion", "property", "ulips", "nsel", "otherAssets", "insurance"];
 
 /** Home screen: Loans tile, cash-flow details and "This month's cash". */
-export function home(records: PlanningRecord[], asOf: string) {
-  const snapshot = planningSnapshot(records, asOf);
+export function home(records: PlanningRecord[], asOf: string, picks: SourcePicks = {}) {
+  const snapshot = planningSnapshot(records, asOf, picks);
   const loanRows = loansOf(records, asOf);
   return {
     loanCount: loanRows.length,
@@ -37,14 +37,13 @@ export function home(records: PlanningRecord[], asOf: string) {
 
 /** Predictive Planner, with no boxes typed over (each box at its prefilled value). */
 export function planner(records: PlanningRecord[], asOf: string, picks: SourcePicks = {}, goalCurrent: Record<string, { value: number }> = {}, annualReturn = 8) {
-  const snapshot = planningSnapshot(records, asOf);
+  const snapshot = planningSnapshot(records, asOf, picks);
   const spareOdCash = snapshot.odSpare;
   const baseSources = plannerSources(records, asOf);
   const sources = { ...baseSources, cash: [...baseSources.cash, ...(spareOdCash > 0 ? [{ id: "spare-od-cash", label: "Spare money in OD accounts (above the loan balance)", group: "Savings and cash", value: spareOdCash, defaultOn: true }] : [])] };
   const sourceTotal = (field: CashField) => pickedTotal(sources[field], picks[field]);
-  const monthlyAmount = snapshot.monthlyInvestment;
   const income = sourceTotal("income"), expenses = sourceTotal("expenses");
-  const investing = picks.investment ? sourceTotal("investment") : monthlyAmount;
+  const investing = sourceTotal("investment");
   const premiums = sourceTotal("insurance");
   const emis = snapshot.debts.reduce((sum, d) => sum + d.payment, 0);
   const goals = records.filter((r) => r.module_key === "goals").map((r) => {
@@ -63,10 +62,10 @@ export function planner(records: PlanningRecord[], asOf: string, picks: SourcePi
     // What each Cash flow box displays, next to what the calculation uses.
     boxes: {
       cash: { shown: sourceTotal("cash"), used: sourceTotal("cash") },
-      income: { shown: snapshot.monthlyIncome, used: income },
-      expenses: { shown: snapshot.monthlyRegular, used: expenses },
-      investing: { shown: monthlyAmount, used: investing },
-      premiums: { shown: snapshot.annualPremium, used: premiums },
+      income: { shown: income, used: income },
+      expenses: { shown: expenses, used: expenses },
+      investing: { shown: investing, used: investing },
+      premiums: { shown: premiums, used: premiums },
     },
     picked: (field: CashField) => pickedIds(sources[field], picks[field]),
   };

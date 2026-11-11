@@ -3,10 +3,11 @@ import { loansOf } from './plan/loans';
 import { odPosition } from './plan/od';
 import { isPaidFromPayroll } from './plan/contributions';
 import { cardEstimate } from './plan/cards';
+import { pickedIds, plannerSources, type CashField, type SourcePicks } from './plannerSources';
 import { calculateInsurance, normalizeInsurancePolicy } from './insurance';
-import { dividendsMonthlyAverage } from './dividends';
-import { monthlyDirectExpenses } from './expenses';
-import { isCardRow, monthlyRegularTotal, recurringPayments } from './monthlyPayments';
+
+
+import { isCardRow, recurringPayments } from './monthlyPayments';
 import { employmentOf } from './employment';
 
 const clamp = (value: number, low: number, high: number) => Math.min(high, Math.max(low, Number.isFinite(value) ? value : low));
@@ -37,7 +38,7 @@ export function monthlyPayment(balance: number, annualRate: number, months: numb
   return rate ? balance * rate / (1 - Math.pow(1 + rate, -months)) : balance / months;
 }
 
-export function planningSnapshot(records: PlanningRecord[], asOf = indiaDate()) {
+export function planningSnapshot(records: PlanningRecord[], asOf = indiaDate(), picks: SourcePicks = {}) {
   let monthlySalary = 0, monthlyRent = 0, monthlyDividend = 0, savingsBalance = 0, cashAtHome = 0, odParked = 0, monthlyInvestment = 0, monthlyPayrollInvestment = 0, monthlyPremium = 0;
   const debts: DebtInput[] = [], warnings: string[] = [], rentals: Record<string, any>[] = [], premiumSchedule: PremiumDue[] = [], salaryEnds: { id: string; month: string; amount: number }[] = [];
   const propertyIds = new Set(records.filter(r => r.module_key === 'property').map(r => r.id));
@@ -83,24 +84,39 @@ export function planningSnapshot(records: PlanningRecord[], asOf = indiaDate()) 
     if (!loan.emi && loan.parked < loan.balance) warnings.push(`${loan.name}: enter a monthly payment to estimate payoff.`);
   }
   const monthlyEmi = debts.reduce((sum, debt) => sum + debt.payment, 0);
-  // Dividends confirmed as received in the last 12 months, as a monthly average (R5), count alongside any average entered by hand.
-  monthlyDividend += dividendsMonthlyAverage(records, asOf);
-  const monthlyIncome = monthlySalary + monthlyRent + monthlyDividend;
-  const monthlyRegular = monthlyRegularTotal(recurringPayments(records));
   // R6: card bills are left out of regular payments; card spending is estimated from past bills instead.
-  const card = cardEstimate(records, asOf), monthlyCardEstimate = card.monthly;
+  const card = cardEstimate(records, asOf);
   if (recurringPayments(records).some(isCardRow)) {
     if (!card.months) warnings.push('No card spending recorded in the last 6 months, so card spending is left out of cash flow. Mark card bills paid on the Payments screen to build an estimate.');
     else if (card.rough) warnings.push(`Card spending is a rough estimate from only ${card.months} month${card.months === 1 ? '' : 's'} of bills.`);
   }
-  const directExpenses = monthlyDirectExpenses(records, asOf.slice(0, 7));
+  // D7/D8: each cash-flow figure is the total of the records ticked in the Planner (the default ticks when
+  // nothing is saved), so Home, the dashboard and the Planner add up exactly the same records.
+  // With the default ticks these equal salary while employed, rent being earned, dividends averaged over
+  // 12 months (R5), regular non-card payments, the card estimate (R6), this month's day-to-day spending,
+  // bank-paid investing and a twelfth of yearly premiums.
+  const sources = plannerSources(records, asOf);
+  const ticked = (field: CashField, group?: string) => {
+    const ids = new Set(pickedIds(sources[field], picks[field]));
+    return sources[field].filter(i => ids.has(i.id) && (!group || i.group === group)).reduce((s, i) => s + i.value, 0);
+  };
+  monthlySalary = ticked('income', 'Salary');
+  monthlyRent = ticked('income', 'Rent');
+  monthlyDividend = ticked('income', 'Dividends');
+  monthlyInvestment = ticked('investment');
+  monthlyPremium = ticked('insurance') / 12;
+  const monthlyIncome = ticked('income');
+  const monthlyRegular = ticked('expenses', 'Regular payments'), monthlyCardEstimate = ticked('expenses', 'Card spending');
+  const directExpenses = ticked('expenses', 'Day-to-day spending'), monthlyLiving = ticked('expenses');
+  const pickedPolicies = new Set(pickedIds(sources.insurance, picks.insurance));
+  const tickedSchedule = premiumSchedule.filter(p => !p.id || pickedPolicies.has(p.id));
   // A typical month carries a twelfth of the yearly premiums (R5); the 12-month forecast still takes each premium in its due month.
-  const availableCashFlow = monthlyIncome - monthlyEmi - monthlyInvestment - monthlyRegular - monthlyCardEstimate - directExpenses - monthlyPremium;
+  const availableCashFlow = monthlyIncome - monthlyEmi - monthlyInvestment - monthlyLiving - monthlyPremium;
   // R3: OD money above a loan's balance is your own cash; money up to the balance can be redrawn but adds
   // to the loan if used. The two are shown side by side and never added into one headline.
   const od = odPosition(records, asOf);
   const cashNow = savingsBalance + cashAtHome + od.spare, canRedraw = od.canRedraw;
-  return { monthlyDirectExpenses: directExpenses, monthlyRegular, rentals, monthlySalary, monthlyRent, monthlyDividend, savingsBalance, cashAtHome, odParked, odSpare: od.spare, odAccounts: od.accounts, cashNow, canRedraw, liquidity: savingsBalance + cashAtHome + odParked, monthlyIncome, monthlyEmi, availableCashFlow, monthlyCardEstimate, cardMonths: card.months, cardRough: card.rough, monthlyInvestment, monthlyPayrollInvestment, monthlyPremium, annualPremium: monthlyPremium * 12, premiumSchedule, salaryEnds, debts, warnings };
+  return { monthlyDirectExpenses: directExpenses, monthlyRegular, rentals, monthlySalary, monthlyRent, monthlyDividend, savingsBalance, cashAtHome, odParked, odSpare: od.spare, odAccounts: od.accounts, cashNow, canRedraw, liquidity: savingsBalance + cashAtHome + odParked, monthlyIncome, monthlyEmi, availableCashFlow, monthlyLiving, monthlyCardEstimate, cardMonths: card.months, cardRough: card.rough, monthlyInvestment, monthlyPayrollInvestment, monthlyPremium, annualPremium: monthlyPremium * 12, premiumSchedule: tickedSchedule, salaryEnds, debts, warnings };
 }
 
 export function projectWealth(input: { starting: number; years: number; annualReturn: number; inflation: number; monthly: number; annualStepUp: number; contributionYears: number; retirementMonthly: number }) {
