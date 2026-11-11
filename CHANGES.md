@@ -15,6 +15,47 @@ These backups cover the app itself, not your financial data. Your data is covere
 
 ---
 
+## Version 10.33 (11 Nov 2026, 18:00): Every screen agrees on the same figures; Sukanya rules; a tidier menu
+
+Backup taken before this release: `backup-2026-11-11-1800-IST`
+
+Before this release, Home, Goals and the Predictive Planner each worked out some figures their own way, so the same question could get different answers on different screens. These are now worked out once and shown the same everywhere.
+
+**Loans and cash**
+- **Every screen lists the same loans.** Home, the cash flow, the Planner and Payments now read one loan list. A loan that exists only through payments to a builder is no longer missed.
+- **A loan balance entered as 0 means nothing is owed.** Left blank, it is still worked out for you. An overdraft with 0 entered and money parked is read as before, until you say which you mean.
+- **Overdraft money is split in two.** Money parked up to a loan's balance can be redrawn, but adds to the loan if used. Money parked above the balance is your own cash and now counts in your net worth.
+- **"Liquidity now" is replaced by two figures,** shown side by side and never added together: **Cash now** (savings, cash at home and spare money in an overdraft) and **Can redraw from OD**.
+
+**Monthly cash flow**
+- **Company PF is no longer taken off twice.** It comes out of your salary before take-home pay, so it now has its own line and is not subtracted again. A new **Paid from** choice (Payroll or Bank) on Fixed Income records decides this.
+- **A credit card bill is no longer a fixed monthly cost.** Card spending is the average of the card bills you mark paid on the Payments screen, over up to the last six months. With fewer than three months it is marked rough; with none, the cash flow says so.
+- **A typical month now includes a twelfth of your yearly insurance premiums,** and **dividends are the last 12 months' total divided by 12** instead of only what arrived this month.
+- **Home, the dashboard and the Planner use the same ticked records,** and every Planner box shows the figure it actually uses.
+
+**Goals**
+- **Goals and the Planner count months to a target the same way.**
+- **A goal shows the full value of what pays for it,** not a figure capped at its target, with how much more than needed it holds today.
+- **The home you live in is left out of goals together with its own loan.**
+- **Builder payments dated in the future** are listed as scheduled and count only from their date.
+- **The Home goals tile no longer adds all goals into one percentage,** which let one goal's surplus hide another's shortfall. It shows how many goals are on track, the weakest goal and the extra needed each month against your monthly surplus.
+- **The Goals page below the table is in three sections:** what pays for each goal (one card per goal with a status badge), your net worth as cash, and the assumptions behind the figures. Nothing was removed.
+
+**Holdings without a recorded cost**
+- **A Fixed Income holding with only a balance entered shows "cost not recorded"** instead of the whole balance as gain. Its value still counts in net worth. A new **Total Deposited So Far** field gives it a cost when you know it. This also makes the overall gain percentage meaningful.
+
+**Dates of birth and Sukanya Samriddhi**
+- **Each account now has a Date of birth** (Settings → Accounts), saved once for the household and shown with the age.
+- **Sukanya Samriddhi accounts follow the government scheme (2019):** opened in the girl's name before she turns 10, ₹250 to ₹1,50,000 a year, deposits for 15 years, half can be withdrawn for her education from 18, it can be closed for her marriage at 18 or over, and it matures 21 years after opening.
+- **A Sukanya panel on Fixed Income** shows each account's girl and age, when deposits stop, the education and marriage dates, maturity and status.
+- **Saving a Sukanya account checks the scheme rules** and fills in the 21-year term, maturity date and current rate.
+- **Goals count a Sukanya account only as far as it can be taken out by the goal's date,** and say why.
+
+**Menu changes**
+- **Payments moved from Home to Investments → Payments,** with two tabs: Payments This Month and Expenses. The tab row on Home was removed.
+- **Dividends to confirm moved to Stocks,** in the tab now called **Dividends Earned / Confirmed**. Its number is how many dividends are waiting for your answer.
+- **Records refresh every 10 seconds at most** (was 20), and the Goals property figure explains that the home you live in is left out.
+
 ## Version 10.32 (10 Nov 2026, 20:52): Goals always use your latest investment figures
 
 Backup taken before this release: `backup-2026-11-10-2052-IST`
