@@ -97,3 +97,50 @@ describe("the Fixed Income record", async () => {
     expect(fixedIncomeMaturityDate({ category: "Sukanya Samriddhi", purchase_date: "2018-06-01" })).toBe("2039-06-01");
   });
 });
+
+// Finding the girl's date of birth when names do not match exactly (reported 11 Nov 2026: the date of
+// birth was entered on the account but the goal said it was not entered).
+describe("finding her date of birth", async () => {
+  const { birthDateOf, namesInGoal, sukanyaGirl } = await import("./sukanya");
+  const { AS_OF, AS_OF_INSTANT, household, ID } = await import("./__fixtures__/household");
+  const { goals } = await import("./__fixtures__/screens");
+  const { DEFAULT_PLAN_SETTINGS } = await import("./settings");
+  const dates = { "Riya ": "2014-02-10", Asha: "1985-07-01" };
+
+  it("ignores capitals and extra spaces", () => {
+    expect(birthDateOf(dates, "riya")).toBe("2014-02-10");
+  });
+
+  it("finds an account name inside the goal's name", () => {
+    expect(namesInGoal("Riya Higher Education", dates)).toEqual(["Riya "]);
+    expect(namesInGoal("Retirement", dates)).toEqual([]);
+  });
+
+  it("passes over a parent named on the record and takes the girl from the goal's name", () => {
+    expect(sukanyaGirl(["Asha", "Riya"], dates, "2018-06-01")).toMatchObject({ name: "Riya", birthDate: "2014-02-10" });
+  });
+
+  it("a goal whose Sukanya is in a parent's name still finds the girl through the goal's name", () => {
+    const records = household().map((r) =>
+      r.id === ID.sukanya ? { ...r, data: { ...r.data, account_name: "Asha" } }
+      : r.id === ID.goalPastSalary ? { ...r, data: { ...r.data, security_name: "Mira Education", category: "Education", target_date: "2031-03-31" } } : r);
+    const settings = { ...DEFAULT_PLAN_SETTINGS, birthDates: { Asha: "1985-07-01", Mira: "2014-02-10" } };
+    const line = goals(records, AS_OF, AS_OF_INSTANT, undefined, settings).goals.find((g) => g.id === ID.goalPastSalary)!.p!.items.find((i) => i.id === ID.sukanya)!;
+    expect(line.basis).toMatch(/not available before she turns 18 \(2032-02-10\)/);
+    expect(line.warning).toBeUndefined();
+  });
+
+  it("when nothing is found, says which names were looked for", () => {
+    const line = goals(household(), AS_OF, AS_OF_INSTANT).goals.find((g) => g.id === ID.goalPastSalary)!.p!.items.find((i) => i.id === ID.sukanya)!;
+    expect(line.basis).toMatch(/no date of birth found for her \(looked for "Mira"\)/);
+    expect(line.warning).toMatch(/No date of birth was found for "Mira"/);
+  });
+
+  it("a planned Sukanya finds the girl of the goal's existing Sukanya, not the goal's owner", () => {
+    const records = household().map((r) => (r.id === ID.goalPastSalary ? { ...r, data: { ...r.data, planned_investments: [{ id: "s1", instrument: "sukanya", mode: "monthly", amount: 10000 }] } } : r));
+    const settings = { ...DEFAULT_PLAN_SETTINGS, birthDates: { Asha: "1985-07-01", Mira: "2020-05-05" } };
+    const line = goals(records, AS_OF, AS_OF_INSTANT, undefined, settings).goals.find((g) => g.id === ID.goalPastSalary)!.p!.items.find((i) => i.id === "planned:s1")!;
+    expect(line.warning).toBeUndefined();
+    expect(line.basis).not.toMatch(/no date of birth/);
+  });
+});
