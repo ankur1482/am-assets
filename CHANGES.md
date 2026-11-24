@@ -15,6 +15,27 @@ These backups cover the app itself, not your financial data. Your data is covere
 
 ---
 
+## Version 10.34 (24 Nov 2026, 17:45): Gold at the Malabar 24K rate; simpler phone watchlist; stacked market strip
+
+Backup taken before this release: `backup-2026-11-24-1740-IST`
+
+**Gold**
+- **Gold is valued at the 24K rate Malabar Gold & Diamonds publishes for all of India.** The Gold/Silver screen shows it with its date and time, and MCX beside it. Gold was valued at MCX before, so its value moves once by the gap between the two. That is a change of price source, not a gain on the day.
+- **The Purchase Calculator uses the Malabar rate for gold** in place of the 5paisa city rate. The 5paisa rate is still shown under the Malabar rate on the Gold/Silver screen when there is one for your city.
+- **If Malabar cannot be reached,** gold keeps its last Malabar rate for up to three days, then uses MCX. The screen says when this happens.
+- **Today's Gain on gold compares Malabar with Malabar.** Malabar's page gives only the current rate, so the app saves the rate with each gold record. Until it has seen the rate on two different days, Today's Gain on gold is zero.
+- **Silver, NSEL e-Gold and the market strip stay on MCX.** In Admin Console → Investment Data Sources, "Automatic" now means Malabar for gold. The earlier behaviour is kept as "MCX, then Moneycontrol".
+- The day's low and high come from MCX, as Malabar has none, and are now labelled so.
+
+**Phone watchlist**
+- **The Current box shows the price now with the price when you added the share below it.** A share added more than once shows the price when it was first added.
+- **Removed: the Overall Gain and Today's Gain rows on each watchlist card, and the two gain totals at the top of the watchlist.** Your stock holdings keep their gains, and the watchlist on a computer is unchanged.
+
+**Market strip**
+- **On a computer, pairs sit one above another:** Sensex and Nifty, Nifty Bank and Nasdaq, gold and silver, then the dollar, then crude and Brent.
+- **Brent crude is new,** on the computer and the phone.
+- **Crude shows its real change for the day.** It always showed $0.00 before.
+
 ## Version 10.33 (11 Nov 2026, 18:00): Every screen agrees on the same figures; Sukanya rules; a tidier menu
 
 Backup taken before this release: `backup-2026-11-11-1800-IST`
