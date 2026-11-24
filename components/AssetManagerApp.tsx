@@ -5555,31 +5555,41 @@ export default function AssetManagerApp() {
             </div>
           </div>
         </div>
-        <a
-          className="phone-stock-prices phone-stock-signal-row"
-          href={String(quote?.sourceUrl || mcxCommodityHref())}
-          target="_blank"
-          rel="noreferrer"
-          onClick={(event) => event.stopPropagation()}
-        >
-          <span className={x.today > 0 ? "phone-box-up" : x.today < 0 ? "phone-box-down" : "phone-box-neutral"}>
-            <em>{malabarPriced ? "Malabar 24K" : "MCX / MC"}</em>
-            <b className={priceLoading ? "phone-price-skeleton" : ""}>{priceText(displayCurrent)}</b>
-            <small>{malabarPriced
-              ? marketCurrent ? `MCX ${fmt(marketCurrent)}` : "MCX -"
-              : localCurrent ? `Local ${fmt(localCurrent)}` : "Local -"}</small>
-          </span>
-          <span className="phone-box-down">
-            <em>{malabarPriced ? "MCX Low" : "Low"}</em>
-            <b className={priceLoading ? "phone-price-skeleton" : ""}>{priceText(dayLow)}</b>
-            <small>{priceLoading ? "52W loading" : weekLow ? `52W ${fmt(weekLow)}` : "52W -"}</small>
-          </span>
-          <span className="phone-box-up">
-            <em>{malabarPriced ? "MCX High" : "High"}</em>
-            <b className={priceLoading ? "phone-price-skeleton" : ""}>{priceText(dayHigh)}</b>
-            <small>{priceLoading ? "52W loading" : weekHigh ? `52W ${fmt(weekHigh)}` : "52W -"}</small>
-          </span>
-        </a>
+        <div className="phone-stock-prices phone-stock-signal-row">
+          <a
+            href={String(quote?.sourceUrl || "https://www.malabargoldanddiamonds.com/in/pan-india/en/live-gold-rate.html")}
+            target="_blank"
+            rel="noreferrer"
+            onClick={(event) => event.stopPropagation()}
+            className="phone-box-neutral"
+          >
+            <em>Malabar 24K</em>
+            <b className={priceLoading ? "phone-price-skeleton" : ""}>{priceText(num(quote?.ratePer10GramInr))}</b>
+            <small>{quote?.rateDate || "Rate"}</small>
+          </a>
+          <a
+            href={String(quote?.benchmark?.sourceUrl || "https://www.mcxindia.com/market-data/market-watch")}
+            target="_blank"
+            rel="noreferrer"
+            onClick={(event) => event.stopPropagation()}
+            className={x.today > 0 ? "phone-box-up" : x.today < 0 ? "phone-box-down" : "phone-box-neutral"}
+          >
+            <em>MCX</em>
+            <b className={priceLoading ? "phone-price-skeleton" : ""}>{priceText(marketCurrent)}</b>
+            <small>{priceLoading ? "Loading" : "Market"}</small>
+          </a>
+          <a
+            href={String(localBullionRate?.goldUrl || "https://www.5paisa.com/commodity-trading/gold/hyderabad")}
+            target="_blank"
+            rel="noreferrer"
+            onClick={(event) => event.stopPropagation()}
+            className="phone-box-neutral"
+          >
+            <em>5paisa {localBullionRate?.city || "Hyderabad"}</em>
+            <b>{localCurrent ? fmt(localCurrent) : "—"}</b>
+            <small>{localBullionRate?.goldAsOn || "Local"}</small>
+          </a>
+        </div>
       </article>
     );
   }
@@ -7144,7 +7154,8 @@ export default function AssetManagerApp() {
         }
         .phone-stock-top-stats > div,
         .phone-stock-metrics > div,
-        .phone-stock-prices > span {
+        .phone-stock-prices > span,
+        .phone-stock-prices > a {
           min-width: 0 !important;
           border-radius: 13px !important;
           padding: 7px 8px !important;
@@ -7237,7 +7248,8 @@ export default function AssetManagerApp() {
           -webkit-tap-highlight-color: transparent !important;
           padding-top: 1px !important;
         }
-        .phone-stock-signal-row > span {
+        .phone-stock-signal-row > span,
+        .phone-stock-signal-row > a {
           min-height: 52px !important;
         }
         .phone-stock-signal-row > .phone-box-neutral {
@@ -7264,6 +7276,10 @@ export default function AssetManagerApp() {
         .phone-stock-signal-row > .phone-box-down em,
         .phone-stock-signal-row > .phone-box-down b {
           color: #bd2020 !important;
+        }
+        .phone-stock-signal-row > .phone-box-up small,
+        .phone-stock-signal-row > .phone-box-down small {
+          color: #6c596a !important;
         }
         .phone-stock-signal-row small {
           display: block !important;
@@ -9324,71 +9340,23 @@ export default function AssetManagerApp() {
     const bullionRecords = records.filter((record) => record.module_key === "bullion"),
       gold = bullionMarket?.gold,
       silver = bullionMarket?.silver,
-      goldBenchmark = num(gold?.ratePer10GramInr),
-      silverBenchmark = num(silver?.ratePerKgInr),
-      malabar = gold?.basis === "malabar" ? gold : null,
-      goldBenchmarkShown = malabar ? num(malabar.benchmark?.ratePer10GramInr) : goldBenchmark,
-      goldCity = num(localBullionRate?.gold24kPer10GramInr),
-      goldLocal = malabar ? num(malabar.ratePer10GramInr) : goldCity,
+      goldMalabar = num(gold?.ratePer10GramInr),
+      goldMcx = num(gold?.benchmark?.ratePer10GramInr) || num(gold?.ratePer10GramInr),
+      goldLocal = num(localBullionRate?.gold24kPer10GramInr),
+      silverMcx = num(silver?.ratePerKgInr),
       silverLocal = num(localBullionRate?.silverPerKgInr),
-      city =
-        String(localBullionRate?.city || "").trim() ||
-        bullionRecords
-          .map((record) => String(record.data?.city || "").trim())
-          .find(Boolean) ||
-        profile?.city ||
-        "Current city",
-      rateCard = (
-        title: string,
-        local: number,
-        benchmark: number,
-        difference: number,
-        provider: string,
-        unit: string,
-        asOn: string,
-        sourceUrl: string,
-        place = `Local · ${city}`,
-        versus = "local",
-        linkLabel = "Open 5paisa",
-      ) => (
-        <div className="rounded-2xl border border-[#e3dccc] bg-white p-4">
-          <div className="flex items-baseline justify-between gap-2">
-            <div className="text-xs font-semibold uppercase tracking-widest text-[#6d7c73]">
-              {title}
-            </div>
-            <div className="text-[11px] text-gray-500">{unit}</div>
-          </div>
-          <div className="mt-2 flex items-baseline justify-between gap-3">
-            <div>
-              <div className="text-2xl font-semibold text-[#17382b]">
-                {local ? fmt(local) : "MCX rate below"}
-              </div>
-              <div className="text-[11px] text-gray-500">
-                {place}
-                {asOn ? ` · ${asOn}` : ""}
-              </div>
-            </div>
-            <div className="text-right">
-              <div className="text-lg font-semibold text-[#17382b]">
-                {benchmark ? fmt(benchmark) : "-"}
-              </div>
-              <div className="text-[11px] text-gray-500">
-                MCX / Moneycontrol
-                {local && benchmark
-                  ? ` · ${versus === "local" ? "" : "Malabar "}${difference >= 0 ? "+" : ""}${fmt(difference)} vs ${versus}`
-                  : ""}
-              </div>
-            </div>
-          </div>
-          <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-[#eee3cf] pt-2 text-[11px] font-semibold text-[#7a1248]">
-            <span>{provider || "Selected bullion source"}</span>
-            {sourceUrl && (
-              <a href={sourceUrl} target="_blank" rel="noreferrer">
-                {linkLabel}
-              </a>
-            )}
-          </div>
-        </div>
+      city = String(localBullionRate?.city || "").trim() || bullionRecords.map((record) => String(record.data?.city || "").trim()).find(Boolean) || profile?.city || "Hyderabad",
+      priceBox = (title: string, rate: number, unit: string, url: string) => (
+        <a
+          href={url}
+          target="_blank"
+          rel="noreferrer"
+          className="flex flex-col rounded-xl border border-[#c8942f]/20 bg-gradient-to-b from-[#fffdf8] to-[#fff4db] p-3 text-center hover:border-[#c8942f]/30"
+        >
+          <div className="text-xs font-bold uppercase tracking-wider text-[#785f70]">{title}</div>
+          <div className="mt-1 text-lg font-bold text-[#211521]">{rate ? fmt(rate) : "—"}</div>
+          <div className="text-[10px] text-[#6c596a]">{unit}</div>
+        </a>
       );
     return (
       <section className="mb-4 rounded-[24px] border border-[#ded6c4] bg-[#fffaf0] p-4">
@@ -9396,48 +9364,41 @@ export default function AssetManagerApp() {
           <div>
             <h3 className="text-lg font-semibold">Gold & Silver Rates</h3>
             <p className="text-xs text-gray-600">
-              {malabar || gold?.malabarUnavailable
-                ? "Gold is valued at Malabar's published 24K rate, the same across India. Silver uses MCX or Moneycontrol. Local city rates are for reference only."
-                : "Portfolio valuation, gains and snapshots use only MCX or Moneycontrol. Local rates are display references only."}
+              {gold?.basis === "malabar"
+                ? "Gold uses Malabar's published 24K rate for all of India. Silver uses MCX or Moneycontrol. Local 5paisa rates are for reference."
+                : "Gold and silver valuations use MCX or Moneycontrol. Local 5paisa rates are for reference."}
             </p>
             {gold?.malabarUnavailable && (
               <p className="mt-1 text-xs font-semibold text-amber-700">
-                Malabar&apos;s rate could not be read just now. Gold keeps Malabar&apos;s last rate for up to 3 days, then uses MCX.
+                Malabar's rate could not be read just now. Gold keeps Malabar's last rate for up to 3 days, then uses MCX.
               </p>
             )}
           </div>
-          <div className="flex flex-col items-end gap-1">
-            <span className="text-[11px] font-semibold text-gray-500">
-              {bullionPriceStatus === "loading"
-                ? "Updating…"
-                : bullionMarket?.time
-                  ? `Live · updated ${bullionMarket.time}`
-                  : "Live"}
-            </span>
+          <div className="text-[11px] font-semibold text-gray-500">
+            {bullionPriceStatus === "loading"
+              ? "Updating…"
+              : bullionMarket?.time
+                ? `Live · updated ${bullionMarket.time}`
+                : "Live"}
           </div>
         </div>
-        <div className="grid grid-cols-2 gap-3 max-md:grid-cols-1">
-          {rateCard(
-            malabar ? "Malabar Gold 24K" : "Local Gold 24K",
-            goldLocal,
-            goldBenchmarkShown,
-            goldLocal && goldBenchmarkShown ? goldLocal - goldBenchmarkShown : 0,
-            malabar && goldCity ? `5paisa ${city} ${fmt(goldCity)}` : String(gold?.provider || ""),
-            "10 grams",
-            malabar ? `${formatDate(malabar.rateDate)} ${String(malabar.rateTime || "").slice(0, 5)}` : String(localBullionRate?.goldAsOn || ""),
-            malabar ? MALABAR_RATE_PAGE : String(localBullionRate?.goldUrl || ""),
-            ...((malabar ? ["All India", "MCX", "Open Malabar"] : []) as string[]),
-          )}
-          {rateCard(
-            "Local Silver",
-            silverLocal,
-            silverBenchmark,
-            silverLocal && silverBenchmark ? silverLocal - silverBenchmark : 0,
-            String(silver?.provider || ""),
-            "1 kilogram",
-            String(localBullionRate?.silverAsOn || ""),
-            String(localBullionRate?.silverUrl || ""),
-          )}
+        <div className="space-y-4">
+          <div>
+            <div className="mb-2 text-sm font-semibold text-[#785f70]">Gold · 10 grams</div>
+            <div className="grid grid-cols-3 gap-2">
+              {priceBox("Malabar 24K", goldMalabar, gold?.rateDate || "", gold?.sourceUrl || "https://www.malabargoldanddiamonds.com/in/pan-india/en/live-gold-rate.html")}
+              {priceBox("MCX", goldMcx, gold?.benchmark?.updatedAt ? new Date(gold.benchmark.updatedAt).toLocaleDateString() : "", gold?.benchmark?.sourceUrl || "https://www.mcxindia.com/market-data/market-watch")}
+              {priceBox(`5paisa ${city}`, goldLocal, localBullionRate?.goldAsOn || "", localBullionRate?.goldUrl || "https://www.5paisa.com/commodity-trading/gold/hyderabad")}
+            </div>
+          </div>
+          <div>
+            <div className="mb-2 text-sm font-semibold text-[#785f70]">Silver · 1 kilogram</div>
+            <div className="grid grid-cols-3 gap-2">
+              {priceBox("MCX", silverMcx, silver?.updatedAt ? new Date(silver.updatedAt).toLocaleDateString() : "", silver?.sourceUrl || "https://www.mcxindia.com/market-data/market-watch")}
+              {priceBox(`5paisa ${city}`, silverLocal, localBullionRate?.silverAsOn || "", localBullionRate?.silverUrl || "https://www.5paisa.com/commodity-trading/silver/hyderabad")}
+              {priceBox("—", 0, "Malabar", "https://www.malabargoldanddiamonds.com/in/pan-india/en/live-gold-rate.html")}
+            </div>
+          </div>
         </div>
       </section>
     );
