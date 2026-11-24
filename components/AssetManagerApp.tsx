@@ -74,6 +74,7 @@ import { researchLinks } from "@/lib/researchLinks";
 import { ACCOUNT_TYPES, MODULES, RELATIONS } from "@/lib/modules";
 import { controlsOtherFields, isFieldVisible } from "@/lib/fieldVisibility";
 import { MALABAR_PROVIDER, MALABAR_RATE_PAGE, malabarGold } from "@/lib/malabarGold";
+import { marketColumns } from "@/lib/marketStrip";
 import {
   formatDate,
   formatDateTime,
@@ -2623,18 +2624,24 @@ export default function AssetManagerApp() {
           });
         }
       }
-      const [goldRes, silverRes, crudeRes, usdRes] = await Promise.all([
+      const [goldRes, silverRes, crudeRes, brentRes, usdRes] = await Promise.all([
         fetch(`/api/market-rate?asset=gold${bullionMarketParam()}`),
         fetch(`/api/market-rate?asset=silver${bullionMarketParam()}`),
-        fetch(`/api/market-rate?asset=crude`),
+        quoteFetch(
+          `/api/quote?symbol=${encodeURIComponent("CL=F")}&exchange=INDEX${quoteProviderParam()}`,
+        ),
+        quoteFetch(
+          `/api/quote?symbol=${encodeURIComponent("BZ=F")}&exchange=INDEX${quoteProviderParam()}`,
+        ),
         quoteFetch(
           `/api/quote?symbol=${encodeURIComponent("USDINR=X")}&exchange=INDEX${quoteProviderParam()}`,
         ),
       ]);
-      const [gold, silver, crude, usd] = await Promise.all([
+      const [gold, silver, crude, brent, usd] = await Promise.all([
         goldRes.json().catch(() => ({})),
         silverRes.json().catch(() => ({})),
         crudeRes.json().catch(() => ({})),
+        brentRes.json().catch(() => ({})),
         usdRes.json().catch(() => ({})),
       ]);
       const commodityRows = [
@@ -2676,10 +2683,19 @@ export default function AssetManagerApp() {
         {
           name: "Crude $ / Barrel",
           symbol: "crude",
-          price: num(crude?.usdPerBarrel),
-          change: 0,
-          changePct: 0,
-          ok: crudeRes.ok && Number.isFinite(Number(crude?.usdPerBarrel)),
+          price: num(crude?.price),
+          change: num(crude?.change),
+          changePct: num(crude?.changePct),
+          ok: crudeRes.ok && !!num(crude?.price),
+          unit: "USD",
+        },
+        {
+          name: "Brent $ / Barrel",
+          symbol: "brent",
+          price: num(brent?.price),
+          change: num(brent?.change),
+          changePct: num(brent?.changePct),
+          ok: brentRes.ok && !!num(brent?.price),
           unit: "USD",
         },
       ];
@@ -5628,6 +5644,7 @@ export default function AssetManagerApp() {
       .replace("Silver - 1 KG", "SILVER")
       .replace("Dollar / INR", "DOLLAR")
       .replace("Crude $ / Barrel", "CRUDE")
+      .replace("Brent $ / Barrel", "BRENT")
       .replace("NIFTY BANK", "BANK");
   }
   function phoneLotRows(moduleKey: string, lots: Rec[], groupKey: string) {
@@ -5844,6 +5861,7 @@ export default function AssetManagerApp() {
         "NASDAQ",
         "Dollar / INR",
         "Crude $ / Barrel",
+        "Brent $ / Barrel",
       ]),
       market = marketToday.filter((x) => marketNames.has(x.name)),
       tabs = [
@@ -9069,6 +9087,7 @@ export default function AssetManagerApp() {
             { name: "Silver - 1 KG" },
             { name: "Dollar / INR" },
             { name: "Crude $ / Barrel" },
+            { name: "Brent $ / Barrel" },
           ],
       inr = (v: number, d = 2) =>
         `₹${Number(v).toLocaleString("en-IN", { minimumFractionDigits: d, maximumFractionDigits: d })}`,
@@ -9091,7 +9110,7 @@ export default function AssetManagerApp() {
           prefix = c > 0 ? "+" : "";
         if (["Gold - 10 GM", "Silver - 1 KG"].includes(x.name))
           return `${prefix}${inr(c, 0)} (${cp > 0 ? "+" : ""}${cp.toFixed(2)}%)`;
-        if (x.name === "Crude $ / Barrel")
+        if (x.unit === "USD")
           return `${c > 0 ? "+" : ""}$${plain(c, 2)} (${cp > 0 ? "+" : ""}${cp.toFixed(2)}%)`;
         return `${prefix}${plain(c, 2)} (${cp > 0 ? "+" : ""}${cp.toFixed(2)}%)`;
       },
@@ -9116,32 +9135,36 @@ export default function AssetManagerApp() {
             </span>
           </div>
         </div>
-        <div className="grid grid-cols-8 divide-x divide-[#eef0e8] bg-white max-2xl:grid-cols-4 max-xl:grid-cols-2 max-sm:grid-cols-1">
-          {rows.map((x: any) => (
-            <div
-              key={x.name}
-              className="min-w-0 px-4 py-4 transition hover:bg-[#f7fbf5]"
-            >
-              <div className="text-xs font-semibold uppercase tracking-wide text-[#17382b]">
-                {x.name}
-              </div>
-              <div className="mt-2 whitespace-nowrap text-2xl font-semibold leading-none tabular-nums text-black">
-                {x.ok ? priceText(x) : "Loading"}
-              </div>
+        <div className="grid grid-cols-5 divide-x divide-[#eef0e8] bg-white max-xl:grid-cols-3 max-md:grid-cols-2">
+          {marketColumns(rows as any[]).map((column) => (
+            <div key={column[0].name} className="min-w-0 divide-y divide-[#eef0e8]">
+              {column.map((x: any) => (
               <div
-                className={`mt-2 flex items-center gap-1 whitespace-nowrap text-xs font-semibold tabular-nums ${num(x.change) >= 0 ? "text-emerald-700" : "text-red-600"}`}
+                key={x.name}
+                className="market-cell min-w-0 px-4 py-3 transition hover:bg-[#f7fbf5]"
               >
-                {x.ok && Number.isFinite(Number(x.change)) ? (
-                  <>
-                    <span
-                      className={`h-1.5 w-1.5 rounded-full ${num(x.change) >= 0 ? "bg-emerald-600" : "bg-red-500"}`}
-                    />
-                    <span>{changeText(x)}</span>
-                  </>
-                ) : (
-                  ""
-                )}
+                <div className="text-xs font-semibold uppercase tracking-wide text-[#17382b]">
+                  {x.name}
+                </div>
+                <div className="mt-2 whitespace-nowrap text-2xl font-semibold leading-none tabular-nums text-black">
+                  {x.ok ? priceText(x) : "Loading"}
+                </div>
+                <div
+                  className={`mt-2 flex items-center gap-1 whitespace-nowrap text-xs font-semibold tabular-nums ${num(x.change) >= 0 ? "text-emerald-700" : "text-red-600"}`}
+                >
+                  {x.ok && Number.isFinite(Number(x.change)) ? (
+                    <>
+                      <span
+                        className={`h-1.5 w-1.5 rounded-full ${num(x.change) >= 0 ? "bg-emerald-600" : "bg-red-500"}`}
+                      />
+                      <span>{changeText(x)}</span>
+                    </>
+                  ) : (
+                    ""
+                  )}
+                </div>
               </div>
+              ))}
             </div>
           ))}
         </div>

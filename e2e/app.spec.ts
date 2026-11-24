@@ -1034,4 +1034,33 @@ test.describe('logged-in app', () => {
     await expect(page.locator('.phone-stock-card', { hasText: 'Example Paints' })).toContainText('Overall Gain');
     await expectHealthy(page, app, 'phone watchlist');
   });
+
+  test('the market strip stacks pairs, with Brent under crude and real daily changes', async ({ page }) => {
+    const app = await openApp(page);
+    await page.route('**/api/quote?**', route => {
+      const symbol = new URL(route.request().url()).searchParams.get('symbol') || '';
+      const quotes: Record<string, object> = { '^BSESN': { price: 82435.99, change: -1483.72, changePct: -1.77 }, '^NSEI': { price: 25349.65, change: -450.95, changePct: -1.75 }, 'CL=F': { price: 80.34, change: 1.1, changePct: 1.39 }, 'BZ=F': { price: 84.2, change: -0.5, changePct: -0.59 } };
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(quotes[symbol] || {}) });
+    });
+    await page.reload();
+    if (isPhone(page)) {
+      const strip = page.locator('.phone-market-strip');
+      await expect(strip).toContainText('BRENT');
+      await expect(strip).toContainText('$84.20');
+    } else {
+      await open(page, app, /^Stocks/);
+      const cell = (name: string) => page.locator('.market-cell', { hasText: name }).locator('visible=true').first();
+      await expect(cell('Brent $ / Barrel')).toContainText('$84.20');
+      await expect(cell('Crude $ / Barrel')).toContainText('(+1.39%)');
+      const below = async (top: string, under: string) => {
+        const a = (await cell(top).boundingBox())!, b = (await cell(under).boundingBox())!;
+        expect(Math.abs(a.x - b.x), `${under} lines up with ${top}`).toBeLessThan(2);
+        expect(b.y, `${under} is below ${top}`).toBeGreaterThanOrEqual(a.y + a.height - 2);
+      };
+      await below('SENSEX', '25,349.65');
+      await below('Gold - 10 GM', 'Silver - 1 KG');
+      await below('Crude $ / Barrel', 'Brent $ / Barrel');
+    }
+    await expectHealthy(page, app, 'market strip');
+  });
 });
