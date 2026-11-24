@@ -977,4 +977,38 @@ test.describe('logged-in app', () => {
     await expect(row.locator('.sukanya-status')).toHaveText('Deposits open');
     await expectHealthy(page, app, 'Sukanya panel');
   });
+
+  test('gold is valued at the Malabar 24K rate, with MCX beside it, and the switch is not shown as a gain', async ({ page }) => {
+    const gold = { id: '33333333-3333-4333-8333-000000000401', module_key: 'bullion', user_id: '22222222-2222-4222-8222-222222222222', workspace_id: WORKSPACE_ID, created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z', data: { account_name: 'Asha', security_name: 'Gold', quantity: 10, unit: 'gms', purchase_price: 100000, latest_value: 124000, live_rate_per_gram: '12400.00', benchmark_rate_per_gram: '12400.00', previous_rate_per_gram: '12370.00', purchase_date: '2024-01-10' } };
+    const app = await openApp(page, [...fixtureRecords(), gold] as any);
+    const asked: string[] = [];
+    await page.route('**/api/market-rate?**', route => {
+      const url = new URL(route.request().url());
+      asked.push(url.search);
+      const market = { ratePer10GramInr: 124000, ratePerGramInr: 12400, changePer10GramInr: 300, changePerGramInr: 30, previousPerGramInr: 12370, dayLow: 123500, dayHigh: 124500, provider: 'MCX market watch' };
+      const body = url.searchParams.get('asset') !== 'gold' ? {} : url.searchParams.get('source') === 'auto'
+        ? { basis: 'malabar', ratePer10GramInr: 127800, ratePerGramInr: 12780, rateDate: '2026-11-05', rateTime: '09:41:14', dayLow: 123500, dayHigh: 124500, provider: 'Malabar Gold & Diamonds 24K', sourceUrl: 'https://www.malabargoldanddiamonds.com/in/pan-india/en/live-gold-rate.html', benchmark: { ratePer10GramInr: 124000, provider: 'MCX market watch' } }
+        : market;
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) });
+    });
+    if (isPhone(page)) {
+      await pickInvestment(page, /^Gold\/Silver/);
+      const card = page.locator('.phone-bullion-card');
+      await expect(card).toContainText('Malabar 24K');
+      await expect(card).toContainText('₹1,27,800');
+      await expect(card).toContainText('MCX ₹1,24,000');
+      // ₹3,800 is the gap between the two sources, not a day's gain.
+      await expect(card.locator('.phone-pair-line', { hasText: "Today's Gain" })).toContainText('₹0');
+    } else {
+      await open(page, app, /^Gold\/Silver/);
+      const rates = page.locator('section', { hasText: 'Gold & Silver Rates' }).locator('visible=true').last();
+      await expect(rates).toContainText('Malabar Gold 24K');
+      await expect(rates).toContainText('₹1,27,800');
+      await expect(rates).toContainText('05-Nov-2026 09:41');
+      await expect(rates.getByRole('link', { name: 'Open Malabar' })).toBeVisible();
+      await expect(page.locator('.bullion-holdings-table').locator('visible=true').first()).toContainText('₹12,780');
+    }
+    await expect.poll(() => asked.some((q) => q.includes('asset=gold') && q.includes('source=auto'))).toBe(true);
+    await expectHealthy(page, app, 'gold at Malabar rate');
+  });
 });

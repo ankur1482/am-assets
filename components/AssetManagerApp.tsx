@@ -73,6 +73,7 @@ import { goalsSummary } from "@/lib/plan/goalSummary";
 import { researchLinks } from "@/lib/researchLinks";
 import { ACCOUNT_TYPES, MODULES, RELATIONS } from "@/lib/modules";
 import { controlsOtherFields, isFieldVisible } from "@/lib/fieldVisibility";
+import { MALABAR_PROVIDER, MALABAR_RATE_PAGE, malabarGold } from "@/lib/malabarGold";
 import {
   formatDate,
   formatDateTime,
@@ -299,7 +300,12 @@ const INVESTMENT_SOURCE_OPTIONS: Record<string, { label: string; value: string; 
     {
       label: "Automatic",
       value: "auto",
-      note: "Official MCX first, then Moneycontrol MCX backup",
+      note: "Gold at Malabar's 24K rate, with MCX as backup. Silver from MCX first, then Moneycontrol",
+    },
+    {
+      label: "MCX, then Moneycontrol",
+      value: "market",
+      note: "Official MCX first, then Moneycontrol MCX backup, for gold and silver",
     },
     {
       label: "MCX only",
@@ -681,7 +687,7 @@ const fieldLabel = (moduleKey: string, field: string) =>
     : moduleKey === "property" && field === "broker"
     ? "Community"
     : moduleKey === "bullion" && field === "current_price"
-      ? "MCX / Moneycontrol Price"
+      ? "Current Price"
     : moduleKey === "fixedIncome" && FIXED_INCOME_LABELS[field]
       ? FIXED_INCOME_LABELS[field]
     : moduleKey === "fixedIncome" && field === "broker"
@@ -2240,6 +2246,9 @@ export default function AssetManagerApp() {
     });
   const bullionSourceParam = () =>
     `&source=${encodeURIComponent(sourceFor("bullion"))}`;
+  // The market strip and NSEL e-Gold follow the traded price, never a jeweller's rate.
+  const bullionMarketParam = () =>
+    sourceFor("bullion") === "auto" ? "&source=market" : bullionSourceParam();
   const setSourcePref = (moduleKey: string, source: string) =>
     setSourcePrefs((prev) => ({ ...prev, [moduleKey]: source }));
   const setAppearancePref = (patch: Partial<typeof DEFAULT_APPEARANCE>) =>
@@ -2615,8 +2624,8 @@ export default function AssetManagerApp() {
         }
       }
       const [goldRes, silverRes, crudeRes, usdRes] = await Promise.all([
-        fetch(`/api/market-rate?asset=gold${bullionSourceParam()}`),
-        fetch(`/api/market-rate?asset=silver${bullionSourceParam()}`),
+        fetch(`/api/market-rate?asset=gold${bullionMarketParam()}`),
+        fetch(`/api/market-rate?asset=silver${bullionMarketParam()}`),
         fetch(`/api/market-rate?asset=crude`),
         quoteFetch(
           `/api/quote?symbol=${encodeURIComponent("USDINR=X")}&exchange=INDEX${quoteProviderParam()}`,
@@ -3909,7 +3918,7 @@ export default function AssetManagerApp() {
         quotes.set(
           asset,
           fetch(
-            `/api/market-rate?asset=${encodeURIComponent(asset)}${bullionSourceParam()}`,
+            `/api/market-rate?asset=${encodeURIComponent(asset)}${k === "bullion" ? bullionSourceParam() : bullionMarketParam()}`,
           ).then(async (res) => {
             const q = await res.json();
             if (!res.ok || !Number.isFinite(Number(q.ratePerGramInr)))
@@ -3923,8 +3932,9 @@ export default function AssetManagerApp() {
       const d = { ...r.data };
       try {
         const q = await quoteFor(metalAsset(d));
-        const grams = num(d.quantity) * metalUnitFactor(d.unit),
-          benchmarkRate = Number(q.ratePerGramInr),
+        const malabar = k === "bullion" ? malabarFor(d, q) : null,
+          grams = num(d.quantity) * metalUnitFactor(d.unit),
+          benchmarkRate = malabar ? malabar.ratePerGram : Number(q.ratePerGramInr),
           localPremium = num(d.local_premium_per_gram),
           localRate = benchmarkRate + localPremium,
           rate = benchmarkRate,
@@ -3936,20 +3946,25 @@ export default function AssetManagerApp() {
                 ? rate * 10
                 : rate,
           displayChange =
-            asset === "silver"
+            malabar
+              ? malabar.changePerGram * 10
+              : asset === "silver"
               ? Number(q.changePerKgInr)
               : asset === "gold"
                 ? Number(q.changePer10GramInr)
                 : Number(q.changePerGramInr),
           value = grams * rate,
-          storedRate = num(
+          // A rate saved from Malabar is never compared with MCX; the gap between them is not a day's move.
+          storedRate = d.rate_provider === MALABAR_PROVIDER ? 0 : num(
             d.benchmark_rate_per_gram ||
               d.live_rate_per_gram ||
               d.previous_rate_per_gram,
           ),
           apiChange = Number(q.changePerGramInr),
           changePerGram =
-            Number.isFinite(apiChange) && apiChange !== 0
+            malabar
+              ? malabar.changePerGram
+              : Number.isFinite(apiChange) && apiChange !== 0
               ? apiChange
               : storedRate
                 ? rate - storedRate
@@ -3976,8 +3991,11 @@ export default function AssetManagerApp() {
           ? Number(q.fiftyTwoWeekHigh).toFixed(2)
           : d.fifty_two_week_high || "";
         d.contract_expiry = q.contractExpiry || q.expiry || d.contract_expiry || "";
+        if (malabar) Object.assign(d, malabar.saved);
         d.previous_rate_per_gram =
-          Number.isFinite(Number(q.previousPerGramInr)) &&
+          malabar
+            ? malabar.changePerGram ? (rate - malabar.changePerGram).toFixed(2) : ""
+            : Number.isFinite(Number(q.previousPerGramInr)) &&
           Number(q.previousPerGramInr) !== 0
             ? Number(q.previousPerGramInr).toFixed(2)
             : storedRate
@@ -3987,8 +4005,8 @@ export default function AssetManagerApp() {
         d.benchmark_rate_per_gram = benchmarkRate.toFixed(2);
         d.local_rate_per_gram = localRate.toFixed(2);
         d.pricing_city = d.city || profile?.city || "";
-        d.rate_provider = q.provider || "";
-        d.rate_source_url = q.sourceUrl || "";
+        d.rate_provider = malabar ? MALABAR_PROVIDER : q.provider || "";
+        d.rate_source_url = malabar ? MALABAR_RATE_PAGE : q.sourceUrl || "";
         d.last_synced = new Date().toISOString();
         await saveRecordData(r.id, d);
         ok++;
@@ -5414,6 +5432,8 @@ export default function AssetManagerApp() {
         metalAsset(c) === "silver"
           ? num(localBullionRate?.silverPerKgInr)
           : num(localBullionRate?.gold24kPer10GramInr),
+      malabarPriced = c.rate_source === "Malabar 24K",
+      marketCurrent = num(quote?.benchmark?.ratePer10GramInr) || (quote?.malabarUnavailable ? num(quote?.ratePer10GramInr) : 0),
       dayLow = num(c.day_low || c.low || c.today_low),
       dayHigh = num(c.day_high || c.high || c.today_high),
       weekLow = num(c.fifty_two_week_low),
@@ -5478,17 +5498,19 @@ export default function AssetManagerApp() {
           onClick={(event) => event.stopPropagation()}
         >
           <span className={x.today > 0 ? "phone-box-up" : x.today < 0 ? "phone-box-down" : "phone-box-neutral"}>
-            <em>MCX / MC</em>
+            <em>{malabarPriced ? "Malabar 24K" : "MCX / MC"}</em>
             <b className={priceLoading ? "phone-price-skeleton" : ""}>{priceText(displayCurrent)}</b>
-            <small>{localCurrent ? `Local ${fmt(localCurrent)}` : "Local -"}</small>
+            <small>{malabarPriced
+              ? marketCurrent ? `MCX ${fmt(marketCurrent)}` : "MCX -"
+              : localCurrent ? `Local ${fmt(localCurrent)}` : "Local -"}</small>
           </span>
           <span className="phone-box-down">
-            <em>Low</em>
+            <em>{malabarPriced ? "MCX Low" : "Low"}</em>
             <b className={priceLoading ? "phone-price-skeleton" : ""}>{priceText(dayLow)}</b>
             <small>{priceLoading ? "52W loading" : weekLow ? `52W ${fmt(weekLow)}` : "52W -"}</small>
           </span>
           <span className="phone-box-up">
-            <em>High</em>
+            <em>{malabarPriced ? "MCX High" : "High"}</em>
             <b className={priceLoading ? "phone-price-skeleton" : ""}>{priceText(dayHigh)}</b>
             <small>{priceLoading ? "52W loading" : weekHigh ? `52W ${fmt(weekHigh)}` : "52W -"}</small>
           </span>
@@ -6219,14 +6241,14 @@ export default function AssetManagerApp() {
       latest: <>Total Value</>,
       low_range: (
         <>
-          Day Low
+          MCX Day Low
           <br />
           52W Low
         </>
       ),
       high_range: (
         <>
-          Day High
+          MCX Day High
           <br />
           52W High
         </>
@@ -9225,13 +9247,20 @@ export default function AssetManagerApp() {
         ? bullionMarket?.gold
         : null;
   }
+  /** Malabar's rate for a gold holding, or null when the market price applies. */
+  function malabarFor(d: any, quote: any) {
+    return metalAsset(d) === "gold" ? malabarGold(d, quote, localIsoDate()) : null;
+  }
   function bullionRatePanel() {
     const bullionRecords = records.filter((record) => record.module_key === "bullion"),
       gold = bullionMarket?.gold,
       silver = bullionMarket?.silver,
       goldBenchmark = num(gold?.ratePer10GramInr),
       silverBenchmark = num(silver?.ratePerKgInr),
-      goldLocal = num(localBullionRate?.gold24kPer10GramInr),
+      malabar = gold?.basis === "malabar" ? gold : null,
+      goldBenchmarkShown = malabar ? num(malabar.benchmark?.ratePer10GramInr) : goldBenchmark,
+      goldCity = num(localBullionRate?.gold24kPer10GramInr),
+      goldLocal = malabar ? num(malabar.ratePer10GramInr) : goldCity,
       silverLocal = num(localBullionRate?.silverPerKgInr),
       city =
         String(localBullionRate?.city || "").trim() ||
@@ -9249,6 +9278,9 @@ export default function AssetManagerApp() {
         unit: string,
         asOn: string,
         sourceUrl: string,
+        place = `Local · ${city}`,
+        versus = "local",
+        linkLabel = "Open 5paisa",
       ) => (
         <div className="rounded-2xl border border-[#e3dccc] bg-white p-4">
           <div className="flex items-baseline justify-between gap-2">
@@ -9263,7 +9295,7 @@ export default function AssetManagerApp() {
                 {local ? fmt(local) : "MCX rate below"}
               </div>
               <div className="text-[11px] text-gray-500">
-                Local · {city}
+                {place}
                 {asOn ? ` · ${asOn}` : ""}
               </div>
             </div>
@@ -9274,7 +9306,7 @@ export default function AssetManagerApp() {
               <div className="text-[11px] text-gray-500">
                 MCX / Moneycontrol
                 {local && benchmark
-                  ? ` · ${difference >= 0 ? "+" : ""}${fmt(difference)} vs local`
+                  ? ` · ${versus === "local" ? "" : "Malabar "}${difference >= 0 ? "+" : ""}${fmt(difference)} vs ${versus}`
                   : ""}
               </div>
             </div>
@@ -9283,7 +9315,7 @@ export default function AssetManagerApp() {
             <span>{provider || "Selected bullion source"}</span>
             {sourceUrl && (
               <a href={sourceUrl} target="_blank" rel="noreferrer">
-                Open 5paisa
+                {linkLabel}
               </a>
             )}
           </div>
@@ -9295,9 +9327,15 @@ export default function AssetManagerApp() {
           <div>
             <h3 className="text-lg font-semibold">Gold & Silver Rates</h3>
             <p className="text-xs text-gray-600">
-              Portfolio valuation, gains and snapshots use only MCX or
-              Moneycontrol. Local rates are display references only.
+              {malabar || gold?.malabarUnavailable
+                ? "Gold is valued at Malabar's published 24K rate, the same across India. Silver uses MCX or Moneycontrol. Local city rates are for reference only."
+                : "Portfolio valuation, gains and snapshots use only MCX or Moneycontrol. Local rates are display references only."}
             </p>
+            {gold?.malabarUnavailable && (
+              <p className="mt-1 text-xs font-semibold text-amber-700">
+                Malabar&apos;s rate could not be read just now. Gold keeps Malabar&apos;s last rate for up to 3 days, then uses MCX.
+              </p>
+            )}
           </div>
           <div className="flex flex-col items-end gap-1">
             <span className="text-[11px] font-semibold text-gray-500">
@@ -9311,14 +9349,15 @@ export default function AssetManagerApp() {
         </div>
         <div className="grid grid-cols-2 gap-3 max-md:grid-cols-1">
           {rateCard(
-            "Local Gold 24K",
+            malabar ? "Malabar Gold 24K" : "Local Gold 24K",
             goldLocal,
-            goldBenchmark,
-            goldLocal && goldBenchmark ? goldLocal - goldBenchmark : 0,
-            String(gold?.provider || ""),
+            goldBenchmarkShown,
+            goldLocal && goldBenchmarkShown ? goldLocal - goldBenchmarkShown : 0,
+            malabar && goldCity ? `5paisa ${city} ${fmt(goldCity)}` : String(gold?.provider || ""),
             "10 grams",
-            String(localBullionRate?.goldAsOn || ""),
-            String(localBullionRate?.goldUrl || ""),
+            malabar ? `${formatDate(malabar.rateDate)} ${String(malabar.rateTime || "").slice(0, 5)}` : String(localBullionRate?.goldAsOn || ""),
+            malabar ? MALABAR_RATE_PAGE : String(localBullionRate?.goldUrl || ""),
+            ...((malabar ? ["All India", "MCX", "Open Malabar"] : []) as string[]),
           )}
           {rateCard(
             "Local Silver",
@@ -9339,8 +9378,12 @@ export default function AssetManagerApp() {
         calculatorMetal === "gold"
           ? bullionMarket?.gold
           : bullionMarket?.silver,
+      malabar = calculatorMetal === "gold" && benchmarkQuote?.basis === "malabar" ? benchmarkQuote : null,
+      rateSource = malabar ? "Malabar 24K" : "5paisa local",
       localRateTotal =
-        calculatorMetal === "gold"
+        malabar
+          ? num(malabar.ratePer10GramInr)
+          : calculatorMetal === "gold"
           ? num(localBullionRate?.gold24kPer10GramInr)
           : num(localBullionRate?.silverPerKgInr),
       fetchedRatePerGram =
@@ -9376,11 +9419,15 @@ export default function AssetManagerApp() {
         invoice_no: calculatorInvoice,
         rate_provider: hasManualRate
           ? "Manual local rate"
+          : malabar
+            ? MALABAR_PROVIDER
           : String(
               localBullionRate?.provider || "5paisa city bullion rates",
             ),
         rate_source_url: hasManualRate
           ? ""
+          : malabar
+            ? MALABAR_RATE_PAGE
           : String(
               calculatorMetal === "gold"
                 ? localBullionRate?.goldUrl || ""
@@ -9397,7 +9444,7 @@ export default function AssetManagerApp() {
       };
     const addPurchaseRecord = async () => {
       if (!ratePerGram)
-        return setToast("Refresh MCX / Moneycontrol rates before calculating");
+        return setToast("Refresh rates before calculating");
       if (!user || !canEditModule("bullion"))
         return setToast("Bullion edit access is required");
       const data = withSystemDates({
@@ -9490,9 +9537,8 @@ export default function AssetManagerApp() {
       <section className="purchase-calculator rounded-[26px] border border-[#ded6c4] bg-white/90 p-5 shadow-[0_14px_34px_rgba(15,23,42,0.05)]">
           <h3 className="text-xl font-semibold">Purchase Cost Calculator</h3>
           <p className="mt-1 text-sm text-gray-600">
-            Calculate purchase cost using the local 5paisa city rate, then add
-            wastage and GST. Portfolio valuation continues to use MCX or
-            Moneycontrol.
+            Calculate purchase cost using the {malabar ? "Malabar 24K rate" : "local 5paisa city rate"}, then add
+            wastage and GST. Portfolio valuation {malabar ? "of gold uses the same rate." : "continues to use MCX or Moneycontrol."}
           </p>
           <div className="mt-4 grid grid-cols-4 gap-3 max-xl:grid-cols-2 max-md:grid-cols-1">
             <div>
@@ -9549,12 +9595,14 @@ export default function AssetManagerApp() {
                     [calculatorMetal]: event.target.value,
                   }))
                 }
-                placeholder="Refresh 5paisa city rate"
+                placeholder={malabar ? "Refresh Malabar 24K rate" : "Refresh 5paisa city rate"}
               />
               <div className="mt-1 text-xs font-semibold text-gray-500">
                 {hasManualRate ? "Manual override | " : "Fetched | "}
-                {localBullionRate?.city || profile?.city || "City not set"}
-                {calculatorMetal === "gold" && localBullionRate?.goldAsOn
+                {malabar ? "Malabar, all India" : localBullionRate?.city || profile?.city || "City not set"}
+                {malabar
+                  ? ` | ${formatDate(malabar.rateDate)}`
+                  : calculatorMetal === "gold" && localBullionRate?.goldAsOn
                   ? ` | ${localBullionRate.goldAsOn}`
                   : calculatorMetal === "silver" &&
                       localBullionRate?.silverAsOn
@@ -9637,7 +9685,7 @@ export default function AssetManagerApp() {
             className="btn-primary mt-4 w-full"
             onClick={() =>
               ratePerGram
-                ? setToast("Calculation updated with 5paisa local rate")
+                ? setToast(`Calculation updated with ${rateSource} rate`)
                 : refreshBullionMarket()
             }
           >
@@ -9697,8 +9745,9 @@ export default function AssetManagerApp() {
           </div>
           <p className="mt-3 text-xs text-gray-600">
             Gold weight: 5g to 2000g. Silver starts at 100g with 100g steps.
-            Purchase cost uses the 5paisa local rate. Current value, gains and
-            portfolio snapshots use MCX/Moneycontrol only.
+            {malabar
+              ? "Purchase cost, current value and gains use Malabar's 24K rate for gold."
+              : "Purchase cost uses the 5paisa local rate. Current value, gains and portfolio snapshots use MCX/Moneycontrol only."}
           </p>
       </section>
     );
@@ -9730,21 +9779,29 @@ export default function AssetManagerApp() {
     if (k === "bullion") {
       const asset = metalAsset(d),
         q = liveMetalQuote(d),
-        rate = num(q?.ratePerGramInr),
-        changePerGram = num(q?.changePerGramInr),
+        malabar = malabarFor(d, q),
+        rate = malabar ? malabar.ratePerGram : num(q?.ratePerGramInr),
+        changePerGram = malabar ? malabar.changePerGram : num(q?.changePerGramInr),
         currentPrice =
-          asset === "silver"
+          malabar
+            ? rate * 10
+            : asset === "silver"
             ? num(q?.ratePerKgInr)
             : asset === "gold"
               ? num(q?.ratePer10GramInr)
               : rate,
         dayChange =
-          asset === "silver"
+          malabar
+            ? changePerGram * 10
+            : asset === "silver"
             ? num(q?.changePerKgInr)
             : asset === "gold"
               ? num(q?.changePer10GramInr)
               : changePerGram;
-      Object.assign(c, { security_name: bullionDisplayName(d) });
+      Object.assign(c, {
+        security_name: bullionDisplayName(d),
+        rate_source: (q ? malabar : d.rate_provider === MALABAR_PROVIDER) ? "Malabar 24K" : "MCX / MC",
+      });
       if (currentPrice) Object.assign(c, { current_price: currentPrice, day_change: dayChange });
       Object.assign(c, {
         day_low: num(q?.dayLow) || num(d.day_low),
@@ -9837,7 +9894,9 @@ export default function AssetManagerApp() {
     if (k === "bullion") {
       const grams = num(d.quantity) * metalUnitFactor(d.unit),
         q = liveMetalQuote(d),
+        malabar = malabarFor(d, q),
         chg = num(q?.changePerGramInr);
+      if (malabar) return malabar.changePerGram * grams;
       if (chg && grams) return chg * grams;
       const rate = num(q?.ratePerGramInr) || num(d.live_rate_per_gram),
         prevRate = num(q?.previousPerGramInr) || num(d.previous_rate_per_gram);

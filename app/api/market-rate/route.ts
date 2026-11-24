@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { MALABAR_PROVIDER, MALABAR_RATE_PAGE, malabarRateUrl, parseMalabar24k } from "@/lib/malabarGold";
 
 export const dynamic = "force-dynamic";
 export const runtime = "edge";
@@ -567,10 +568,73 @@ async function moneycontrolBullionQuote(
   };
 }
 
+// Malabar sets its rate about once a day, so the screen's 20-second refreshes
+// reuse one answer instead of asking Malabar every time.
+const MALABAR_REUSE_MS = 5 * 60 * 1000;
+let malabarRate: { rate: ReturnType<typeof parseMalabar24k>; savedAt: number } | null = null;
+
+async function fetchMalabar24k() {
+  if (malabarRate && Date.now() - malabarRate.savedAt < MALABAR_REUSE_MS) return malabarRate.rate;
+  const response = await fetch(malabarRateUrl(), {
+    headers: { Accept: "application/json", "User-Agent": "Mozilla/5.0" },
+    cache: "no-store",
+    signal: AbortSignal.timeout(8_000),
+  });
+  if (!response.ok) throw new Error(`Malabar returned ${response.status}`);
+  const rate = parseMalabar24k(await response.json(), new Date(indiaTradingDayStart()).toISOString().slice(0, 10));
+  malabarRate = { rate, savedAt: Date.now() };
+  return rate;
+}
+
+// Gold at Malabar's 24K rate. MCX stays beside it for comparison and for the
+// day and 52-week range, which Malabar does not publish. MCX's daily change is
+// left out on purpose: it belongs to the MCX price.
+async function malabarGoldQuote() {
+  const [malabar, market] = await Promise.allSettled([fetchMalabar24k(), bullionQuote("gold", "market")]);
+  if (malabar.status === "rejected") {
+    if (market.status === "rejected") throw market.reason;
+    return {
+      ...market.value,
+      malabarUnavailable: true,
+      malabarError: malabar.reason instanceof Error ? malabar.reason.message : "Malabar rate unavailable",
+    };
+  }
+  const { ratePerGram, date, time } = malabar.value,
+    range: any = market.status === "fulfilled" ? market.value : {};
+  return {
+    symbol: "MALABAR 24K",
+    basis: "malabar",
+    ltp: ratePerGram * 10,
+    current_price: ratePerGram * 10,
+    ratePer10GramInr: ratePerGram * 10,
+    ratePerGramInr: ratePerGram,
+    rateDate: date,
+    rateTime: time,
+    updatedAt: `${date}T${/^d{2}:d{2}:d{2}$/.test(time) ? time : "00:00:00"}+05:30`,
+    provider: MALABAR_PROVIDER,
+    sourceUrl: MALABAR_RATE_PAGE,
+    market: "Malabar published rate, all India",
+    todayLow: range.todayLow,
+    todayHigh: range.todayHigh,
+    dayLow: range.dayLow,
+    dayHigh: range.dayHigh,
+    week52Low: range.week52Low,
+    week52High: range.week52High,
+    fiftyTwoWeekLow: range.fiftyTwoWeekLow,
+    fiftyTwoWeekHigh: range.fiftyTwoWeekHigh,
+    contractExpiry: range.contractExpiry,
+    benchmark:
+      market.status === "fulfilled"
+        ? { ratePer10GramInr: range.ratePer10GramInr, provider: range.provider, sourceUrl: range.sourceUrl, updatedAt: range.updatedAt }
+        : null,
+  };
+}
+
 async function bullionQuote(
   asset: "gold" | "silver",
-  source: "auto" | "mcx" | "moneycontrol",
-) {
+  source: "auto" | "market" | "mcx" | "moneycontrol",
+): Promise<any> {
+  if (source === "auto" && asset === "gold") return malabarGoldQuote();
   if (source === "mcx") return mcxBullionQuote(asset);
   if (source === "moneycontrol") {
     return moneycontrolBullionQuote(
@@ -630,8 +694,8 @@ export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const asset = String(searchParams.get("asset") || "gold").toLowerCase();
   const requestedSource = String(searchParams.get("source") || "auto").toLowerCase();
-  const source: "auto" | "mcx" | "moneycontrol" =
-    requestedSource === "mcx" || requestedSource === "moneycontrol"
+  const source: "auto" | "market" | "mcx" | "moneycontrol" =
+    requestedSource === "market" || requestedSource === "mcx" || requestedSource === "moneycontrol"
       ? requestedSource
       : "auto";
   const symbol = symbols[asset];
