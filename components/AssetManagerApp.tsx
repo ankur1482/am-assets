@@ -5423,7 +5423,7 @@ export default function AssetManagerApp() {
           <div className="min-w-0">
             <div className="phone-stock-name">{shortName}</div>
             <div className="phone-stock-meta">
-              {broker} | {x.lots} lot{x.lots > 1 ? "s" : ""} | Qty {quantityText}
+              {broker}
               {c.corporate_action_applied
                 ? ` | ${String(c.corporate_action_type || "Action").toUpperCase()} ${c.corporate_action_ratio}`
                 : ""}
@@ -5530,9 +5530,7 @@ export default function AssetManagerApp() {
         <button type="button" className="phone-stock-card-top" onClick={openHolding}>
           <div className="min-w-0">
             <div className="phone-stock-name">{title}</div>
-            <div className="phone-stock-meta">
-              {broker} | {x.lots} lot{x.lots > 1 ? "s" : ""} | Qty {quantityText}
-            </div>
+            <div className="phone-stock-meta">{broker}</div>
           </div>
         </button>
         <div className="phone-stock-top-stats phone-pair-row">
