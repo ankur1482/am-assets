@@ -1025,6 +1025,9 @@ test.describe('logged-in app', () => {
     await expect(card).toContainText('₹200');
     await expect(card).toContainText('Added ₹160');
     await expect(card).not.toContainText('Added ₹180');
+    // Readable: the same colour as the price above it, not pale text on a cream box.
+    const colours = await card.locator('.phone-box-neutral').evaluate((box) => ['b', 'small'].map((tag) => getComputedStyle(box.querySelector(tag)!).color));
+    expect(colours[1]).toBe(colours[0]);
     await expect(page.locator('.phone-stock-card', { hasText: 'No Price Example' })).toContainText('Added -');
     await expect(page.locator('.phone-screen').getByText(/Overall Gain|Today's Gain/i)).toHaveCount(0);
     await expect(page.locator('.phone-module-main')).toContainText('Stock Watchlist');

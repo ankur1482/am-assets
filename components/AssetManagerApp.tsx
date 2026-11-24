@@ -7206,6 +7206,7 @@ export default function AssetManagerApp() {
           background: linear-gradient(180deg, rgba(255,253,248,.98), rgba(255,244,219,.92)) !important;
         }
         .phone-stock-signal-row > .phone-box-neutral em,
+        .phone-stock-signal-row > .phone-box-neutral small,
         .phone-stock-signal-row > .phone-box-neutral b {
           color: #4f354a !important;
         }
@@ -9772,7 +9773,7 @@ export default function AssetManagerApp() {
             </button>
           </div>
           <p className="mt-3 text-xs text-gray-600">
-            Gold weight: 5g to 2000g. Silver starts at 100g with 100g steps.
+            Gold weight: 5g to 2000g. Silver starts at 100g with 100g steps.{" "}
             {malabar
               ? "Purchase cost, current value and gains use Malabar's 24K rate for gold."
               : "Purchase cost uses the 5paisa local rate. Current value, gains and portfolio snapshots use MCX/Moneycontrol only."}
