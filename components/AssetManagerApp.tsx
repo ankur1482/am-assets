@@ -5320,6 +5320,17 @@ export default function AssetManagerApp() {
         maximumFractionDigits: 3,
       }),
       currentPrice = num(c.live_price || c.current_price),
+      // A watchlist share added more than once shows the price when it was first added.
+      addedPrice =
+        moduleKey === "watchlist"
+          ? x.records
+              .map((r: Rec) => ({
+                price: num(r.data?.base_price || r.data?.inv_price),
+                date: String(r.data?.base_price_date || r.created_at || ""),
+              }))
+              .filter((added: { price: number }) => added.price)
+              .sort((a: { date: string }, b: { date: string }) => a.date.localeCompare(b.date))[0]?.price || 0
+          : 0,
       dayLow = num(c.day_low),
       dayHigh = num(c.day_high),
       weekLow = num(c.fifty_two_week_low),
@@ -5363,22 +5374,20 @@ export default function AssetManagerApp() {
             </div>
           </div>
         </button>
+        {moduleKey !== "watchlist" && (
         <div className="phone-stock-top-stats phone-pair-row">
-          {moduleKey !== "watchlist" && (
-            <div className="phone-pair-cell">
-              <div className="phone-pair-line">
-                <span>Invested</span>
-                <b>{fmt(x.invested)}</b>
-              </div>
-              <div className="phone-pair-line">
-                <span>Total</span>
-                <b>{fmt(x.latest)}</b>
-              </div>
+          <div className="phone-pair-cell">
+            <div className="phone-pair-line">
+              <span>Invested</span>
+              <b>{fmt(x.invested)}</b>
             </div>
-          )}
+            <div className="phone-pair-line">
+              <span>Total</span>
+              <b>{fmt(x.latest)}</b>
+            </div>
+          </div>
           <div
             className={`phone-pair-cell phone-gain-cell ${x.gain >= 0 ? "phone-gain-up" : "phone-gain-down"}`}
-            style={moduleKey === "watchlist" ? { gridColumn: "1 / -1" } : undefined}
           >
             <div className="phone-pair-line">
               <span>Overall Gain</span>
@@ -5390,6 +5399,7 @@ export default function AssetManagerApp() {
             </div>
           </div>
         </div>
+        )}
         <a
           className="phone-stock-prices phone-stock-signal-row"
           href={moneycontrolHref(c)}
@@ -5400,6 +5410,7 @@ export default function AssetManagerApp() {
           <span className={x.today > 0 ? "phone-box-up" : x.today < 0 ? "phone-box-down" : "phone-box-neutral"}>
             <em>Current</em>
             <b>{currentPrice ? fmt(currentPrice) : "-"}</b>
+            {moduleKey === "watchlist" && <small>Added {addedPrice ? fmt(addedPrice) : "-"}</small>}
           </span>
           <span className="phone-box-down">
             <em>Low</em>
@@ -5899,19 +5910,12 @@ export default function AssetManagerApp() {
             }}
           >
             <div className="phone-module-main col-span-2 min-w-0 overflow-hidden">
-              <div className="phone-eyebrow">
-                {isPhoneStockWatchlist
-                  ? `${phoneModuleTitle} · Overall Gain`
-                  : phoneModuleTitle}
-              </div>
-              <div className="phone-hero-value">
-                {fmt(
-                  moduleRows.reduce(
-                    (s, x) => s + (isPhoneStockWatchlist ? x.gain : x.latest),
-                    0,
-                  ),
-                )}
-              </div>
+              <div className="phone-eyebrow">{phoneModuleTitle}</div>
+              {!isPhoneStockWatchlist && (
+                <div className="phone-hero-value">
+                  {fmt(moduleRows.reduce((s, x) => s + x.latest, 0))}
+                </div>
+              )}
               <div className="phone-hero-sub flex flex-wrap gap-x-2 gap-y-1">
                 <span>{moduleRows.length} names</span>
                 <span>{rawModuleRows.length} lots</span>
@@ -5923,6 +5927,7 @@ export default function AssetManagerApp() {
               </div>
             </div>
             {showsDailyChange(view) &&
+              !isPhoneStockWatchlist &&
               phoneStat(
                 "Today's Gain",
                 fmt(moduleRows.reduce((s, x) => s + x.today, 0)),

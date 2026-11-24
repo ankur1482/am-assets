@@ -1011,4 +1011,27 @@ test.describe('logged-in app', () => {
     await expect.poll(() => asked.some((q) => q.includes('asset=gold') && q.includes('source=auto'))).toBe(true);
     await expectHealthy(page, app, 'gold at Malabar rate');
   });
+
+  test('the phone watchlist shows the price now and the price when added, without gains', async ({ page }) => {
+    test.skip(!isPhone(page), 'Phone layout only');
+    const records = fixtureRecords(), watched = records.find((r) => r.data.ticker_symbol === 'WATCHEX')!;
+    // Added twice: the first time it was added is the one that counts.
+    watched.data = { ...watched.data, base_price: 160, base_price_date: '2026-09-10' };
+    records.push({ ...watched, id: '33333333-3333-4333-8333-000000000402', data: { ...watched.data, base_price: 180, base_price_date: '2026-10-20' } });
+    records.push({ ...watched, id: '33333333-3333-4333-8333-000000000403', data: { ...watched.data, security_name: 'No Price Example', ticker_symbol: 'NOPRICE', base_price: '', inv_price: '', base_price_date: '' } });
+    const app = await openApp(page, records);
+    await pickInvestment(page, /^Stocks/, /^Watchlist/);
+    const card = page.locator('.phone-stock-card', { hasText: 'Watched Example' });
+    await expect(card).toContainText('₹200');
+    await expect(card).toContainText('Added ₹160');
+    await expect(card).not.toContainText('Added ₹180');
+    await expect(page.locator('.phone-stock-card', { hasText: 'No Price Example' })).toContainText('Added -');
+    await expect(page.locator('.phone-screen').getByText(/Overall Gain|Today's Gain/i)).toHaveCount(0);
+    await expect(page.locator('.phone-module-main')).toContainText('Stock Watchlist');
+    await expect(page.locator('.phone-module-main')).toContainText('2 names');
+    // Holdings keep their gains.
+    await tapTab(page.getByRole('group', { name: 'Accounts' }), /^All/);
+    await expect(page.locator('.phone-stock-card', { hasText: 'Example Paints' })).toContainText('Overall Gain');
+    await expectHealthy(page, app, 'phone watchlist');
+  });
 });
