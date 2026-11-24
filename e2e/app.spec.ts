@@ -1066,4 +1066,137 @@ test.describe('logged-in app', () => {
     }
     await expectHealthy(page, app, 'market strip');
   });
+
+  // Answers the document and Drive calls inside the test, and keeps what is attached so the screen can list it.
+  async function withDrive(page: Page, household: { configured: boolean; connected: boolean; mine: boolean }, records = fixtureRecords()) {
+    const app = await openApp(page, records as any);
+    const saved: any[] = [], sent: { path: string; moduleKey?: string; folder?: string; bytes?: number }[] = [];
+    await page.route('**/api/google-drive/status**', route => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ connected: household.connected && household.mine, household }) }));
+    await page.route('**/rest/v1/asset_documents**', async route => {
+      const request = route.request(), cors = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': '*', 'Access-Control-Allow-Methods': '*' };
+      if (request.method() === 'OPTIONS') return route.fulfill({ status: 200, headers: cors });
+      if (request.method() === 'POST') for (const row of request.postDataJSON()) saved.push({ id: `66666666-6666-4666-8666-${String(saved.length).padStart(12, '0')}`, created_at: '2026-11-05T06:00:00Z', ...row });
+      return route.fulfill({ status: 200, contentType: 'application/json', headers: cors, body: JSON.stringify(request.method() === 'GET' ? saved : []) });
+    });
+    await page.route('**/api/documents**', async route => {
+      const request = route.request(), path = new URL(request.url()).pathname;
+      if (path.endsWith('/large')) {
+        const bytes = request.postDataBuffer()?.length || 0;
+        sent.push({ path: `${request.method()} large`, bytes });
+        if (request.method() === 'POST') return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ token: 'sealed' }) });
+        const done = new URL(request.url()).searchParams.get('start') !== '0';
+        return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(done ? { done, storage: 'drive', document: { file_name: 'big-deed.pdf', file_path: 'gdrive:big', mime_type: 'application/pdf', file_size: 5_000_000 } } : { done }) });
+      }
+      const form = request.postData() || '';
+      sent.push({ path: request.method(), moduleKey: form.match(/name="moduleKey"\s+(\w+)/)?.[1], folder: form.match(/name="folderParts"\s+(\[.*?\])/)?.[1] });
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ storage: 'drive', document: { file_name: 'deed.pdf', file_path: 'gdrive:one', mime_type: 'application/pdf', file_size: 2048 } }) });
+    });
+    await page.reload();
+    return { app, saved, sent };
+  }
+  const deed = { name: 'deed.pdf', mimeType: 'application/pdf', buffer: Buffer.from('deed') };
+
+  test('a supporting document can be added from a holding\'s row, and goes to its Google Drive folder', async ({ page }) => {
+    const { app, saved, sent } = await withDrive(page, { configured: true, connected: true, mine: true });
+    if (isPhone(page)) await pickInvestment(page, /^Property/);
+    else await open(page, app, /^Property/);
+    const clip = page.getByRole('button', { name: /^Documents for .*Example Heights/ }).locator('visible=true').first();
+    await clip.click();
+    const dialog = page.getByRole('dialog', { name: /^Documents/ });
+    await expect(dialog).toContainText('Kept in your Google Drive');
+    // On the phone, properties in one place share a card, so the window has a part for each.
+    const home = dialog.getByRole('region', { name: /Example Heights/ });
+    await expect(home).toContainText('No documents yet');
+    await home.getByLabel(/^Add document/).setInputFiles(deed);
+    await expect(home).toContainText('deed.pdf');
+    await expect(home).toContainText('Google Drive');
+    expect(sent[0]).toMatchObject({ path: 'POST', moduleKey: 'property' });
+    expect(sent[0].folder).toContain('Example Heights');
+    expect(saved[0]).toMatchObject({ module_key: 'property', file_path: 'gdrive:one', workspace_id: WORKSPACE_ID });
+    await dialog.getByRole('button', { name: 'Close' }).click();
+    // The row now shows how many documents it has.
+    await expect(page.getByRole('button', { name: /^Documents for .*Example Heights.* \(1\)$/ }).locator('visible=true').first()).toBeVisible();
+    await expectHealthy(page, app, 'documents on a row');
+  });
+
+  test('every kind of holding has a documents button, and a watchlist share does not', async ({ page }) => {
+    const gold = { ...fixtureRecords()[0], id: '33333333-3333-4333-8333-000000000404', module_key: 'bullion', data: { account_name: 'Asha', security_name: 'Gold', quantity: 10, unit: 'gms', purchase_price: 100000, latest_value: 124000 } };
+    const { app } = await withDrive(page, { configured: true, connected: true, mine: true }, [...fixtureRecords(), gold] as any);
+    const clips = page.getByRole('button', { name: /^Documents for / }).locator('visible=true');
+    for (const screen of [/^Stocks/, /^Property/, /^Gold\/Silver/, /^Fixed Income/, /^Insurance/, /^Mutual Funds/]) {
+      if (isPhone(page)) await pickInvestment(page, screen);
+      else await open(page, app, screen);
+      await expect(clips.first(), String(screen)).toBeVisible();
+    }
+    if (isPhone(page)) {
+      await pickInvestment(page, /^Stocks/, /^Watchlist/);
+      await expect(page.locator('.phone-stock-card', { hasText: 'Watched Example' })).toBeVisible();
+      await expect(clips).toHaveCount(0);
+    }
+    await expectHealthy(page, app, 'documents buttons');
+  });
+
+  test('a holding bought in lots keeps each lot\'s documents apart', async ({ page }) => {
+    const records = fixtureRecords(), stock = records.find((r) => r.data.ticker_symbol === 'EXPAINT')!;
+    records.push({ ...stock, id: '33333333-3333-4333-8333-000000000405', data: { ...stock.data, purchase_date: '2024-06-10', quantity: 7 } });
+    const { app, saved } = await withDrive(page, { configured: true, connected: true, mine: true }, records);
+    if (isPhone(page)) await pickInvestment(page, /^Stocks/);
+    else await open(page, app, /^Stocks/);
+    await page.getByRole('button', { name: /^Documents for .*Example Paints/ }).locator('visible=true').first().click();
+    const dialog = page.getByRole('dialog', { name: /^Documents/ });
+    const second = dialog.getByRole('region', { name: /10-Jun-2024/ });
+    await second.getByLabel(/^Add document/).setInputFiles(deed);
+    await expect(second).toContainText('deed.pdf');
+    await expect(dialog.getByRole('region', { name: /15-Jan-2024/ })).toContainText('No documents yet');
+    expect(saved[0].record_id).toBe('33333333-3333-4333-8333-000000000405');
+    await expectHealthy(page, app, 'documents by lot');
+  });
+
+  test('a file over 4 MB is sent in pieces', async ({ page }) => {
+    test.skip(isPhone(page), 'Same code on the phone');
+    const { app, saved, sent } = await withDrive(page, { configured: true, connected: true, mine: true });
+    await open(page, app, /^Insurance/);
+    await page.getByRole('button', { name: /^Documents for / }).locator('visible=true').first().click();
+    const dialog = page.getByRole('dialog', { name: /^Documents/ });
+    await dialog.getByLabel(/^Add document/).setInputFiles({ name: 'big-deed.pdf', mimeType: 'application/pdf', buffer: Buffer.alloc(5_000_000) });
+    await expect(dialog).toContainText('big-deed.pdf');
+    expect(sent.map((s) => s.path)).toEqual(['POST large', 'PUT large', 'PUT large']);
+    expect(sent[1].bytes).toBe(4 * 1024 * 1024);
+    expect(sent[1].bytes! + sent[2].bytes!).toBe(5_000_000);
+    expect(saved[0].file_path).toBe('gdrive:big');
+    await expectHealthy(page, app, 'large document');
+  });
+
+  test('documents wait for Google Drive to be connected, and say who can connect it', async ({ page }) => {
+    const { app } = await withDrive(page, { configured: true, connected: false, mine: true });
+    const openDocs = async () => {
+      if (isPhone(page)) await pickInvestment(page, /^Property/);
+      else await open(page, app, /^Property/);
+      await page.getByRole('button', { name: /^Documents for .*Example Heights/ }).locator('visible=true').first().click();
+      return page.getByRole('dialog', { name: /^Documents/ });
+    };
+    const dialog = await openDocs();
+    await expect(dialog.getByRole('button', { name: 'Connect Google Drive' })).toBeVisible();
+    await expect(dialog.getByLabel(/^Add document/)).toHaveCount(0);
+    await dialog.getByRole('button', { name: 'Close' }).click();
+    // A family member cannot connect the owner's Drive.
+    await page.unroute('**/api/google-drive/status**');
+    await page.route('**/api/google-drive/status**', route => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ connected: false, household: { configured: true, connected: false, mine: false } }) }));
+    await page.reload();
+    const member = await openDocs();
+    await expect(member).toContainText('Ask the household owner to connect Google Drive');
+    await expect(member.getByRole('button', { name: 'Connect Google Drive' })).toHaveCount(0);
+    await expectHealthy(page, app, 'documents before Drive is connected');
+  });
+
+  test('without Google Drive on the server, documents are kept in the app and say so', async ({ page }) => {
+    test.skip(isPhone(page), 'Same code on the phone');
+    const { app } = await withDrive(page, { configured: false, connected: false, mine: true });
+    await open(page, app, /^Property/);
+    await page.getByRole('button', { name: /^Documents for .*Example Heights/ }).locator('visible=true').first().click();
+    const dialog = page.getByRole('dialog', { name: /^Documents/ });
+    await expect(dialog).toContainText('Google Drive is not set up on the server yet');
+    await expect(dialog.getByLabel(/^Add document/)).toHaveCount(1);
+    await expectHealthy(page, app, 'documents without Drive');
+  });
 });

@@ -30,6 +30,9 @@ function decrypt(value:string){
   return JSON.parse(Buffer.concat([decipher.update(raw.subarray(28)),decipher.final()]).toString('utf8'));
 }
 
+// The same sealing, for a value handed to the browser that only this server can read back.
+export {encrypt as sealJson,decrypt as openJson};
+
 export async function saveOAuthCredential(userId:string,provider:OAuthProvider,value:unknown,expiresAt?:string|null){
   const {error}=await adminClient().from('oauth_credentials').upsert({user_id:userId,provider,encrypted_value:encrypt(value),expires_at:expiresAt||null,updated_at:new Date().toISOString()},{onConflict:'user_id,provider'});
   if(error)throw new Error(`Could not store ${provider} credentials: ${error.message}`);

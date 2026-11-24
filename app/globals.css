@@ -3952,3 +3952,62 @@ thead th {
 /* Goals page: each part of a goal card has its label on the left, or above it on a narrow screen. */
 .goal-card-row { display: grid; grid-template-columns: 8rem minmax(0, 1fr); align-items: start; gap: 12px; margin-top: 12px; }
 @media (max-width: 640px) { .goal-card-row { grid-template-columns: minmax(0, 1fr); gap: 4px; } }
+
+/* Supporting documents */
+.doc-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+}
+td .doc-button {
+  margin-top: 6px;
+}
+.phone-doc-button {
+  margin: 6px 0 0 4px;
+  min-height: 40px;
+}
+.doc-list {
+  display: grid;
+  gap: 8px;
+}
+.doc-list li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid #e3dccc;
+  border-radius: 14px;
+  background: #fff;
+}
+.doc-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+}
+.doc-name span {
+  overflow-wrap: anywhere;
+}
+.doc-actions {
+  display: flex;
+  gap: 8px;
+}
+.doc-add {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 10px;
+  cursor: pointer;
+}
+.doc-add:focus-within {
+  outline: 2px solid #0071e3;
+  outline-offset: 2px;
+}
+.doc-section + .doc-section {
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid #e3dccc;
+}

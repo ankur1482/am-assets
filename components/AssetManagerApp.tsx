@@ -75,6 +75,7 @@ import { ACCOUNT_TYPES, MODULES, RELATIONS } from "@/lib/modules";
 import { controlsOtherFields, isFieldVisible } from "@/lib/fieldVisibility";
 import { MALABAR_PROVIDER, MALABAR_RATE_PAGE, malabarGold } from "@/lib/malabarGold";
 import { marketColumns } from "@/lib/marketStrip";
+import { DOCUMENT_ACCEPT, UPLOAD_CHUNK_BYTES, uploadChunks } from "@/lib/documentRules";
 import {
   formatDate,
   formatDateTime,
@@ -548,6 +549,11 @@ const SHARE_LIST_ALIASES: Record<string, { name: string; ticker: string; exchang
 };
 const pretty = (v: string) =>
   v.replace(/_/g, " ").replace(/\b\w/g, (m) => m.toUpperCase());
+// Records that keep supporting documents: everything owned or owed, but not a goal or a watchlist idea.
+const DOCUMENT_MODULES = new Set([
+  "insurance",
+  ...Object.entries(MODULES).filter(([, def]) => ["asset", "liability"].includes(def.kind)).map(([key]) => key),
+]);
 const DAILY_CHANGE_MODULES = new Set(["stocks", "mutualFunds", "bullion"]);
 const showsDailyChange = (moduleKey: string) =>
   DAILY_CHANGE_MODULES.has(moduleKey);
@@ -1141,6 +1147,9 @@ export default function AssetManagerApp() {
     [docUploadNotes, setDocUploadNotes] = useState(""),
     [docUploading, setDocUploading] = useState(false),
     [googleDriveConnected, setGoogleDriveConnected] = useState(false),
+    // Household documents go to the owner's Drive, which may not be the signed-in person's.
+    [householdDrive, setHouseholdDrive] = useState({ configured: true, connected: false, mine: true }),
+    [docsFor, setDocsFor] = useState<string[] | null>(null),
     [kotakConnected, setKotakConnected] = useState(false),
     [kotakTokenInput, setKotakTokenInput] = useState(""),
     [kotakBaseUrlInput, setKotakBaseUrlInput] = useState(""),
@@ -1701,7 +1710,7 @@ export default function AssetManagerApp() {
       refreshGoogleDriveStatus();
       refreshKotakStatus();
     }
-  }, [user?.id]);
+  }, [user?.id, activeWorkspaceId]);
   useEffect(() => {
     if (!["bullion", "purchaseCalculator"].includes(view)) return;
     refreshBullionMarket();
@@ -2483,11 +2492,12 @@ export default function AssetManagerApp() {
   }
   async function refreshGoogleDriveStatus() {
     try {
-      const res = await fetch("/api/google-drive/status", {
+      const res = await fetch(`/api/google-drive/status${activeWorkspaceId ? `?workspaceId=${encodeURIComponent(activeWorkspaceId)}` : ""}`, {
         headers: { Authorization: `Bearer ${session?.access_token || ""}` },
       });
       const json = await res.json();
       setGoogleDriveConnected(!!json.connected);
+      setHouseholdDrive(json.household || { configured: true, connected: !!json.connected, mine: true });
     } catch {
       setGoogleDriveConnected(false);
     }
@@ -2711,8 +2721,9 @@ export default function AssetManagerApp() {
       setMarketTodayUpdatedAt(new Date().toISOString());
     }
   }
-  async function connectGoogleDrive() {
-    if (googleDriveConnected) return true;
+  /** again: Google has ended the saved sign-in, so ask for a new one even though this screen still shows it as connected. */
+  async function connectGoogleDrive(again = false) {
+    if (googleDriveConnected && !again) return true;
     if (
       !confirm(
         "Connect Google Drive now so documents can be stored and opened from your Drive?",
@@ -2747,6 +2758,7 @@ export default function AssetManagerApp() {
           clearInterval(timer);
           if (!popup.closed) popup.close();
           setGoogleDriveConnected(ok);
+          setHouseholdDrive((prev) => (prev.mine ? { ...prev, connected: ok } : prev));
           if (msg) setToast(msg);
           resolve(ok);
         };
@@ -2781,6 +2793,7 @@ export default function AssetManagerApp() {
       headers: { Authorization: `Bearer ${session?.access_token || ""}` },
     });
     setGoogleDriveConnected(false);
+    setHouseholdDrive((prev) => (prev.mine ? { ...prev, connected: false } : prev));
     setToast("Google Drive disconnected");
   }
 
@@ -2814,6 +2827,41 @@ export default function AssetManagerApp() {
     // Google Drive stays connected across sign-outs so automatic backups keep working.
     await supabase.auth.signOut();
   }
+  /** Sends one file. Over 4 MB it goes in pieces, as Vercel refuses larger requests. */
+  async function sendDocument(moduleKey: string, file: File, folderParts: string[]): Promise<PendingDoc> {
+    const authorization = { Authorization: `Bearer ${session?.access_token || ""}` },
+      read = async (res: Response) => {
+        const json = await res.json().catch(() => ({}));
+        if (!res.ok) throw Object.assign(new Error(json.error || "Google Drive upload failed"), { code: json.code });
+        return json;
+      };
+    if (file.size <= UPLOAD_CHUNK_BYTES) {
+      const fd = new FormData();
+      fd.append("moduleKey", moduleKey);
+      if (activeWorkspaceId) fd.append("workspaceId", activeWorkspaceId);
+      fd.append("folderParts", JSON.stringify(folderParts));
+      fd.append("file", file);
+      return (await read(await fetch("/api/documents", { method: "POST", headers: authorization, body: fd }))).document;
+    }
+    const started = await read(
+      await fetch("/api/documents/large", {
+        method: "POST",
+        headers: { ...authorization, "Content-Type": "application/json" },
+        body: JSON.stringify({ moduleKey, workspaceId: activeWorkspaceId || "", folderParts, fileName: file.name, mimeType: file.type, size: file.size }),
+      }),
+    );
+    let last: any = null;
+    for (const { start, end } of uploadChunks(file.size))
+      last = await read(
+        await fetch(`/api/documents/large?start=${start}`, {
+          method: "PUT",
+          headers: { ...authorization, "x-upload-token": started.token, "Content-Type": "application/octet-stream" },
+          body: file.slice(start, end),
+        }),
+      );
+    if (!last?.done) throw new Error("Google Drive upload did not finish");
+    return last.document;
+  }
   async function uploadDocs(
     moduleKey: string,
     files: File[],
@@ -2829,26 +2877,16 @@ export default function AssetManagerApp() {
     const pending: PendingDoc[] = [];
     for (const file of files) {
       try {
-        const fd = new FormData();
-        fd.append("moduleKey", moduleKey);
-        if (activeWorkspaceId) fd.append("workspaceId", activeWorkspaceId);
-        fd.append("folderParts", JSON.stringify(folderParts));
-        fd.append("file", file);
-        const res = await fetch("/api/documents", {
-          method: "POST",
-          headers: { Authorization: `Bearer ${session?.access_token || ""}` },
-          body: fd,
-        });
-        const json = await res.json();
-        if (res.status === 409 && json.code === "GOOGLE_DRIVE_NOT_CONNECTED") {
-          setGoogleDriveConnected(false);
-          if (await connectGoogleDrive())
-            return uploadDocs(moduleKey, files, folderParts);
-          throw new Error("Google Drive connection required");
+        let sent: PendingDoc;
+        try {
+          sent = await sendDocument(moduleKey, file, folderParts);
+        } catch (e: any) {
+          if (e?.code !== "GOOGLE_DRIVE_NOT_CONNECTED") throw e;
+          if (!(await connectGoogleDrive(true)))
+            throw new Error("Google Drive connection required");
+          sent = await sendDocument(moduleKey, file, folderParts);
         }
-        if (!res.ok)
-          throw new Error(json.error || "Google Drive upload failed");
-        pending.push(json.document);
+        pending.push(sent);
       } catch (e: any) {
         setToast(e?.message || "Google Drive upload failed");
       }
@@ -3456,7 +3494,7 @@ export default function AssetManagerApp() {
       ? await uploadDocs(moduleKey, files, driveFolderParts(moduleKey, data))
       : [];
     if (files.length && !pending.length)
-      return setToast("Google Drive upload failed. Record was not saved.");
+      return setToast("The document could not be uploaded. Record was not saved.");
     if (data.account_name) await ensureAccount(data.account_name);
     const res = record
       ? await supabase
@@ -3485,7 +3523,7 @@ export default function AssetManagerApp() {
       if (moduleKey === "property" && recordId)
         await syncRentalIncome(recordId, data);
       setToast(
-        `${record ? "Updated" : "Saved"}${uploaded ? ` with ${uploaded} Google Drive document${uploaded > 1 ? "s" : ""}` : ""}`,
+        `${record ? "Updated" : "Saved"}${uploaded ? ` with ${uploaded} document${uploaded > 1 ? "s" : ""}` : ""}`,
       );
       setEditing(null);
       await loadAll(true);
@@ -4834,30 +4872,18 @@ export default function AssetManagerApp() {
     }
   }
   async function openDoc(doc: AssetDoc) {
-    const win = window.open("", "_blank", "noopener,noreferrer");
+    const win = window.open("", "_blank");
+    if (win) win.opener = null;
     try {
-      if (
-        String(doc.file_path || "").startsWith("gdrive:") &&
-        !googleDriveConnected
-      ) {
-        const ok = await connectGoogleDrive();
-        if (!ok)
-          throw new Error(
-            "Google Drive connection required to open this document",
-          );
-      }
       const res = await fetch(
         `/api/documents?id=${encodeURIComponent(doc.id)}`,
         { headers: { Authorization: `Bearer ${session?.access_token || ""}` } },
       );
       if (!res.ok) {
         const json = await res.json().catch(() => ({}));
-        if (
-          String(doc.file_path || "").startsWith("gdrive:") &&
-          (json.error || "").includes("not connected")
-        ) {
-          setGoogleDriveConnected(false);
-          if (await connectGoogleDrive()) return openDoc(doc);
+        if (json.code === "GOOGLE_DRIVE_NOT_CONNECTED" && householdDrive.mine && householdDrive.configured) {
+          if (win) win.close();
+          if (await connectGoogleDrive(true)) return openDoc(doc);
         }
         throw new Error(json.error || "Could not open document");
       }
@@ -4879,7 +4905,7 @@ export default function AssetManagerApp() {
     );
   }
   async function deleteDoc(doc: AssetDoc) {
-    if (!confirm(`Delete document "${doc.file_name}" from the repository?`))
+    if (!confirm(`Delete document "${doc.file_name}"?${String(doc.file_path || "").startsWith("gdrive:") ? " It moves to Google Drive's bin, where it stays for 30 days." : ""}`))
       return;
     try {
       const res = await fetch(
@@ -4891,10 +4917,24 @@ export default function AssetManagerApp() {
       );
       const json = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(json.error || "Could not delete document");
-      setToast("Document deleted from repository");
+      setToast("Document deleted");
       await loadAll(true);
     } catch (e: any) {
       setToast(e?.message || "Could not delete document");
+    }
+  }
+  async function addDocuments(record: Rec, files: File[]) {
+    if (!files.length || docUploading) return;
+    setDocUploading(true);
+    try {
+      const pending = await uploadDocs(record.module_key, files, driveFolderParts(record.module_key, record.data)),
+        added = await attachDocs(record.id, record.module_key, pending);
+      if (!added) return;
+      const inDrive = pending.every((d) => String(d.file_path).startsWith("gdrive:"));
+      setToast(`Added ${added} document${added > 1 ? "s" : ""}${inDrive ? " to Google Drive" : ""}`);
+      await loadAll(true);
+    } finally {
+      setDocUploading(false);
     }
   }
   async function uploadRepositoryDocuments(filesLike: FileList | null) {
@@ -6022,6 +6062,7 @@ export default function AssetManagerApp() {
                         },
                         `${view}-phone-group-button-${x.key}`,
                       )}
+                  {docButton(x.records, "phone-doc-button")}
                   {x.lots > 1 &&
                     expandedLots[x.key] &&
                     phoneLotRows(x.moduleKey || view, x.records, x.key)}
@@ -8361,6 +8402,7 @@ export default function AssetManagerApp() {
           <QuickExpenseButton tags={expenseTags(records)} today={istCalendar().iso} lastTag={lastExpenseTag()} onSave={saveExpense} />
         )}
         {detail && detailModal()}
+        {docsFor && documentsDialog()}
         {saleTarget && (
           <Modal title={`Record Sale: ${saleTarget.name}`} onClose={() => setSaleTarget(null)}>
             <RecordSaleForm name={saleTarget.name} lots={saleLotsOf(saleTarget.moduleKey, saleTarget.lots)} today={istCalendar().iso} onSubmit={submitSale} onCancel={() => setSaleTarget(null)} />
@@ -13884,7 +13926,7 @@ Salary will stop counting as income, Company PF contributions will stop (interes
                         drive ? "pill bg-emerald-50 text-emerald-700" : "pill"
                       }
                     >
-                      {drive ? "Google Drive" : "Supabase"}
+                      {drive ? "Google Drive" : "App storage"}
                     </span>
                   </td>
                   <td>{recordTitle(r)}</td>
@@ -13910,6 +13952,138 @@ Salary will stop counting as income, Company PF contributions will stop (interes
       </div>
     ) : (
       <Empty text="No documents uploaded yet." />
+    );
+  }
+  /** Where this household's documents are kept, and whether they can be added now. */
+  function documentStore() {
+    if (!householdDrive.configured)
+      return { ready: true, text: "Google Drive is not set up on the server yet, so documents are kept in the app's own storage." };
+    if (householdDrive.connected)
+      return { ready: true, text: householdDrive.mine ? "Kept in your Google Drive." : "Kept in the household owner's Google Drive." };
+    return householdDrive.mine
+      ? { ready: false, text: "Connect Google Drive to add documents." }
+      : { ready: false, text: "Ask the household owner to connect Google Drive, then documents can be added." };
+  }
+  /** What a row is called. Properties go by their community; one phone card can hold more than one. */
+  function documentPlace(rows: Rec[]) {
+    const communities = rows[0].module_key === "property" ? [...new Set(rows.map((r) => String(r.data?.broker || "").trim()).filter(Boolean))] : [];
+    return communities.join(", ") || recordTitle(rows[0]);
+  }
+  /** The paperclip on a row, with how many documents it has. A row of several lots opens all of them. */
+  function docButton(lots: Rec[], className = "") {
+    const saved = lots
+      .map((lot) => records.find((r) => r.id === lot.id))
+      .filter((r): r is Rec => !!r && DOCUMENT_MODULES.has(r.module_key));
+    if (!saved.length || !workspaceAccess.can_view_documents) return null;
+    const ids = saved.map((r) => r.id),
+      count = docs.filter((d) => ids.includes(d.record_id)).length,
+      place = documentPlace(saved);
+    return (
+      <button
+        type="button"
+        className={`btn doc-button ${className}`}
+        title="Supporting documents"
+        aria-label={`Documents for ${place}${count ? ` (${count})` : ""}`}
+        onClick={(e) => {
+          e.stopPropagation();
+          setDocsFor(ids);
+        }}
+      >
+        <Paperclip size={14} aria-hidden="true" />
+        {className ? (count ? `Documents (${count})` : "Add document") : count || ""}
+      </button>
+    );
+  }
+  function docPanel(record: Rec) {
+    const list = docs.filter((d) => d.record_id === record.id),
+      store = documentStore(),
+      mayAdd = workspaceAccess.can_upload_documents && canEditModule(record.module_key);
+    return (
+      <div>
+        {list.length ? (
+          <ul className="doc-list">
+            {list.map((d) => (
+              <li key={d.id}>
+                <div className="min-w-0">
+                  <div className="doc-name"><FileText size={15} aria-hidden="true" /> <span>{d.file_name}</span></div>
+                  <div className="text-xs text-gray-600">
+                    {[
+                      d.file_size ? (d.file_size >= 1024 * 1024 ? `${(d.file_size / 1024 / 1024).toFixed(1)} MB` : `${Math.max(1, Math.round(d.file_size / 1024))} KB`) : "",
+                      d.created_at ? formatDate(d.created_at) : "",
+                      String(d.file_path || "").startsWith("gdrive:") ? "Google Drive" : "App storage",
+                    ].filter(Boolean).join(" · ")}
+                  </div>
+                </div>
+                <div className="doc-actions">
+                  <button type="button" className="btn" onClick={() => openDoc(d)}>Open</button>
+                  {workspaceAccess.can_delete && (
+                    <button type="button" className="btn-danger" aria-label={`Delete ${d.file_name}`} onClick={() => deleteDoc(d)}>
+                      <Trash2 size={14} aria-hidden="true" />
+                    </button>
+                  )}
+                </div>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="text-sm text-gray-600">No documents yet.</p>
+        )}
+        {mayAdd && store.ready && (
+          <label className={`btn-primary doc-add ${docUploading ? "opacity-60" : ""}`}>
+            <UploadCloud size={16} aria-hidden="true" /> {docUploading ? "Uploading…" : "Add document"}
+            <input
+              type="file"
+              multiple
+              className="sr-only"
+              aria-label={`Add document to ${recordTitle(record)}`}
+              accept={DOCUMENT_ACCEPT}
+              disabled={docUploading}
+              onChange={(e) => {
+                const files = Array.from(e.currentTarget.files || []);
+                e.currentTarget.value = "";
+                void addDocuments(record, files);
+              }}
+            />
+          </label>
+        )}
+      </div>
+    );
+  }
+  function docStoreNote() {
+    const store = documentStore();
+    return (
+      <div className="mb-3 flex flex-wrap items-center gap-2 text-sm text-gray-700">
+        <span>{store.text}</span>
+        {!store.ready && householdDrive.mine && (
+          <button type="button" className="btn" onClick={() => void connectGoogleDrive()}>
+            Connect Google Drive
+          </button>
+        )}
+      </div>
+    );
+  }
+  function documentsDialog() {
+    const rows = docsFor!.map((id) => records.find((r) => r.id === id)).filter((r): r is Rec => !!r);
+    if (!rows.length) return null;
+    return (
+      <Modal title={`Documents: ${compactName(documentPlace(rows))}`} onClose={() => setDocsFor(null)}>
+        {docStoreNote()}
+        {rows.map((r, i) => {
+          const lot = [
+            r.module_key === "property" ? r.data?.broker : "",
+            r.data?.account_name,
+            r.data?.purchase_date ? formatDate(r.data.purchase_date) : "",
+            num(r.data?.quantity) ? `Qty ${num(r.data.quantity).toLocaleString("en-IN")}` : "",
+            r.module_key === "property" ? r.data?.location : "",
+          ].filter(Boolean).join(" · ") || `Lot ${i + 1}`;
+          return (
+            <section key={r.id} className="doc-section" aria-label={lot}>
+              {rows.length > 1 && <h4 className="mb-2 text-sm font-semibold">{lot}</h4>}
+              {docPanel(r)}
+            </section>
+          );
+        })}
+      </Modal>
     );
   }
   function documentsView() {
@@ -13976,7 +14150,7 @@ Salary will stop counting as income, Company PF contributions will stop (interes
                     ? "pill bg-emerald-50 text-emerald-700"
                     : "btn"
                 }
-                onClick={connectGoogleDrive}
+                onClick={() => void connectGoogleDrive()}
               >
                 {googleDriveConnected
                   ? "Google Drive connected"
@@ -14059,8 +14233,8 @@ Salary will stop counting as income, Company PF contributions will stop (interes
             <div>
               <h3 className="text-xl font-semibold tracking-tight">Document Repository</h3>
               <p className="text-sm text-gray-600">
-                Personal files can use Google Drive; household files use shared,
-                access-controlled storage.
+                Household documents are kept in the owner&apos;s Google Drive once it is
+                connected.
               </p>
             </div>
             <button className="btn" onClick={() => loadAll(true)}>
@@ -16646,6 +16820,7 @@ Salary will stop counting as income, Company PF contributions will stop (interes
             >
                 Manage
               </button>
+              {docButton([lot])}
             </td>
           </tr>
         );
@@ -17253,6 +17428,7 @@ Salary will stop counting as income, Company PF contributions will stop (interes
                           </button>
                         )}
                         {lots.length > 1 && k !== "property" && lotToggle}
+                        {docButton(lots)}
                       </td>
                     </tr>,
                     ...(open ? lotRows(lots, key) : []),
@@ -18065,7 +18241,14 @@ Salary will stop counting as income, Company PF contributions will stop (interes
             <div className="mb-2 flex items-center gap-2 text-sm font-semibold">
               <Paperclip size={16} /> Documents
             </div>
-            {docRows(linkedDocs)}
+            {records.some((r) => r.id === d.record.id) && DOCUMENT_MODULES.has(d.moduleKey) ? (
+              <>
+                {docStoreNote()}
+                {docPanel(d.record)}
+              </>
+            ) : (
+              docRows(linkedDocs)
+            )}
           </div>
           {["stocks", "watchlist"].includes(d.moduleKey) && (
             <div className="col-span-2 max-md:col-span-1">
@@ -18769,9 +18952,9 @@ Salary will stop counting as income, Company PF contributions will stop (interes
           <div className="col-span-2 max-md:col-span-1">
             <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
               <label className="field-label m-0">
-                Documents (Google Drive)
+                Documents
               </label>
-              <div className="flex flex-wrap gap-2">
+              <div className={householdDrive.mine && householdDrive.configured ? "flex flex-wrap gap-2" : "hidden"}>
                 <button
                   type="button"
                   className={
@@ -18779,7 +18962,7 @@ Salary will stop counting as income, Company PF contributions will stop (interes
                       ? "pill bg-emerald-50 text-emerald-700"
                       : "btn"
                   }
-                  onClick={connectGoogleDrive}
+                  onClick={() => void connectGoogleDrive()}
                 >
                   {googleDriveConnected
                     ? "Google Drive connected"
@@ -18807,8 +18990,7 @@ Salary will stop counting as income, Company PF contributions will stop (interes
               }}
             />
             <p className="mt-2 text-xs font-semibold text-gray-500">
-              Optional files upload to Google Drive and are linked to this asset
-              as repository references.
+              Optional. {documentStore().text}
             </p>
             {editing!.record &&
               docs.filter((d) => d.record_id === editing!.record?.id).length >
