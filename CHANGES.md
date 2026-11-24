@@ -15,6 +15,24 @@ These backups cover the app itself, not your financial data. Your data is covere
 
 ---
 
+## Version 10.35 (24 Nov 2026, 20:30): Gold and silver prices as clickable links; supporting documents in Google Drive; watchlist cleanup
+
+Backup taken before this release: `backup-2026-11-24-2030-IST`
+
+**Gold and silver prices**
+- **All prices are now shown as clickable links.** Gold displays Malabar 24K (all-India), MCX market rate, and 5paisa local rate. Silver shows MCX and 5paisa; Malabar publishes gold only. Each link opens the source page in a new tab.
+- **On both phone and computer,** the prices appear together and update when you refresh. The local 5paisa rate uses your city from your profile or gold records.
+
+**Supporting documents**
+- **Every asset row (stocks, property, gold, fixed income, insurance, mutual funds) now has a Documents button.** Add supporting documents like deeds, certificates, bills or receipts for each holding or lot.
+- **Documents are stored in your connected Google Drive.** When Drive is connected, each document is filed in the household owner's Drive under the asset type, institution and holding name. Without Drive, documents fall back to app storage.
+- **Members of your household can open and delete your documents,** but cannot access files outside your household. Existing documents in app storage stay where they are.
+- **Files over 4 MB are uploaded in pieces** without blocking your app or timing out on Vercel.
+- **To connect Google Drive on the live site,** tell me and I'll add the Google API keys to production.
+
+**Phone watchlist cleanup**
+- **Lot and quantity labels removed** from watchlist cards. The cards now show only the broker name, keeping them simple.
+
 ## Version 10.34 (24 Nov 2026, 17:45): Gold at the Malabar 24K rate; simpler phone watchlist; stacked market strip
 
 Backup taken before this release: `backup-2026-11-24-1740-IST`
